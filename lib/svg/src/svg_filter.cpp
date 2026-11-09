@@ -598,7 +598,7 @@ SvgSubregionFlags subregionOf(const PrDomElement* e, PrStringView name, const Cs
 // Drawing
 
 // A filter element's graph as it is built: the filter, where it is drawn, and the nodes of its sources and results.
-struct Graph {
+struct FilterGraph {
     SvgDrawer* d;
     const SvgNode* node;            // what the filter applies to
     SvgResourceIndex index;
@@ -617,7 +617,7 @@ struct Graph {
 };
 
 // Returns a length along an axis in the filter's primitive units: user units, or a fraction of the bounding box.
-float primitiveLength(const Graph& g, float value, SvgAxis axis) {
+float primitiveLength(const FilterGraph& g, float value, SvgAxis axis) {
     if (!g.filter->primitiveBoundingBox)
         return value;
     float w = prRectWidth(g.box);
@@ -626,7 +626,7 @@ float primitiveLength(const Graph& g, float value, SvgAxis axis) {
 }
 
 // Returns a position along an axis in the filter's primitive units.
-float primitivePosition(const Graph& g, float value, SvgAxis axis) {
+float primitivePosition(const FilterGraph& g, float value, SvgAxis axis) {
     if (!g.filter->primitiveBoundingBox)
         return value;
     return axis == SvgAxis_X ? g.box.left + value * prRectWidth(g.box) : g.box.top + value * prRectHeight(g.box);
@@ -641,7 +641,7 @@ float regionLength(const SvgDrawer& d, bool userSpace, SvgLengthPercentage lengt
 }
 
 // Appends a node to the graph and returns it.
-PrDrawFilterInput add(Graph& g, const PrDrawFilterNode& node) {
+PrDrawFilterInput add(FilterGraph& g, const PrDrawFilterNode& node) {
     return prDrawFilterBuilderAdd(g.builder, &node);
 }
 
@@ -667,7 +667,7 @@ PrDrawFilterNode transparent(PrRect region) {
 
 // Returns the node of a list that `record` draws in user space, shown over `area`.
 template <typename Record>
-PrDrawFilterInput listNode(Graph& g, PrRect area, Record record) {
+PrDrawFilterInput listNode(FilterGraph& g, PrRect area, Record record) {
     PrDrawList* list = prDrawListCreate();
     SvgDrawer inner = svgEffectDrawer(*g.d, g.index, list);
     record(inner);
@@ -685,7 +685,7 @@ PrDrawFilterInput listNode(Graph& g, PrRect area, Record record) {
 // Returns the node of a filter source, made the first time that a primitive reads it. The filter region clips each
 // source (filter-effects-1/#FilterPrimitiveSubRegion). FillPaint and StrokePaint are the element's fill and stroke over
 // the filter region (filter-effects-1/#attr-valuedef-in-fillpaint).
-PrDrawFilterInput sourceOf(Graph& g, SvgFilterInput which) {
+PrDrawFilterInput sourceOf(FilterGraph& g, SvgFilterInput which) {
     PrDrawFilterInput& made = g.sources[-which - 1];
     if (made >= 0)
         return made;
@@ -714,12 +714,12 @@ PrDrawFilterInput sourceOf(Graph& g, SvgFilterInput which) {
 }
 
 // Returns the node that an input of a primitive reads.
-PrDrawFilterInput inputNode(Graph& g, SvgFilterInput input) {
+PrDrawFilterInput inputNode(FilterGraph& g, SvgFilterInput input) {
     return input >= 0 ? g.results.data[input] : sourceOf(g, input);
 }
 
 // Returns the subregion of an input: its primitive's, or the filter region for a source.
-PrRect inputSubregion(const Graph& g, SvgFilterInput input) {
+PrRect inputSubregion(const FilterGraph& g, SvgFilterInput input) {
     return input >= 0 ? g.subregions.data[input] : g.region;
 }
 
@@ -742,7 +742,7 @@ uint32_t inputsRead(const SvgPrimitive& p) {
 // Returns a primitive's subregion in user space (filter-effects-1/#FilterPrimitiveSubRegion). Each attribute that the
 // primitive does not give comes from the union of its inputs' subregions, or from the filter region if it reads no
 // result, reads a source, or is a feTile.
-PrRect subregionOf(const Graph& g, const SvgPrimitive& p) {
+PrRect subregionOf(const FilterGraph& g, const SvgPrimitive& p) {
     PrRect base{};
     bool region = p.kind == SvgPrimitiveKind_Tile;
     bool any = false;
@@ -781,7 +781,7 @@ PrRect subregionOf(const Graph& g, const SvgPrimitive& p) {
 
 // Appends the nodes of a primitive whose output is clipped to `clip`, its subregion within the filter region, and
 // returns the node of its result.
-PrDrawFilterInput primitiveNode(Graph& g, const SvgPrimitive& p, PrRect subregion, PrRect clip) {
+PrDrawFilterInput primitiveNode(FilterGraph& g, const SvgPrimitive& p, PrRect subregion, PrRect clip) {
     const SvgFilter& f = *g.filter;
     PrDrawFilterNode node{.space = p.space, .region = clip};
     if (p.kind != SvgPrimitiveKind_Merge && inputsRead(p) >= 1)
@@ -976,7 +976,7 @@ bool appendFilter(SvgDrawer& d, const SvgNode& owner, SvgResourceIndex index, Pr
         return false;
     if ((!f.userSpace || f.primitiveBoundingBox) && prRectIsEmpty(box))
         return false;
-    Graph g{
+    FilterGraph g{
         .d = &d,
         .node = &owner,
         .index = index,

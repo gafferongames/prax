@@ -112,14 +112,21 @@ struct RawArray {
         count = newCount;
     }
 
-    // Gives an array with no storage `newCount` elements of zeroed bytes. A large array that is touched sparsely costs
-    // only what it touches.
+    // Gives an array that has no storage `newCount` zeroed elements. A large array that is touched sparsely costs only
+    // the memory it touches.
     void resizeZeroed(uint32_t newCount) {
         static_assert(isTriviallyCopyable<T>, "a RawArray copies its elements as bytes");
         PR_ASSERT(data == nullptr);
         data = static_cast<T*>(prMemoryAllocZeroed(size_t(newCount) * sizeof(T)));
         count = newCount;
         capacity = newCount;
+    }
+
+    // Replaces the elements with `newCount` zeroed elements. Keeps the storage, and grows it once if it is too small.
+    void assignZeroed(uint32_t newCount) {
+        resize(newCount);
+        if (newCount > 0)
+            prMemZero(data, size_t(newCount) * sizeof(T));
     }
 
     // Returns the index of the first element equal to `value`, or kArrayMissing if there is none.

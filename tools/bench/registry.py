@@ -154,6 +154,9 @@ BENCHES = [
           ["vterm_bench"], run=engine.vterm, options=engine.vterm_options,
           sources=sorted(glob.glob(os.path.join(VTERM, "*.*")))
           + sorted(glob.glob(os.path.join(common.ROOT, "lib", "vterm", "tests", "captures", "*.tty")))),
+    Bench("graph", "generated graphs of 100, 1,000 and 5,000 nodes laid out by lib/graph: whole, and by phase",
+          ["graph_bench"], run=engine.graph,
+          sources=[os.path.join(TESTS, "graph", "tests", "graph_bench.cpp")]),
     Bench("page-changes", "the real pages after each kind of change: their style, layout and recording",
           ["invalidation"], fetch=["pages", "fonts"], run=engine.page_changes, options=engine.page_changes_options,
           sources=[os.path.join(common.ROOT, "tools", "pages", "invalidation.cpp")]),

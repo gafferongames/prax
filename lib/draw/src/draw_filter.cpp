@@ -34,7 +34,7 @@ PrAffine4 colorMatrix(const float rows[3][3]) {
 }
 
 // The nodes and the data that they point to. A builder owns them while it builds, and the filter owns them afterward.
-struct Graph {
+struct FilterGraph {
     RawArray<PrDrawFilterNode> nodes;
     RawArray<float*> floats;             // tables and kernels, one allocation each
     RawArray<PrDrawFilterInput*> inputs; // merge inputs
@@ -45,17 +45,17 @@ struct Graph {
 };
 
 struct DrawFilterBuilder {
-    Graph graph;
+    FilterGraph graph;
 };
 
 struct DrawFilter {
     mutable Atomic<uint32_t> references;    // changes behind const, as holders retain and release the immutable filter
     uint64_t id;
-    Graph graph;
+    FilterGraph graph;
     PrRect outset;
 };
 
-void releaseGraph(Graph& g) {
+void releaseGraph(FilterGraph& g) {
     for (uint32_t i = 0; i < g.floats.count; ++i)
         prMemoryFree(g.floats.data[i]);
     for (uint32_t i = 0; i < g.inputs.count; ++i)
@@ -100,7 +100,7 @@ uint32_t inputCount(PrDrawFilterKind kind) {
 }
 
 // Takes a reference to the source's image or list, which the graph holds.
-void holdSource(Graph& g, const PrDrawSource& source) {
+void holdSource(FilterGraph& g, const PrDrawSource& source) {
     if (source.kind == PrDrawSourceKind_Image && source.image != nullptr) {
         prDrawImageRetain(source.image);
         g.images.push(source.image);
@@ -207,7 +207,7 @@ void prDrawFilterBuilderSetRegion(PrDrawFilterBuilder* builder, PrRect region) {
 }
 
 PrDrawFilterInput prDrawFilterBuilderAdd(PrDrawFilterBuilder* builder, const PrDrawFilterNode* node) {
-    Graph& g = builder->graph;
+    FilterGraph& g = builder->graph;
     uint32_t index = g.nodes.count;
     PR_ASSERT(node->kind < PrDrawFilterKind_Count);
     PR_ASSERT(node->space == PrColorSpace_Srgb || node->space == PrColorSpace_SrgbLinear);
@@ -352,7 +352,7 @@ const PrDrawFilter* prDrawFilterCreate(PrDrawFilterBuilder* builder) {
     filter->references.storeRelaxed(1);
     filter->id = drawNextId();
     filter->graph = b->graph;
-    prMemZero(&b->graph, sizeof(Graph));
+    prMemZero(&b->graph, sizeof(FilterGraph));
     // How far the result may read from its inputs. This is the sum of each node's reach along the longest chain, which
     // the sum of every node's reach bounds from above.
     PrRect outset{0, 0, 0, 0};

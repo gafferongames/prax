@@ -11,13 +11,13 @@ using namespace alchemy;
 namespace {
 
 // A graph read back from its text, which the checks below query by node id.
-struct Graph {
+struct RecipeGraph {
     PrJson* d = prJsonCreate();
 
-    explicit Graph(PrStringView text) {
+    explicit RecipeGraph(PrStringView text) {
         REQUIRE(prJsonParse(d, text, nullptr));
     }
-    ~Graph() {
+    ~RecipeGraph() {
         prJsonDestroy(d);
     }
 
@@ -77,7 +77,7 @@ Array<LoraRef> chain() {
 } // namespace
 
 TEST_CASE("a text-to-image graph without adapters reads the checkpoint, and zeroes an empty negative prompt") {
-    Graph g(txt2ImgGraph({.sampling = sampling(), .width = 832, .height = 1216, .batch = 2}));
+    RecipeGraph g(txt2ImgGraph({.sampling = sampling(), .width = 832, .height = 1216, .batch = 2}));
     CHECK_FALSE(g.has("lora0"));
     PrJsonValueIndex sampler = g.inputs("sampler", "KSampler");
     CHECK(g.linksTo(sampler, "model", "checkpoint", 0));
@@ -93,7 +93,7 @@ TEST_CASE("a text-to-image graph without adapters reads the checkpoint, and zero
 }
 
 TEST_CASE("adapters chain between the checkpoint and everything that reads a model or a text encoder") {
-    Graph g(txt2ImgGraph({.sampling = sampling(chain(), "blurry")}));
+    RecipeGraph g(txt2ImgGraph({.sampling = sampling(chain(), "blurry")}));
     PrJsonValueIndex first = g.inputs("lora0", "LoraLoader");
     CHECK(g.text(first, "lora_name") == "detail.safetensors");
     CHECK(g.number(first, "strength_model") == 0.8);
@@ -112,7 +112,7 @@ TEST_CASE("adapters chain between the checkpoint and everything that reads a mod
 }
 
 TEST_CASE("an image-to-image graph encodes the source at the requested size and denoises part of it") {
-    Graph g(txt2ImgGraph({.sampling = sampling(), .sourceImage = "fox.png", .denoise = 0.6, .width = 768}));
+    RecipeGraph g(txt2ImgGraph({.sampling = sampling(), .sourceImage = "fox.png", .denoise = 0.6, .width = 768}));
     CHECK(g.text(g.inputs("source", "LoadImage"), "image") == "fox.png");
     CHECK(g.number(g.inputs("resize", "ImageScale"), "width") == 768);
     CHECK(g.linksTo(g.inputs("latent", "VAEEncode"), "pixels", "resize", 0));
@@ -131,7 +131,7 @@ TEST_CASE("an outpaint grows the canvas on one side and samples a crop anchored 
     };
     CHECK(outpaintWidth(recipe) == 1256);
     CHECK(outpaintHeight(recipe) == 1000);
-    Graph g(outpaintGraph(recipe));
+    RecipeGraph g(outpaintGraph(recipe));
     PrJsonValueIndex pad = g.inputs("pad", "ImagePadForOutpaint");
     CHECK(g.number(pad, "left") == 256);
     CHECK(g.number(pad, "right") == 0);
@@ -145,7 +145,7 @@ TEST_CASE("an outpaint grows the canvas on one side and samples a crop anchored 
 }
 
 TEST_CASE("a detail pass reads the chain's model and text encoder") {
-    Graph g(detailGraph({
+    RecipeGraph g(detailGraph({
         .sampling = sampling(Array<LoraRef>({lora("detail.safetensors", 0.8)})),
         .sourceImage = "fox.png",
         .detector = "bbox/face_yolov8m.pt",
@@ -158,12 +158,12 @@ TEST_CASE("a detail pass reads the chain's model and text encoder") {
 }
 
 TEST_CASE("an upscale rescales by what the model's name states, and runs the model alone otherwise") {
-    Graph x4(upscaleGraph({.model = "RealESRGAN_x4plus.pth", .sourceImage = "fox.png", .factor = 2}));
+    RecipeGraph x4(upscaleGraph({.model = "RealESRGAN_x4plus.pth", .sourceImage = "fox.png", .factor = 2}));
     CHECK_FALSE(x4.has("checkpoint"));
     CHECK(x4.number(x4.inputs("rescale", "ImageScaleBy"), "scale_by") == 0.5);
-    Graph exact(upscaleGraph({.model = "4x-UltraSharp.pth", .sourceImage = "fox.png", .factor = 4}));
+    RecipeGraph exact(upscaleGraph({.model = "4x-UltraSharp.pth", .sourceImage = "fox.png", .factor = 4}));
     CHECK_FALSE(exact.has("rescale"));
-    Graph unknown(upscaleGraph({.model = "mystery.pth", .sourceImage = "fox.png", .factor = 2}));
+    RecipeGraph unknown(upscaleGraph({.model = "mystery.pth", .sourceImage = "fox.png", .factor = 2}));
     CHECK_FALSE(unknown.has("rescale"));
     CHECK(upscaleModelFactor("RealESRGAN_x4plus.pth") == 4);
     CHECK(upscaleModelFactor("2X_model") == 2);

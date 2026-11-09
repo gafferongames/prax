@@ -32,6 +32,7 @@ The libraries, by area. The first comment of each library's `CMakeLists.txt` say
 | Networking | `net`, `tls`, `http`, `websocket`, `fetch`, `xhr`, `url`, `mime` |
 | Data | `json`, `xml`, `compress`, `image`, `color`, `geom`, `charset`, `locale`, `unicode`, `html_entity` |
 | Text | `font`, `font_bundle`, `text`, `text_edit`, `text_view`, `syntax`, `regex`, `text_diff` |
+| Diagrams | `graph` |
 | Graphics | `path`, `draw`, `canvas`, `lottie` |
 | Documents | `css`, `dom`, `layout`, `html`, `svg`, `mathml`, `tex`, `markdown` |
 | Developer tools | `lsp`, `dap`, `vterm` |
