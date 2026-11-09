@@ -48,6 +48,20 @@ float integral(float u) {
     return u < 1 ? u * u / 2 : u - 0.5f;
 }
 
+// Returns the average of clamp(u, 0, 1) over u from `ua` to `ub`, computed piecewise as the fragment renderer's shader
+// does. The difference of two integrals far from zero would lose precision for a nearly vertical segment.
+float rampAverage(float ua, float ub) {
+    float lo = std::fmin(ua, ub);
+    float hi = std::fmax(ua, ub);
+    if (lo >= 1)
+        return 1;
+    if (hi <= 0)
+        return 0;
+    if ((lo >= 0 && hi <= 1) || hi - lo < 1e-3f)
+        return std::fmin(std::fmax((ua + ub) / 2, 0.0f), 1.0f);
+    return (integral(hi) - integral(lo)) / (hi - lo);
+}
+
 // Returns the winding of a pixel in a tile record, as the header defines it.
 float tileWinding(const float* record, uint32_t height, float px, uint32_t row) {
     uint32_t count = uint32_t(record[0]);
@@ -64,11 +78,7 @@ float tileWinding(const float* record, uint32_t height, float px, uint32_t row) 
         auto xAt = [&](float y) { return s[0] + (s[2] - s[0]) * (y - s[1]) / (s[3] - s[1]); };
         float xa = xAt(y0);
         float xb = xAt(y1);
-        float average;
-        if (std::fabs(xb - xa) < 1e-6f)
-            average = std::fmin(std::fmax(px + 1 - (xa + xb) / 2, 0.0f), 1.0f);
-        else
-            average = (integral(px + 1 - xa) - integral(px + 1 - xb)) / (xb - xa);
+        float average = rampAverage(px + 1 - xa, px + 1 - xb);
         winding += (s[3] > s[1] ? 1 : -1) * (y1 - y0) * average;
     }
     return winding;
@@ -175,6 +185,37 @@ TEST_CASE("sparse spans cover each pixel as the rasterizer does") {
         prPathPolylineReset(&polyline);
         prPathSparseRasterizerDestroy(rasterizer);
     }
+}
+
+TEST_CASE("sparse segments cover a stroked straight cubic as the rasterizer does") {
+    // A thin stroke of a vertical run written as a cubic whose control points lie on it. The outline's sides are nearly
+    // vertical: their points' x coordinates differ only in their last bits.
+    PrPath* path = prPathCreate();
+    prPathMoveTo(path, PrVec2{100.46f, 364.96f});
+    prPathCubicTo(path, PrVec2{100.46f, 352.46f}, PrVec2{85.24f, 352.46f}, PrVec2{85.24f, 339.96f});
+    prPathCubicTo(path, PrVec2{85.24f, 280.50f}, PrVec2{85.24f, 228.04f}, PrVec2{85.24f, 168.58f});
+    PrPath* scaled = prPathClone(path);
+    prPathTransform(scaled, prAffine2Scale(PrVec2{1.57f, 1.57f}));
+    PrPathStroke stroke = prPathStrokeDefault();
+    stroke.width = 1.57f;
+    stroke.join = PrPathJoin_Round;
+    PrPathPolyline outline{};
+    prPathStrokeOutline(scaled, &stroke, 0.05f, &outline);
+    PrPathSparseRasterizerOptions options{PrPathSparseKind_Segments, {16, 16}};
+    PrPathSparseRasterizer* rasterizer = prPathSparseRasterizerCreate(&options);
+    PrIRect box{0, 0, 200, 600};
+    PrPathSparse sparse = prPathSparseRasterizerFill(rasterizer, &outline, PrPathFillRule_NonZero, box);
+    std::vector<uint8_t> drawn = render(sparse, options, PrPathFillRule_NonZero, 0, 0, 200, 600);
+    std::vector<uint8_t> expected(size_t(200) * 600, 0);
+    PrPathRasterizer* reference = prPathRasterizerCreate();
+    PrPixels mask{expected.data(), 200, {200, 600}};
+    prPathRasterizerFill(reference, &outline, PrPathFillRule_NonZero, PrPathCoverage_Area, PrIVec2{0, 0}, mask);
+    CHECK(largestDifference(drawn, expected) <= 2);
+    prPathRasterizerDestroy(reference);
+    prPathSparseRasterizerDestroy(rasterizer);
+    prPathPolylineReset(&outline);
+    prPathDestroy(scaled);
+    prPathDestroy(path);
 }
 
 TEST_CASE("sparse spans merge a rectangle's interior into one solid span") {

@@ -1994,3 +1994,26 @@ TEST_CASE("the fragment renderer uploads an image, glyphs and small paths' cover
     prDrawImageRelease(image);
     prFontRelease(font);
 }
+
+TEST_CASE("the fragment renderer strokes a straight run of cubics with tiles as the cpu backend does") {
+    // A route like those that lib/mermaid draws: an S-curve, then a straight vertical run written as a cubic whose
+    // control points lie on the run. It is stroked thin and scaled as the viewer scales a fitted diagram.
+    Device device(600, 800, PrDrawFragmentPaths_Tiles);
+    PrDrawList* list = prDrawListCreate();
+    PrPath* path = prPathCreate();
+    prPathMoveTo(path, PrVec2{100.46f, 364.96f});
+    prPathCubicTo(path, PrVec2{100.46f, 352.46f}, PrVec2{85.24f, 352.46f}, PrVec2{85.24f, 339.96f});
+    prPathCubicTo(path, PrVec2{85.24f, 280.50f}, PrVec2{85.24f, 228.04f}, PrVec2{85.24f, 168.58f});
+    PrDrawStroke stroke = prDrawStrokeDefault();
+    stroke.shape.width = 1;
+    stroke.shape.join = PrPathJoin_Round;
+    prDrawListPushTransformAffine2(list, prAffine2Scale(PrVec2{1.57f, 1.57f}));
+    prDrawListPath(list, path, PrPathFillRule_NonZero, {.color = PrColor{0.2f, 0.2f, 0.2f, 1}, .stroke = &stroke});
+    prDrawListPopTransform(list);
+    std::vector<uint8_t> drawn = device.render(list);
+    std::vector<uint8_t> expected = cpuRender(list, 600, 800);
+    CHECK(inked(drawn) == doctest::Approx(inked(expected)).epsilon(0.02));
+    CHECK(fractionDiffering(drawn, expected, 24) <= 0.0005);
+    prPathDestroy(path);
+    prDrawListRelease(list);
+}

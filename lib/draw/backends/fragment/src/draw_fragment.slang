@@ -902,6 +902,22 @@ float rampIntegral(float u) {
     return u <= 0 ? 0 : u < 1 ? u * u / 2 : u - 0.5;
 }
 
+// The average of clamp(u, 0, 1) over u from `ua` to `ub`. If both ends lie on one piece of the ramp, the average is
+// computed on that piece directly. The difference of two integrals far from zero would lose precision for a nearly
+// vertical segment, whose ends differ by little. Only a range that crosses a bend of the ramp uses the integrals. A
+// range narrower than a thousandth of a pixel uses the ramp's value at its middle.
+float rampAverage(float ua, float ub) {
+    float lo = min(ua, ub);
+    float hi = max(ua, ub);
+    if (lo >= 1)
+        return 1;
+    if (hi <= 0)
+        return 0;
+    if ((lo >= 0 && hi <= 1) || hi - lo < 1e-3)
+        return clamp((ua + ub) * 0.5, 0.0, 1.0);
+    return (rampIntegral(hi) - rampIntegral(lo)) / (hi - lo);
+}
+
 // A pixel's coverage by a tile record's segments, which start where the row's winding leaves off.
 float tileCoverage(uint data, uint height, int2 at, bool evenOdd) {
     uint count = uint(frameTiles[data]);
@@ -921,8 +937,7 @@ float tileCoverage(uint data, uint height, int2 at, bool evenOdd) {
         float slope = (x1 - x0) / (y1s - y0s);
         float xa = x0 + (y0 - y0s) * slope;
         float xb = x0 + (y1 - y0s) * slope;
-        float average = abs(xb - xa) < 1e-6 ? clamp(px + 1 - (xa + xb) * 0.5, 0.0, 1.0)
-                                            : (rampIntegral(px + 1 - xa) - rampIntegral(px + 1 - xb)) / (xb - xa);
+        float average = rampAverage(px + 1 - xa, px + 1 - xb);
         winding += sign(y1s - y0s) * (y1 - y0) * average;
     }
     return windingCoverage(winding, evenOdd);

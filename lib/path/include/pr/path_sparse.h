@@ -27,7 +27,8 @@ enum {
     // A segment going down adds to the winding to its right, and a segment going up subtracts from it. The winding of a
     // pixel is the winding at the left edge of its row plus a term for each segment. The term is the signed height of
     // the segment within the row, times the average of clamp(px + 1 - x, 0, 1) over the length of the segment in the
-    // row, where px is the left edge of the pixel.
+    // row, where px is the left edge of the pixel. The average stays exact for a nearly vertical segment if it is
+    // computed on the piece of the ramp that holds both of the segment's ends.
     PrPathSparseKind_Segments,
 };
 typedef uint8_t PrPathSparseKind;
