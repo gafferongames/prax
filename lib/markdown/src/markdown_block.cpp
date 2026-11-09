@@ -1305,15 +1305,22 @@ bool waitsForLineEnd(PrStringView line) {
     return true;
 }
 
-// Returns true if the block is a fenced code block of display math, whose info string's first word is "math".
-bool isMathFence(const MarkdownBlockParser* parser, const MarkdownParseBlock& block, const PrMarkdownOptions& options) {
-    if ((options.extensions & PrMarkdownExtensionFlag_Math) == 0 || !block.fenced)
-        return false;
+// Returns the kind of a code block: a MathBlock or a MermaidBlock for a fenced block whose info string's first word is
+// "math" or "mermaid", with its extension, and a CodeBlock otherwise.
+PrMarkdownNodeKind codeBlockKind(const MarkdownBlockParser* parser, const MarkdownParseBlock& block,
+        const PrMarkdownOptions& options) {
+    if (!block.fenced)
+        return PrMarkdownNodeKind_CodeBlock;
     PrStringView info{parser->text.data + block.info.start, block.info.size};
     size_t word = 0;
     while (word < info.size && !prAsciiIsSpace(info.data[word]))
         ++word;
-    return prStringSlice(info, 0, word) == "math";
+    PrStringView language = prStringSlice(info, 0, word);
+    if ((options.extensions & PrMarkdownExtensionFlag_Math) != 0 && language == "math")
+        return PrMarkdownNodeKind_MathBlock;
+    if ((options.extensions & PrMarkdownExtensionFlag_Mermaid) != 0 && language == "mermaid")
+        return PrMarkdownNodeKind_MermaidBlock;
+    return PrMarkdownNodeKind_CodeBlock;
 }
 
 } // namespace
@@ -1407,8 +1414,8 @@ void markdownBuildBlock(MarkdownBlockParser* parser, const PrMarkdownOptions& op
         PrMarkdownNodeKind kind = from.kind;
         if (kind == PrMarkdownNodeKind_HtmlBlock && options.rawHtml == PrMarkdownRawHtml_Escape)
             kind = PrMarkdownNodeKind_Paragraph;
-        if (kind == PrMarkdownNodeKind_CodeBlock && isMathFence(parser, from, options))
-            kind = PrMarkdownNodeKind_MathBlock;
+        if (kind == PrMarkdownNodeKind_CodeBlock)
+            kind = codeBlockKind(parser, from, options);
         MarkdownNodeIndex node = markdownTreeAppend(tree, next.parent, kind);
         MarkdownValues& values = tree->nodes.data[node].values;
         switch (from.kind) {
@@ -1435,8 +1442,9 @@ void markdownBuildBlock(MarkdownBlockParser* parser, const PrMarkdownOptions& op
             case PrMarkdownNodeKind_CodeBlock: {
                 PrStringView info{parser->text.data + from.info.start, from.info.size};
                 values.info = markdownTreeAddText(tree, info);
-                // A math block's TeX is its lines, without the line ending that closes the last.
-                if (kind == PrMarkdownNodeKind_MathBlock && content.size != 0 && content.data[content.size - 1] == '\n')
+                // A math or diagram block's source is its lines, without the line ending that closes the last.
+                bool source = kind == PrMarkdownNodeKind_MathBlock || kind == PrMarkdownNodeKind_MermaidBlock;
+                if (source && content.size != 0 && content.data[content.size - 1] == '\n')
                     --content.size;
                 if (content.size != 0) {
                     MarkdownRange range = markdownTreeAddText(tree, content);

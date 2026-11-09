@@ -133,7 +133,8 @@ struct Panels {
 };
 
 // Draws a panel's background: a rounded pane that blurs what lies beneath it under a translucent tint, and its rim.
-void paintGlass(void* context, PrVec2 size, PrDrawList* list) {
+void paintGlass(void* context, const PrLayoutPaintDesc* desc, PrDrawList* list) {
+    PrVec2 size = desc->extent;
     const Panels& p = *static_cast<const Panels*>(context);
     PrRect pane{0, 0, size.x, size.y};
     PrCornerRect shape = prCornerRectRound(pane, 12);
@@ -152,7 +153,8 @@ void paintGlass(void* context, PrVec2 size, PrDrawList* list) {
 }
 
 // Draws the picture so that it covers the box, centered, with rounded corners.
-void paintPicture(void* context, PrVec2 size, PrDrawList* list) {
+void paintPicture(void* context, const PrLayoutPaintDesc* desc, PrDrawList* list) {
+    PrVec2 size = desc->extent;
     const Panels& p = *static_cast<const Panels*>(context);
     if (p.picture == nullptr)
         return;

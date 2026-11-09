@@ -4,6 +4,7 @@ if ((APPLE OR WIN32) AND PR_JS)
         document_tree.cpp
         documents.cpp
         source_lottie.cpp
+        source_mermaid.cpp
         suite_lottie.cpp
         suite_markdown.cpp
         suite_mathml.cpp
@@ -19,13 +20,14 @@ if ((APPLE OR WIN32) AND PR_JS)
     target_include_directories(viewer_documents PUBLIC ${PROJECT_SOURCE_DIR})
     target_compile_definitions(viewer_documents PRIVATE
         PR_SUITES_DIR="${PROJECT_SOURCE_DIR}/suites"
-        PR_TEX_TESTS_DIR="${PROJECT_SOURCE_DIR}/lib/tex/tests"
         PR_THIRD_PARTY_DIR="${PROJECT_SOURCE_DIR}/third_party"
-        PR_VIEWER_CACHE_DIR="${PROJECT_BINARY_DIR}/viewer-cache")
+        PR_VIEWER_CACHE_DIR="${PROJECT_BINARY_DIR}/viewer-cache"
+        PR_FONT_BUNDLE_DIR="${PR_FONT_BUNDLE_DIR}")
     target_link_libraries(viewer_documents PUBLIC prax::draw draw_compare draw_renderers suite_render prax::text
-                                                  prax::image prax::app prax::compress prax::lottie prax::font
+                                                  prax::image prax::app prax::compress prax::lottie prax::mermaid
+                                                  prax::font prax::geom
                                                   page_host
-                                           PRIVATE prax::core_cpp prax::gpu prax::json prax::html prax::css
+                                           PRIVATE prax::core_cpp prax::font_bundle prax::gpu prax::json prax::html prax::css
                                                    prax::layout rlottie::rlottie pr_warnings)
     if (APPLE)
         target_link_libraries(viewer_documents PRIVATE "-framework CoreGraphics")

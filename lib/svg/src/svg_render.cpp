@@ -240,7 +240,8 @@ CssPresentationSvgUpdate contentUpdate(SvgContent* content, PrVec2 extent, RawAr
     };
 }
 
-void contentPaint(void* PR_NULLABLE context, PrVec2 extent, PrDrawList* list) {
+void contentPaint(void* PR_NULLABLE context, const PrLayoutPaintDesc* desc, PrDrawList* list) {
+    PrVec2 extent = desc->extent;
     const SvgContent* content = static_cast<const SvgContent*>(context);
     SvgDrawHost host{.drawRoot = drawPresentationRoot, .context = content->presentation};
     svgTreeDraw(&content->tree, extent, &host, list);
@@ -654,6 +655,47 @@ void drawStatic(const PrDomElement* element, SvgRoot root, PrVec2 viewport,
 // (css-images-3/#default-object-size).
 constexpr PrVec2 kDefaultObjectSize{300, 150};
 
+// Builds the tree and the background that `image` draws in `scheme` from the document of the outermost svg element
+// `svg`, whose media environment prefers that scheme, laid out in `viewport`. Returns true if the build read the user's
+// preferred scheme: if a color resolved for it, or if a media query of the document's rules answers otherwise in
+// `other`, an environment that prefers another scheme. `other` may be null, which asks nothing of the queries.
+bool buildImageTree(SvgImage* image, PrSvgElement* svg, const PrSvgDrawOptions& options, PrVec2 viewport,
+        PrColorScheme scheme, const CssMediaEnvironment* PR_NULLABLE other) {
+    PrDomDocument* document = const_cast<PrDomDocument*>(svg->document);
+    SvgCascade cascade{};
+    svgCascadeInit(&cascade, document, options, viewport);
+    bool reads = false;
+    CssColorEnvironment environment = kCssDefaultColorEnvironment;
+    environment.headroom = options.headroom;
+    environment.prefersDark = scheme == PrColorScheme_Dark;
+    environment.readsOutside = &reads;
+    SvgBuild build{
+        .source = {cascadeStyle, cascadeStyleUnder, cascadePseudoStyleUnder, &cascade},
+        .images = hostImages(&options),
+        .environment = environment,
+        .options = &options,
+        .viewport = viewport,
+    };
+    SvgTree& tree = image->trees[scheme == PrColorScheme_Dark ? 1 : 0];
+    svgTreeBuild(&tree, svg, SvgRoot_Image, build);
+    const CssComputedStyle* style = svgCascadeStyle(&cascade, svg);
+    if (style != nullptr) {
+        // The root's background propagates to the canvas, which is the whole image
+        // (css-backgrounds-3/#root-background).
+        image->backgrounds[scheme == PrColorScheme_Dark ? 1 : 0] =
+            svgStyleColor(style, PrCssProperty_BackgroundColor, environment);
+        PrCssKeyword overflow = svgStyleKeyword(style, PrCssProperty_OverflowX);
+        image->overflows = overflow == PrCssKeyword_Visible || overflow == PrCssKeyword_Auto;
+    }
+    if (other != nullptr) {
+        reads = reads || cssRuleSetMediaChanged(&cascade.rules, other) ||
+            cssRuleSetMediaChanged(&cascade.userAgentRules, other);
+    }
+    svgTreeDetach(&tree);
+    svgCascadeReset(&cascade);
+    return reads;
+}
+
 } // namespace
 
 SvgPresentation* svgPresentationCreate(PrCssPresentation* presentation) {
@@ -927,31 +969,31 @@ const PrSvgImage* prSvgImageCreate(PrSvgElement* svg, PrStringView fragment, con
         natural.width > 0 ? natural.width : kDefaultObjectSize.x,
         natural.height > 0 ? natural.height : kDefaultObjectSize.y,
     };
-    SvgCascade cascade{};
-    svgCascadeInit(&cascade, document, own, viewport);
-    CssColorEnvironment environment = kCssDefaultColorEnvironment;
-    environment.headroom = own.headroom;
-    SvgBuild build{
-        .source = {cascadeStyle, cascadeStyleUnder, cascadePseudoStyleUnder, &cascade},
-        .images = hostImages(&own),
-        .environment = environment,
-        .options = &own,
-        .viewport = viewport,
-    };
-    svgTreeBuild(&picture->tree, svg, SvgRoot_Image, build);
-    const CssComputedStyle* style = svgCascadeStyle(&cascade, svg);
-    if (style != nullptr) {
-        // The root's background propagates to the canvas, which is the whole image
-        // (css-backgrounds-3/#root-background).
-        picture->background = svgStyleColor(style, PrCssProperty_BackgroundColor, environment);
-        PrCssKeyword overflow = svgStyleKeyword(style, PrCssProperty_OverflowX);
-        picture->overflows = overflow == PrCssKeyword_Visible || overflow == PrCssKeyword_Auto;
+    // The tree of the light scheme, and the tree of the dark scheme if the light one read the user's preference through
+    // a color, or matched a media query that a preference for dark answers otherwise. Each is built in the document's
+    // media, or a screen's if it has none, with the scheme's preference.
+    const CssMediaEnvironment* media = document->media;
+    CssMediaEnvironment schemes[2];
+    for (uint32_t i = 0; i < 2; ++i) {
+        if (media != nullptr)
+            schemes[i] = *media;
+        else
+            cssMediaEnvironmentInit(&schemes[i], false);
+        PrColorScheme scheme = i == 0 ? PrColorScheme_Light : PrColorScheme_Dark;
+        PrAppUserPreferences preferences{.colorScheme = scheme};
+        cssMediaEnvironmentSetUserPreferences(&schemes[i], preferences);
     }
+    document->media = &schemes[0];
+    bool reads = buildImageTree(picture, svg, own, viewport, PrColorScheme_Light, &schemes[1]);
+    if (reads) {
+        document->media = &schemes[1];
+        buildImageTree(picture, svg, own, viewport, PrColorScheme_Dark, nullptr);
+        picture->schemed = true;
+    }
+    document->media = media;
     if (!view.hasViewBox && natural.width > 0 && natural.height > 0)
         picture->scaledFrom = PrVec2{natural.width, natural.height};
     document->target = savedTarget;
-    svgTreeDetach(&picture->tree);
-    svgCascadeReset(&cascade);
     return picture;
 }
 
@@ -971,8 +1013,8 @@ PrLayoutPainter prSvgImagePainter(const PrSvgImage* image) {
     return svgImagePainter(image);
 }
 
-void prSvgImageDraw(const PrSvgImage* image, PrVec2 extent, PrDrawList* list) {
-    svgImageDraw(image, extent, list);
+void prSvgImageDraw(const PrSvgImage* image, PrColorScheme scheme, PrVec2 extent, PrDrawList* list) {
+    svgImageDraw(image, scheme, extent, list);
 }
 
 void prSvgElementDrawInPlace(PrSvgElement* element, PrVec2 viewport, const PrSvgDrawOptions* PR_NULLABLE options,

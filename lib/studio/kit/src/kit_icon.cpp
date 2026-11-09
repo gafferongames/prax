@@ -42,7 +42,8 @@ struct KitPainted {
 };
 
 // Draws an icon's path over its content box, scaled from the grid.
-void paintIcon(void* PR_NULLABLE context, PrVec2 size, PrDrawList* list) {
+void paintIcon(void* PR_NULLABLE context, const PrLayoutPaintDesc* desc, PrDrawList* list) {
+    PrVec2 size = desc->extent;
     const KitPainted* painted = static_cast<const KitPainted*>(context);
     prDrawListPushTransformAffine2(list, prAffine2Scale(size / kGrid));
     if (painted->stroked) {

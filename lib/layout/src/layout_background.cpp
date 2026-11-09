@@ -553,7 +553,7 @@ PrDrawSampling samplingOf(const PrLayoutBackgroundLayer& layer) {
 // Returns the source of a layer's image drawn at `size`, before its filter list. A list that the source reads may be
 // written to `drawn`, which the caller releases.
 PrDrawSource unfilteredSource(const LayoutCompounds* PR_NULLABLE compounds, const PrLayoutBackgroundLayer& layer,
-        PrVec2 size, PrDrawList* PR_NULLABLE* PR_NONNULL drawn) {
+        PrColorScheme scheme, PrVec2 size, PrDrawList* PR_NULLABLE* PR_NONNULL drawn) {
     PrRect own{0, 0, size.x, size.y};
     switch (layer.kind) {
         case PrLayoutImageKind_Image: {
@@ -565,11 +565,13 @@ PrDrawSource unfilteredSource(const LayoutCompounds* PR_NULLABLE compounds, cons
             float height = hasHeight(layer.natural) ? prLayoutUnitToPx(layer.natural.height) : size.y;
             return prDrawSourceList(layer.list, PrRect{0, 0, width, height});
         }
-        case PrLayoutImageKind_Painter:
+        case PrLayoutImageKind_Painter: {
             // A painter draws at the size that it is shown at, rather than being scaled to it.
             *drawn = prDrawListCreate();
-            layer.painter.paint(layer.painter.context, size, *drawn);
+            PrLayoutPaintDesc desc{.extent = size, .scheme = scheme};
+            layer.painter.paint(layer.painter.context, &desc, *drawn);
             return prDrawSourceList(*drawn, own);
+        }
         default:
             *drawn = prDrawListCreate();
             drawGradient(compounds, layer.gradient, own, own, PrDrawEdges_Antialiased, *drawn);
@@ -620,7 +622,7 @@ bool isEmpty(PrRect r) {
 }
 
 // Records one layer. Returns true if it drew.
-bool paintLayer(const LayoutCompounds* compounds, const PrLayoutBackgroundLayer& layer,
+bool paintLayer(const LayoutCompounds* compounds, const PrLayoutBackgroundLayer& layer, PrColorScheme scheme,
         const LayoutBackgroundBoxes& boxes, PrDrawList* list) {
     if (layer.kind == PrLayoutImageKind_None)
         return false;
@@ -672,7 +674,7 @@ bool paintLayer(const LayoutCompounds* compounds, const PrLayoutBackgroundLayer&
         return true;
     }
     PrDrawList* drawn = nullptr;
-    PrDrawSource source = layoutImageSource(compounds, layer, size, &drawn);
+    PrDrawSource source = layoutImageSource(compounds, layer, scheme, size, &drawn);
     PrDrawSampling sampling = samplingOf(layer);
     PrDrawBrush brush = prDrawBrushImage(source, tile, sampling);
     brush.image.tiles.spacing = PrVec2{x.spacing, y.spacing};
@@ -844,14 +846,14 @@ void layoutBackgroundRound(LayoutBackgroundBoxes& boxes, const PrCornerRect& bor
     }
 }
 
-bool layoutBackgroundPaintLayer(const LayoutCompounds* compounds, const PrLayoutBackgroundLayer& layer,
+bool layoutBackgroundPaintLayer(const LayoutCompounds* compounds, const PrLayoutBackgroundLayer& layer, PrColorScheme scheme,
         const LayoutBackgroundBoxes& boxes, PrDrawList* list) {
     if (!boxes.rounded || !isEmpty(boxes.area))
-        return paintLayer(compounds, layer, boxes, list);
+        return paintLayer(compounds, layer, scheme, boxes, list);
     // The layer is clipped to the curve of its box as well as to the box. The clip is recorded whether or not the layer
     // paints, so the layer counts as recorded.
     prDrawListPushClipCornerRect(list, boxes.shapes[layer.clip], PrDrawEdges_Snapped);
-    paintLayer(compounds, layer, boxes, list);
+    paintLayer(compounds, layer, scheme, boxes, list);
     prDrawListPopClip(list);
     return true;
 }
@@ -867,9 +869,9 @@ void layoutImageTakeFilters(PrLayoutBackgroundLayer& image, PrLayoutFilter* PR_N
 }
 
 PrDrawSource layoutImageSource(const LayoutCompounds* PR_NULLABLE compounds, const PrLayoutBackgroundLayer& layer,
-        PrVec2 size, PrDrawList* PR_NULLABLE* PR_NONNULL drawn) {
+        PrColorScheme scheme, PrVec2 size, PrDrawList* PR_NULLABLE* PR_NONNULL drawn) {
     *drawn = nullptr;
-    PrDrawSource source = unfilteredSource(compounds, layer, size, drawn);
+    PrDrawSource source = unfilteredSource(compounds, layer, scheme, size, drawn);
     if (layer.filterCount == 0)
         return source;
     PrRect own{0, 0, size.x, size.y};

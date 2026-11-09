@@ -1,6 +1,7 @@
-// The engine's own pages (suite_prax.h). A page is an HTML file in a directory under suites/prax, other than the
-// `shared` directory, which holds what every page uses. Pages are served from the checkout, so a page's resources,
-// including the checkout's fonts, resolve as they do in a browser that opens the file.
+// The engine's own pages (suite_prax.h). A page is an HTML file, a Markdown document or a Mermaid diagram in a
+// directory under suites/prax. The `shared` directory holds resources that every page uses, and has no pages. Pages are
+// served from the checkout, so a page's resources, including the checkout's fonts, resolve as they do when a browser
+// opens the file.
 //
 // The pages come in the order that the index files give (tools/suite/prax/suite.py describes them): the directories as
 // suites/prax/index.txt lists them, and in each directory, its own pages and then each section's pages, as its
@@ -21,6 +22,11 @@ namespace fs = std::filesystem;
 
 fs::path root() {
     return fs::path(PR_SUITES_DIR) / "prax";
+}
+
+// Returns true if a file is a page that the viewer shows: HTML, Markdown, or a Mermaid diagram.
+bool isPage(const std::string& name) {
+    return name.ends_with(".html") || name.ends_with(".md") || name.ends_with(".mmd");
 }
 
 // A line of an index, without its indent, and whether it had one. Blank lines and comments are skipped.
@@ -54,7 +60,7 @@ std::vector<Listed> listed(const fs::path& directory) {
     std::vector<Listed> pages;
     std::string section;
     for (const IndexLine& line : indexLines(directory / "index.txt")) {
-        if (line.text.ends_with(".html")) {
+        if (isPage(line.text)) {
             pages.push_back(Listed{line.text, line.indented ? section : std::string()});
             continue;
         }
@@ -64,14 +70,14 @@ std::vector<Listed> listed(const fs::path& directory) {
     return pages;
 }
 
-// Returns the HTML files of a directory, by name.
-std::vector<std::string> htmlFiles(const fs::path& directory) {
+// Returns the pages of a directory, by name.
+std::vector<std::string> pageFiles(const fs::path& directory) {
     std::vector<std::string> files;
     std::error_code error;
     for (fs::directory_iterator it(directory, error), end; it != end; it.increment(error)) {
         if (error)
             break;
-        if (it->is_regular_file() && it->path().extension() == ".html")
+        if (it->is_regular_file() && isPage(it->path().filename().string()))
             files.push_back(it->path().filename().string());
     }
     std::sort(files.begin(), files.end());
@@ -98,7 +104,8 @@ std::vector<Document> pages() {
     std::vector<Document> documents;
     auto add = [&](const std::string& directory, const std::string& page, const std::string& section) {
         fs::path file = root() / directory / page;
-        Document d{directory + "/" + page, htmlTitle(file), fileSource(file)};
+        std::string title = file.extension() == ".mmd" ? file.stem().string() : htmlTitle(file);
+        Document d{directory + "/" + page, title, fileSource(file)};
         d.folders = {directory};
         if (!section.empty())
             d.folders.push_back(section);
@@ -110,7 +117,7 @@ std::vector<Document> pages() {
             if (fs::is_regular_file(root() / directory / l.page, error) && seen.insert(l.page).second)
                 add(directory, l.page, l.section);
         }
-        for (const std::string& page : htmlFiles(root() / directory)) {
+        for (const std::string& page : pageFiles(root() / directory)) {
             if (!seen.contains(page))
                 add(directory, page, "Not in the index");
         }

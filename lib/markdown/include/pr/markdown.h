@@ -40,12 +40,15 @@ enum {
     // source that starts with "---" is open and has no closing line, no block of it is final.
     PrMarkdownExtensionFlag_FrontMatter = 1u << 11,
 
+    PrMarkdownExtensionFlag_Mermaid = 1u << 12,         // a ```mermaid block is a diagram, as GitHub renders it
+
     PrMarkdownExtensionFlag_Gfm = PrMarkdownExtensionFlag_Tables | PrMarkdownExtensionFlag_TaskLists |
         PrMarkdownExtensionFlag_Strikethrough | PrMarkdownExtensionFlag_Autolinks,
 
-    // What GitHub renders: GFM, footnotes, alerts, heading ids and math
+    // What GitHub renders: GFM, footnotes, alerts, heading ids, math and diagrams
     PrMarkdownExtensionFlag_GitHub = PrMarkdownExtensionFlag_Gfm | PrMarkdownExtensionFlag_Footnotes |
-        PrMarkdownExtensionFlag_Alerts | PrMarkdownExtensionFlag_HeadingIds | PrMarkdownExtensionFlag_Math,
+        PrMarkdownExtensionFlag_Alerts | PrMarkdownExtensionFlag_HeadingIds | PrMarkdownExtensionFlag_Math |
+        PrMarkdownExtensionFlag_Mermaid,
 };
 typedef uint32_t PrMarkdownExtensionFlags;
 
@@ -159,6 +162,7 @@ enum {
     PrMarkdownNodeKind_Alert,
     PrMarkdownNodeKind_FrontMatter,
     PrMarkdownNodeKind_MathBlock,       // a ```math block, whose child is its TeX
+    PrMarkdownNodeKind_MermaidBlock,    // a ```mermaid block, whose child is its diagram's source
 
     // Inlines
     PrMarkdownNodeKind_Text,
@@ -253,7 +257,8 @@ typedef struct PrMarkdownStep {
     uint32_t start;                 // List: the number of an ordered list's first item
     PrStringView text;              // Text
     PrStringView id;                // Heading, with heading ids: the heading's id, which may be empty
-    PrStringView info;              // CodeBlock: the info string of a fenced block, which is empty for any other
+    PrStringView info;              // CodeBlock, MathBlock, MermaidBlock: the info string of a fenced block, which is
+                                    // empty for any other
 
     // Link, Image: the destination, and the title. The destination is not percent-encoded. A link's children are its
     // text, and an image's children are its description.

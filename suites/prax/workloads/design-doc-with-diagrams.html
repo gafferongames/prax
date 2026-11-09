@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<!-- A design document whose diagrams are Mermaid images. Leans on img of type text/vnd.mermaid: a .mmd file, a data: URL as Markdown writes a mermaid fence, a diagram floated at a width that the page sets, and a source that does not parse. Light or dark by the reader's preference, which the diagrams follow. A browser has no such image type, and shows each image's alt text. -->
+<title>Design document with diagrams</title>
+<link rel="stylesheet" href="support/workloads.css" />
+<style>
+html { color-scheme:light dark }
+body { background:light-dark(#eef0f4, #15181d) }
+.doc { background:light-dark(#fff, #1e2228); border:1px solid light-dark(#dcdfe4, #343a42); border-radius:8px; padding:16px 20px; color:light-dark(#24282e, #dfe3e8); font-size:13.5px; line-height:1.55 }
+.doc h1 { font-size:20px; margin-bottom:2px }
+.meta { font-size:10.5px; color:light-dark(#79828e, #9aa3ae); border-bottom:1px solid light-dark(#e7e9ed, #343a42); padding-bottom:6px; margin-bottom:10px }
+.doc h2 { font-size:14px; margin:14px 0 4px; color:light-dark(#1f4f8a, #8cb8ee) }
+.doc p { margin-bottom:8px }
+.diagram { display:block; max-width:100%; margin:6px auto 10px }
+.side { float:right; width:220px; margin:2px 0 8px 14px; border:1px solid light-dark(#e1e4e8, #343a42); border-radius:4px; padding:4px }
+.end { clear:both }
+</style>
+</head>
+<body>
+<div class="doc">
+  <h1>Release automation</h1>
+  <div class="meta">Proposal · Platform team · Last edited by Dana Whitfield</div>
+
+  <h2>Pipeline</h2>
+  <p>Every push builds and runs the tests. A green build deploys to staging and then releases. A red build notifies
+  its author, and nothing deploys.</p>
+  <img class="diagram" src="support/release.mmd"
+    alt="Push, build and test; a green build goes to staging and release, and a red one notifies its author." />
+
+  <h2>Reviews</h2>
+  <img class="side" src="data:text/vnd.mermaid;base64,Zmxvd2NoYXJ0IExSCiAgICBkcmFmdFtEcmFmdF0gLS0+IHJldmlld1tSZXZpZXddIC0tPiBtZXJnZWQoW01lcmdlZF0p"
+    alt="A change goes from draft to review to merged." />
+  <p>A change starts as a draft. Once its author asks for review, it needs one approval from the owning team before it
+  merges. Reviewers are assigned by the paths that the change touches, and a change that touches several teams' paths
+  waits for each of them.</p>
+  <p>Drafts are not built, so that early pushes do not queue behind finished work.</p>
+
+  <h2 class="end">Open questions</h2>
+  <p>The rollback flow is still being drawn, and its diagram does not parse yet.</p>
+  <img class="diagram" src="data:text/vnd.mermaid;base64,Zmxvd2NoYXJ0IExSCiAgICBkcmFmdFtEcmFmdF0gLS0="
+    alt="The rollback flow, whose last link is not finished." />
+</div>
+</body>
+</html>

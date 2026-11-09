@@ -6,6 +6,7 @@ code-listing.html
 comment-thread.html
 dashboard.html
 data-table.html
+design-doc-with-diagrams.html
 documentation.html
 faq.html
 form.html

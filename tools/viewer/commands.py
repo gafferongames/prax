@@ -18,7 +18,7 @@ USAGE = {
 
 def viewer(argv):
     dev.usage(argv, USAGE["viewer"])
-    checkouts.fetch("fonts")
+    checkouts.fetch("fonts", "mermaid")
     mode = argv.pop(0) if argv[:1] in (["debug"], ["release"]) else None
     program = dev.executable(builds.build(mode).directory, "viewer")
     # The other pages of third_party, such as MathFonts' tests, which name their resources from the root, are served

@@ -69,6 +69,9 @@ forms
 
 html-04-the-elements-of-html html/semantics.html
 html-06-user-interaction html/interaction.html
+# Markdown documents, as lib/markdown renders them through HTML (README.md, "Pages that walk no specification").
+markdown
+
 mathml-core mathml-core
 # MathML 4's presentation markup past MathML Core; its other chapters are not walked yet.
 mathml4-03-presentation-markup mathml4/#presentation-markup

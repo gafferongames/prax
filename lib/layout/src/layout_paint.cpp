@@ -987,6 +987,7 @@ struct Painter : LayoutWalkVisitor {
             bool scrolls) {
         // A transform is looked for only if a layer is fixed, since that search walks the box's ancestors.
         int8_t viewportFixed = -1;
+        PrColorScheme scheme = layoutColorStyle(styles, layoutTreeNode(tree, node).style).scheme;
         for (uint32_t i = layers.count; i-- > 0;) {
             const PrLayoutBackgroundLayer& layer = layers.layers[i];
             if (layer.attachment == PrLayoutBackgroundAttachment_Local && scrolls)
@@ -995,8 +996,8 @@ struct Painter : LayoutWalkVisitor {
             if (fixed && viewportFixed < 0)
                 viewportFixed = layers.blends || transformedAround(node) ? 0 : 1;
             if (fixed && viewportFixed == 1)
-                fixedLayer(layer, boxes.boxes[layer.clip]);
-            else if (layoutBackgroundPaintLayer(&styles->compounds, layer, boxes, out()))
+                fixedLayer(layer, scheme, boxes.boxes[layer.clip]);
+            else if (layoutBackgroundPaintLayer(&styles->compounds, layer, scheme, boxes, out()))
                 recorded();
         }
     }
@@ -1013,11 +1014,11 @@ struct Painter : LayoutWalkVisitor {
     // Records a background layer that is fixed to the viewport. The layer is sized and placed in the viewport
     // (css-backgrounds-3/#valdef-background-attachment-fixed), in the viewport's space. It paints within `clip`, which
     // is in the recording's space.
-    void fixedLayer(const PrLayoutBackgroundLayer& layer, PrRect clip) {
+    void fixedLayer(const PrLayoutBackgroundLayer& layer, PrColorScheme scheme, PrRect clip) {
         PrRect viewport{0, 0, prLayoutUnitToPx(tree->viewport.x), prLayoutUnitToPx(tree->viewport.y)};
         LayoutBackgroundBoxes boxes{.boxes = {viewport, viewport, viewport}, .area = viewport};
         PrDrawList* content = prDrawListCreate();
-        if (layoutBackgroundPaintLayer(&styles->compounds, layer, boxes, content))
+        if (layoutBackgroundPaintLayer(&styles->compounds, layer, scheme, boxes, content))
             fixed(content, clip);
         else
             prDrawListRelease(content);
@@ -1091,7 +1092,8 @@ struct Painter : LayoutWalkVisitor {
         for (uint32_t i = layers.count; i-- > 0;) {
             const PrLayoutBackgroundLayer& layer = layers.layers[i];
             if (layer.attachment == PrLayoutBackgroundAttachment_Local &&
-                    layoutBackgroundPaintLayer(&styles->compounds, layer, boxes, out()))
+                    layoutBackgroundPaintLayer(&styles->compounds, layer, layoutColorStyle(styles, n.style).scheme,
+                        boxes, out()))
                 recorded();
         }
         if (layers.blends)
@@ -1814,12 +1816,13 @@ struct Painter : LayoutWalkVisitor {
         return drawing;
     }
 
-    // Returns what the painter of the replaced box `node` draws at `extent`, with a reference the caller holds. The
-    // node caches the drawing for one extent. A fresh recording draws again and bypasses the cache. The roots that the
-    // painter draws are noted as the node's (LayoutTree::rootReaders).
+    // Returns what the painter of the replaced box `node` draws at `extent`, in the box's used color scheme, with a
+    // reference the caller holds. The node caches the drawing for one extent and scheme. A fresh recording draws again
+    // and bypasses the cache. The roots that the painter draws are noted as the node's (LayoutTree::rootReaders).
     PrDrawList* painted(LayoutNodeIndex node, const LayoutReplaced& n, PrLayoutVec extent) {
         bool cached = subs != RecordSubs_Fresh;
-        if (cached && n.content != nullptr && n.painted == extent) {
+        PrColorScheme scheme = layoutColorStyle(styles, layoutTreeNode(tree, node).style).scheme;
+        if (cached && n.content != nullptr && n.painted == extent && n.paintedScheme == scheme) {
             prDrawListRetain(n.content);
             return n.content;
         }
@@ -1830,7 +1833,8 @@ struct Painter : LayoutWalkVisitor {
                 readers.erase(i);
         }
         tree->painting = node;
-        n.painter.paint(n.painter.context, prLayoutVecToPx(extent), drawing);
+        PrLayoutPaintDesc desc{.extent = prLayoutVecToPx(extent), .scheme = scheme};
+        n.painter.paint(n.painter.context, &desc, drawing);
         tree->painting = kPrLayoutNodeNone;
         prDrawListFreeze(drawing);
         if (cached) {
@@ -1838,6 +1842,7 @@ struct Painter : LayoutWalkVisitor {
             prDrawListRetain(drawing);
             n.content = drawing;
             n.painted = extent;
+            n.paintedScheme = scheme;
         }
         return drawing;
     }

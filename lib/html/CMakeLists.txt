@@ -18,6 +18,7 @@ pr_library(html INCLUDE include
     src/html_image_source.cpp
     src/html_link.cpp
     src/html_markdown.cpp
+    src/html_mermaid.cpp
     src/html_parser.cpp
     src/html_serialize.cpp
     src/html_storage.cpp
@@ -34,7 +35,8 @@ target_link_libraries(pr_html PUBLIC prax::text_edit prax::unicode prax::audio
                                       prax::app prax::color prax::canvas prax::gpu prax::charset prax::css prax::dom
                                       prax::fetch prax::svg prax::url prax::image prax::media prax::draw prax::layout
                                      prax::markdown prax::storage prax::task
-                              PRIVATE prax::core_cpp prax::mathml prax::net prax::html_entity prax::text prax::locale prax::mime)
+                              PRIVATE prax::core_cpp prax::mathml prax::mermaid prax::net prax::html_entity prax::text
+                                      prax::locale prax::mime)
 
 if (PR_JS)
     pr_library(html_quickjs INCLUDE quickjs/include

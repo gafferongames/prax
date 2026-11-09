@@ -7,6 +7,7 @@
 
 #include "tools/viewer/source_html.h"
 #include "tools/viewer/source_lottie.h"
+#include "tools/viewer/source_mermaid.h"
 #include "tools/viewer/source_pdf.h"
 #include "tools/viewer/source_rlottie.h"
 #include "tools/viewer/suite_lottie.h"
@@ -81,6 +82,7 @@ struct Loaded {
     // What the source's type loaded: the member for its type, which is null if the source did not load.
     std::shared_ptr<HtmlSource> html;
     std::shared_ptr<LottieSource> lottie;
+    std::shared_ptr<MermaidSource> mermaid;
     std::shared_ptr<RlottieSource> rlottie;
     std::shared_ptr<PdfSource> pdf;
 };
@@ -97,6 +99,8 @@ Source fileSource(const fs::path& path, const fs::path& settings) {
     std::string extension = path.extension().string();
     if (extension == ".json")
         return Source{.type = SourceType_Lottie, .path = path, .settings = settings};
+    if (extension == ".mmd")
+        return Source{.type = SourceType_Mermaid, .path = path};
     if (extension == ".png")
         return Source{.path = imagePage(path)};
     return Source{.path = path, .settings = settings};
@@ -177,6 +181,8 @@ Reference browserReference(const Source& source) {
             return Reference{"Browser", {}, htmlBrowserUrl(source.path, source.query), {}, source.path.extension() != ".svg"};
         case SourceType_Lottie:
             return Reference{"lottie-web", {}, lottiePlayerUrl("player.html", source.path)};
+        case SourceType_Mermaid:
+            return Reference{"mermaid.js", {}, mermaidPageUrl(source.path)};
         case SourceType_Rlottie:
         case SourceType_Pdf:
             break;
@@ -250,6 +256,9 @@ std::shared_ptr<Loaded> load(const Source& source, TextBackends text, page_host:
         case SourceType_Lottie:
             loaded->lottie = loadLottie(source.path, source.settings, textShaper, text.hinting, hinterOf(text.hinting));
             break;
+        case SourceType_Mermaid:
+            loaded->mermaid = loadMermaid(source.path, textShaper, text.hinting, hinterOf(text.hinting));
+            break;
         case SourceType_Rlottie:
             loaded->rlottie = loadRlottie(source.path);
             break;
@@ -294,6 +303,8 @@ void draw(Loaded& loaded, PrDrawList* list, float width, float height, const PrA
         drawHtml(*loaded.html, list, width, height, display, preferences);
     else if (loaded.lottie != nullptr)
         drawLottie(*loaded.lottie, list, PrVec2{width, height}, loaded.frame);
+    else if (loaded.mermaid != nullptr)
+        drawMermaid(*loaded.mermaid, list, PrVec2{width, height}, preferences.colorScheme);
     else if (loaded.pdf != nullptr)
         drawPdf(*loaded.pdf, list, width, height, display.pixelRatio);
 }

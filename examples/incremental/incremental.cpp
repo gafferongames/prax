@@ -639,7 +639,8 @@ void advance(Stream& s, double delta) {
 // The controls
 
 // Draws the page that the context, a frozen draw list, holds, clipped to the pane.
-void paintPage(void* PR_NULLABLE context, PrVec2 extent, PrDrawList* list) {
+void paintPage(void* PR_NULLABLE context, const PrLayoutPaintDesc* desc, PrDrawList* list) {
+    PrVec2 extent = desc->extent;
     prDrawListPushClipRect(list, PrRect{0, 0, extent.x, extent.y}, PrDrawEdges_Aliased);
     prDrawListEmbed(list, static_cast<PrDrawList*>(context), PrDVec2{0, 0});
     prDrawListPopClip(list);

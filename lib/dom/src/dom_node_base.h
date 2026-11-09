@@ -92,8 +92,8 @@ struct DomElementState {
     PrImageOrientation orientation;
     const PrDrawImage* PR_NULLABLE storedPicture;
 
-    // What draws the element's content at the size shown, in place of `picture`: an SVG image of the current request,
-    // or a canvas's bitmap; and the revision of what it draws (PrLayoutContent::revision).
+    // What draws the element's content at the size shown, in place of `picture`: an SVG image or a diagram of the
+    // current request, or a canvas's bitmap; and the revision of what it draws (PrLayoutContent::revision).
     PrLayoutPainter vector;
     uint64_t vectorRevision;
     PrLayoutNaturalSize vectorNatural;                  // the SVG image's natural dimensions

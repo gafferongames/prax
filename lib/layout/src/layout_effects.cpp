@@ -598,8 +598,8 @@ PrVec2 naturalOf(const PrLayoutBackgroundLayer& image, PrVec2 fallback) {
 // its image placed in the border image area, the border box grown by the outsets, as border-image places them
 // (css-backgrounds-3/#border-image-process). The middle masks nothing unless the slices fill it. `border` is the box's
 // border box and `widths` its border's widths.
-bool drawBorder(const LayoutCompounds* compounds, const PrLayoutMaskBorder& b, PrRect border, const float* widths,
-        DrawnLayer* out) {
+bool drawBorder(const LayoutCompounds* compounds, const PrLayoutMaskBorder& b, PrColorScheme scheme, PrRect border,
+        const float* widths, DrawnLayer* out) {
     out->mode = b.mode;
     out->space = PrColorSpace_Srgb;
     auto edgeOf = [&](PrLayoutBorderImageKind kind, PrLayoutLength length, float number, float base, uint32_t side) -> float {
@@ -644,7 +644,7 @@ bool drawBorder(const LayoutCompounds* compounds, const PrLayoutMaskBorder& b, P
     slices.vertical = b.vertical;
     slices.center = b.fill;
     PrDrawList* drawn = nullptr;
-    PrDrawSource source = layoutImageSource(compounds, b.image, natural, &drawn);
+    PrDrawSource source = layoutImageSource(compounds, b.image, scheme, natural, &drawn);
     out->list = prDrawListCreate();
     prDrawListNineSlice(out->list, source, &slices, area, PrDrawSampling_Linear, PrDrawPaint{.color = PR_COLOR16(1, 1, 1, 1)});
     if (!b.fill) {
@@ -662,8 +662,8 @@ bool drawBorder(const LayoutCompounds* compounds, const PrLayoutMaskBorder& b, P
 
 // Draws a mask layer of an image into a list of its own, placed as a background layer in `boxes`. A layer that is not
 // clipped paints over `ink`.
-void drawImageLayer(const LayoutCompounds* compounds, const PrLayoutMaskLayer& layer, LayoutBackgroundBoxes boxes,
-        PrRect ink, DrawnLayer* out) {
+void drawImageLayer(const LayoutCompounds* compounds, const PrLayoutMaskLayer& layer, PrColorScheme scheme,
+        LayoutBackgroundBoxes boxes, PrRect ink, DrawnLayer* out) {
     out->mode = layer.mode == PrLayoutMaskMode_Luminance ? PrDrawMaskMode_Luminance : PrDrawMaskMode_Alpha;
     out->space = PrColorSpace_Srgb;
     boxes.area = layer.unclipped ? ink : PrRect{};
@@ -673,7 +673,7 @@ void drawImageLayer(const LayoutCompounds* compounds, const PrLayoutMaskLayer& l
     PrLayoutBackgroundLayer image = layer.image;
     image.attachment = PrLayoutBackgroundAttachment_Scroll;
     out->list = prDrawListCreate();
-    layoutBackgroundPaintLayer(compounds, image, boxes, out->list);
+    layoutBackgroundPaintLayer(compounds, image, scheme, boxes, out->list);
 }
 
 // Combines the drawn layers, from the top layer down, and a border, into one mask (css-masking-1/#layering): each
@@ -731,9 +731,10 @@ bool combine(RawArray<DrawnLayer>& layers, const RawArray<PrDrawComposite>& oper
     return true;
 }
 
-// Resolves the mask at `index` into `out`. Returns false if the box draws nothing.
-bool resolveMask(const LayoutTree* tree, PrLayoutMaskIndex index, const LayoutBackgroundBoxes& boxes, PrRect ink,
-        const float* widths, LayoutResolvedEffects* out) {
+// Resolves the mask at `index` of a box whose used color scheme is `scheme` into `out`. Returns false if the box draws
+// nothing.
+bool resolveMask(const LayoutTree* tree, PrLayoutMaskIndex index, PrColorScheme scheme,
+        const LayoutBackgroundBoxes& boxes, PrRect ink, const float* widths, LayoutResolvedEffects* out) {
     const LayoutStyles* styles = tree->styles;
     const LayoutEffectEntry& entry = layoutEffectAt(&styles->effectLists, LayoutEffectKind_Mask, index);
     const PrLayoutMask& mask = entry.mask;
@@ -761,14 +762,14 @@ bool resolveMask(const LayoutTree* tree, PrLayoutMaskIndex index, const LayoutBa
                 drawn.list = nullptr;
             }
         } else {
-            drawImageLayer(&styles->compounds, layer, boxes, ink, &drawn);
+            drawImageLayer(&styles->compounds, layer, scheme, boxes, ink, &drawn);
         }
         layers.push(drawn);
         operators.push(layerOperator(layer.composite));
     }
     DrawnLayer drawnBorder{};
     bool bordered = draws && mask.border.image.kind != PrLayoutImageKind_None &&
-        drawBorder(&styles->compounds, mask.border, border, widths, &drawnBorder);
+        drawBorder(&styles->compounds, mask.border, scheme, border, widths, &drawnBorder);
     DrawnLayer combined{};
     if (draws && (layers.count != 0 || bordered))
         draws = combine(layers, operators, bordered ? &drawnBorder : nullptr, &combined);
@@ -1202,7 +1203,8 @@ bool layoutEffectsResolve(const LayoutTree* tree, LayoutNodeIndex node, const La
         }
         default: break;
     }
-    if (c.mask != kPrLayoutMaskNone && !resolveMask(tree, c.mask, boxes.boxes, ink, boxes.widths, out)) {
+    PrColorScheme scheme = layoutColorStyle(styles, style).scheme;
+    if (c.mask != kPrLayoutMaskNone && !resolveMask(tree, c.mask, scheme, boxes.boxes, ink, boxes.widths, out)) {
         layoutEffectsReset(out);
         out->hidden = true;
         return true;

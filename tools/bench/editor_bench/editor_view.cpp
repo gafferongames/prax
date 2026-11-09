@@ -482,7 +482,8 @@ void buildProjectPanel(PrKit* kit, PrLayoutNode parent, EditorState& editor) {
 // --- Viewport ---
 
 // Draws the viewport's grid over its content box.
-void paintGrid(void* context, PrVec2 size, PrDrawList* list) {
+void paintGrid(void* context, const PrLayoutPaintDesc* desc, PrDrawList* list) {
+    PrVec2 size = desc->extent;
     const EditorState& editor = *static_cast<const EditorState*>(context);
     prDrawListRect(list, PrRect{0, 0, size.x, size.y}, {.color = PrColor{5 / 255.0f, 6 / 255.0f, 7 / 255.0f, 1}});
     if (!editor.grid)

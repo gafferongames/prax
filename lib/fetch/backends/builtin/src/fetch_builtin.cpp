@@ -1140,6 +1140,7 @@ constexpr FileType kFileTypes[] = {
     {"json", "application/json"},
     {"md", "text/markdown"},
     {"markdown", "text/markdown"},
+    {"mmd", "text/vnd.mermaid"},
     {"txt", "text/plain"},
     {"png", "image/png"},
     {"jpg", "image/jpeg"},

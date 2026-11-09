@@ -97,19 +97,21 @@ void layoutBackgroundDrawGradient(const LayoutCompounds* PR_NULLABLE compounds, 
 // mask of PrLayoutBackgroundBox bits, are given their shapes, since insetting a shape costs more than its use.
 void layoutBackgroundRound(LayoutBackgroundBoxes& boxes, const PrCornerRect& border, uint32_t used);
 
-// Records the background layer `layer`. It is sized and placed in the box that its origin names, and painted within the
-// box that its clip names, with its blend mode and operator. Returns true if anything was recorded.
+// Records the background layer `layer` of a box whose used color scheme is `scheme`. It is sized and placed in the box
+// that its origin names, and painted within the box that its clip names, with its blend mode and operator. Returns true
+// if anything was recorded.
 bool layoutBackgroundPaintLayer(const LayoutCompounds* compounds, const PrLayoutBackgroundLayer& layer,
-    const LayoutBackgroundBoxes& boxes, PrDrawList* list);
+    PrColorScheme scheme, const LayoutBackgroundBoxes& boxes, PrDrawList* list);
 
 // Copies the filter items of `image` into `filters` from `next`, points the image at the copy, and advances `next`.
 void layoutImageTakeFilters(PrLayoutBackgroundLayer& image, PrLayoutFilter* PR_NULLABLE filters, uint32_t* next);
 
 // Returns the source of the image of `layer` drawn at its concrete object size `size`, in pixels, filtered by its
-// filter list. The source covers the rectangle from the origin to `size`, or the image's own extent if it is unfiltered
-// and is scaled to `size`. A list that the source reads may be written to `drawn`, which the caller releases.
+// filter list. A painter draws it in `scheme`. The source covers the rectangle from the origin to `size`, or the
+// image's own extent if it is unfiltered and is scaled to `size`. A list that the source reads may be written to
+// `drawn`, which the caller releases.
 PrDrawSource layoutImageSource(const LayoutCompounds* PR_NULLABLE compounds, const PrLayoutBackgroundLayer& layer,
-    PrVec2 size, PrDrawList* PR_NULLABLE* PR_NONNULL drawn);
+    PrColorScheme scheme, PrVec2 size, PrDrawList* PR_NULLABLE* PR_NONNULL drawn);
 
 // Returns true if one of `count` layers composites onto the layers below it otherwise than normally and source-over, so
 // that the background is an isolated group (compositing-1/#background-blend-mode).

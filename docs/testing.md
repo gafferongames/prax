@@ -162,10 +162,10 @@ Math has two visual suites, which set formulas beside images of TeX's setting of
 eyeasme` checks out both. Mozilla's MathML torture test in MathFonts names its scripts and fonts from the root, so it
 is probed with a root (`./dev.sh probe third_party/MathFonts/mozilla_mathml_test/index.html --root third_party --query
 fontFamily=NewComputerModern`). The other is eyeasme.com's MathML browser test
-(`third_party/eyeasme/MathML_browser_test.html`). `lib/tex/tests/mathematics.md` is a sample of real mathematics in
-TeX, which pr_shell renders through lib/markdown. The viewer's MathML collection holds all three. It lists the torture
-test once for each of MathFonts' math fonts, loaded from a server of `third_party` that `./dev.sh viewer` runs beside
-it, and each of eyeasme's formulas beside its image of TeX's setting.
+(`third_party/eyeasme/MathML_browser_test.html`). The viewer's MathML collection holds both. It lists the torture test
+once for each of MathFonts' math fonts, loaded from a server of `third_party` that `./dev.sh viewer` runs beside it,
+and each of eyeasme's formulas beside its image of TeX's setting. `suites/prax/markdown` holds real mathematics in TeX,
+which renders through lib/markdown.
 
 ## Our pages (`suites/prax`)
 

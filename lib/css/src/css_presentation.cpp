@@ -2514,6 +2514,7 @@ PrLayoutStyleIndex project(PrCssPresentation* r, const CssComputedStyle* style, 
     PrColor currentColor = colors.current;
     PrLayoutColorStyle color = prLayoutColorStyleDefault();
     color.color = prColor16FromColor(currentColor);
+    color.scheme = cssUsesDarkScheme(style, environment) ? PrColorScheme_Dark : PrColorScheme_Light;
     bool visible = cssComputedFirstKeyword(style, PrCssProperty_Visibility) == PrCssKeyword_Visible;
     color.visibility = visible ? PrLayoutVisibility_Visible : PrLayoutVisibility_Hidden;
     bool hideCells = cssComputedFirstKeyword(style, PrCssProperty_EmptyCells) == PrCssKeyword_Hide;

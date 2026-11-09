@@ -714,6 +714,7 @@ void canvasLayers(LayoutTree* tree, const LayoutFragment* root, PrLayoutRect bor
     PrLayoutStyleIndex style = layoutTreeNode(tree, root->node).style;
     const PrLayoutDecorationStyle& decoration = layoutDecorationStyle(tree->styles, style);
     const LayoutBackground& layers = layoutBackgroundAt(&tree->styles->backgrounds, decoration.backgroundLayers);
+    PrColorScheme scheme = layoutColorStyle(tree->styles, style).scheme;
     LayoutBackgroundBoxes boxes = layoutBackgroundBoxes(tree->styles, root, layoutBoxStyle(tree->styles, style),
         prLayoutRectToPx(border));
     boxes.area = prLayoutRectToPx(canvas);
@@ -725,7 +726,7 @@ void canvasLayers(LayoutTree* tree, const LayoutFragment* root, PrLayoutRect bor
         prDrawListPushGroup(list, &group);
         prDrawListRect(list, boxes.area, {.color = decoration.background, .edges = PrDrawEdges_Snapped});
         for (uint32_t i = layers.count; i-- > 0;)
-            layoutBackgroundPaintLayer(&tree->styles->compounds, layers.layers[i], boxes, list);
+            layoutBackgroundPaintLayer(&tree->styles->compounds, layers.layers[i], scheme, boxes, list);
         prDrawListPopGroup(list);
         prDrawListFreeze(list);
         runs.push(LayoutSceneCanvasRun{list, false});
@@ -743,8 +744,8 @@ void canvasLayers(LayoutTree* tree, const LayoutFragment* root, PrLayoutRect bor
             runs.push(LayoutSceneCanvasRun{prDrawListCreate(), fixed});
             open = false;
         }
-        bool drew =
-            layoutBackgroundPaintLayer(&tree->styles->compounds, layer, fixed ? fixedBoxes : boxes, runs.last().list);
+        bool drew = layoutBackgroundPaintLayer(&tree->styles->compounds, layer, scheme, fixed ? fixedBoxes : boxes,
+            runs.last().list);
         if (!drew && !open) {
             prDrawListRelease(runs.last().list);
             runs.pop();

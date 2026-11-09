@@ -177,6 +177,7 @@ struct SvgViewportShape {
 struct SvgPicture {
     const PrDrawImage* PR_NULLABLE raster;  // arranged as its orientation displays it
     const SvgImage* PR_NULLABLE svg;
+    PrColorScheme scheme;                   // the used color scheme of the element that shows it, which `svg` draws in
 };
 
 // An image element's positioning rectangle and what it shows there (SVG2/embedded.html#Placement). A width or a height

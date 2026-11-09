@@ -635,6 +635,8 @@ void readEffects(SvgBuilder& b, SvgNodeIndex index, const CssComputedStyle* styl
             const SvgImageSource& source = b.build->images;
             if (source.load != nullptr)
                 source.load(source.context, element, url, &layer.picture);
+            bool dark = cssUsesDarkScheme(style, b.build->environment);
+            layer.picture.scheme = dark ? PrColorScheme_Dark : PrColorScheme_Light;
         } else if (cssIsGradient(image)) {
             layer.kind = SvgMaskLayerKind_Gradient;
             readGradient(b, style, image, &layer);
@@ -1311,6 +1313,7 @@ SvgImageShape imageShapeOf(SvgBuilder& b, const PrDomElement* e, const CssComput
     const SvgImageSource& images = b.build->images;
     if (href.size != 0 && images.load != nullptr)
         images.load(images.context, e, href, &shape.picture);
+    shape.picture.scheme = cssUsesDarkScheme(style, b.build->environment) ? PrColorScheme_Dark : PrColorScheme_Light;
     return shape;
 }
 

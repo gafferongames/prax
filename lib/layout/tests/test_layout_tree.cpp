@@ -1801,7 +1801,8 @@ TEST_CASE("a painter draws a replaced box's content for its content box's size, 
     } painted;
     PrLayoutContent content{};
     content.kind = PrLayoutContentKind_Painter;
-    content.painter.paint = [](void* PR_NULLABLE context, PrVec2 extent, PrDrawList* list) {
+    content.painter.paint = [](void* PR_NULLABLE context, const PrLayoutPaintDesc* desc, PrDrawList* list) {
+        PrVec2 extent = desc->extent;
         Painted* p = static_cast<Painted*>(context);
         ++p->calls;
         p->extent = extent;
@@ -1834,6 +1835,45 @@ TEST_CASE("a painter draws a replaced box's content for its content box's size, 
     render(f.tree, 40, 40);
     CHECK(painted.calls == 3);
     // Verifying the tree's caches draws again from scratch, and finds the same drawing.
+    CHECK(verified(f.tree));
+}
+
+TEST_CASE("a painter draws in its box's color scheme, and draws again when only the scheme changes") {
+    Fixture f;
+    PrLayoutNode root = f.element(kPrLayoutNodeNone, block());
+    PrLayoutBoxStyle box = block();
+    box.width = prLayoutLengthPx(40);
+    box.height = prLayoutLengthPx(20);
+    // The record of the box in `scheme`.
+    auto styleIn = [&](PrColorScheme scheme) {
+        PrLayoutStyle record = prLayoutStyleDefault();
+        record.groups[PrLayoutGroup_Box] = prLayoutBoxStyleIntern(f.tree, &box);
+        PrLayoutColorStyle color = prLayoutColorStyleDefault();
+        color.scheme = scheme;
+        record.groups[PrLayoutGroup_Color] = prLayoutColorStyleIntern(f.tree, &color);
+        return prLayoutStyleIntern(f.tree, &record);
+    };
+    PrLayoutNode node = prLayoutNodeCreateReplaced(f.tree, root, styleIn(PrColorScheme_Light));
+    prLayoutNodeSetNaturalSize(f.tree, node, prLayoutNaturalSizeNone());
+    // It fills its box white in a light scheme and black in a dark one, and counts its calls.
+    struct Painted {
+        uint32_t calls = 0;
+    } painted;
+    PrLayoutContent content{};
+    content.kind = PrLayoutContentKind_Painter;
+    content.painter.paint = [](void* PR_NULLABLE context, const PrLayoutPaintDesc* desc, PrDrawList* list) {
+        ++static_cast<Painted*>(context)->calls;
+        float shade = desc->scheme == PrColorScheme_Dark ? 0.0f : 1.0f;
+        prDrawListRect(list, PrRect{0, 0, desc->extent.x, desc->extent.y}, {.color = PrColor{shade, shade, shade, 1}});
+    };
+    content.painter.context = &painted;
+    prLayoutNodeSetContent(f.tree, node, &content);
+    f.layout(px(40, 40));
+    CHECK(pixel(render(f.tree, 40, 40), 40, 10, 10) == "255 255 255 255");
+    prLayoutNodeSetStyle(f.tree, node, styleIn(PrColorScheme_Dark));
+    f.layout(px(40, 40));
+    CHECK(pixel(render(f.tree, 40, 40), 40, 10, 10) == "0 0 0 255");
+    CHECK(painted.calls == 2);
     CHECK(verified(f.tree));
 }
 
@@ -1902,7 +1942,7 @@ TEST_CASE("a painter draws another root in a replaced box's content, and draws a
     } host{f.tree, hosted, 0};
     PrLayoutContent content{};
     content.kind = PrLayoutContentKind_Painter;
-    content.painter.paint = [](void* PR_NULLABLE context, PrVec2, PrDrawList* list) {
+    content.painter.paint = [](void* PR_NULLABLE context, const PrLayoutPaintDesc*, PrDrawList* list) {
         Host* h = static_cast<Host*>(context);
         ++h->calls;
         prLayoutNodeDraw(h->tree, h->root, list);

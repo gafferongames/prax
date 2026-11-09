@@ -313,6 +313,7 @@ const char* contentTypeOf(const std::filesystem::path& file) {
         {".svg", "image/svg+xml"},
         {".md", "text/markdown"},
         {".markdown", "text/markdown"},
+        {".mmd", "text/vnd.mermaid"},
         {".xml", "application/xml"},
         {".css", "text/css"},
         {".js", "text/javascript"},

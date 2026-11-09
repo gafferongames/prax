@@ -351,7 +351,8 @@ TEST_CASE("a bitmap on a device is drawn by the renderer that presents it there,
     PrCanvasPresentation presentation = prCanvasPresent(canvas, PrDrawSampling_Nearest);
     REQUIRE(presentation.painter.paint != nullptr);
     PrDrawList* list = prDrawListCreate();
-    presentation.painter.paint(presentation.painter.context, PrVec2{8, 8}, list);
+    PrLayoutPaintDesc paintDesc{.extent = PrVec2{8, 8}};
+    presentation.painter.paint(presentation.painter.context, &paintDesc, list);
     prDrawListFreeze(list);
     PrGpuTexture target{};
     PrGpuTextureDesc targetDesc = prGpuTextureDesc2d(prGpuFormatFromPixelFormat(PrPixelFormat_Rgba8), PrUVec2{8, 8},
@@ -423,7 +424,8 @@ TEST_CASE("a bitmap on a device reads back what the context drew before any pres
     PrCanvasPresentation presentation = prCanvasPresent(canvas, PrDrawSampling_Nearest);
     REQUIRE(presentation.painter.paint != nullptr);
     PrDrawList* list = prDrawListCreate();
-    presentation.painter.paint(presentation.painter.context, PrVec2{8, 8}, list);
+    PrLayoutPaintDesc paintDesc{.extent = PrVec2{8, 8}};
+    presentation.painter.paint(presentation.painter.context, &paintDesc, list);
     prDrawListFreeze(list);
     PrDrawFrame* frame = prDrawFrameCreate(renderer);
     PrGpuCommands* commands = nullptr;

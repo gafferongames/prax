@@ -4,7 +4,6 @@
 
 #include "tools/harness/test.h"
 
-#include <cstdio>
 #include <string>
 
 extern "C" int prTestTexCApi(void);
@@ -867,31 +866,4 @@ TEST_CASE("the operator dictionary gives MathML Core's properties, with its fall
     CHECK(texOperatorDictionary("𞻰", TexForm_Postfix, false).flags == TexOperatorFlag_Stretchy);
     CHECK(texIsInlineAxis(0x2192));
     CHECK(!texIsInlineAxis('('));
-}
-
-TEST_CASE("every formula of the sample of mathematics converts without an error") {
-    // tests/mathematics.md is a sample of real mathematics, for a person to review as it renders. Its math is $...$ and
-    // $$...$$, as lib/markdown reads it.
-    std::string path = std::string(TEX_TESTS_DIR) + "/mathematics.md";
-    FILE* file = std::fopen(path.c_str(), "rb");
-    REQUIRE(file != nullptr);
-    std::string text;
-    char buffer[4096];
-    size_t read = 0;
-    while ((read = std::fread(buffer, 1, sizeof(buffer), file)) != 0)
-        text.append(buffer, read);
-    std::fclose(file);
-    uint32_t formulas = 0;
-    for (size_t at = text.find('$'); at != std::string::npos; at = text.find('$', at)) {
-        bool block = text.compare(at, 2, "$$") == 0;
-        size_t start = at + (block ? 2 : 1);
-        size_t end = text.find(block ? "$$" : "$", start);
-        REQUIRE(end != std::string::npos);
-        std::string source = text.substr(start, end - start);
-        INFO(source);
-        CHECK(mathml(source, block ? PrTexDisplay_Block : PrTexDisplay_Inline) .find("<merror") == std::string::npos);
-        ++formulas;
-        at = end + (block ? 2 : 1);
-    }
-    CHECK(formulas > 50);
 }

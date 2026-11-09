@@ -172,13 +172,14 @@ struct LayoutReplaced {
     PrLayoutNaturalSize natural;
 
     // What it draws: a list, or the drawing of a painter, which it holds a reference to; the painter, whose context it
-    // holds a reference to if the painter shares it; the image, which it holds a reference to; and the extent that a
-    // painter's drawing is for, the size that fitting gives it.
+    // holds a reference to if the painter shares it; the image, which it holds a reference to; and the extent and the
+    // color scheme that a painter's drawing is for, the size that fitting gives it and the box's used scheme.
     PrLayoutContentKind contentKind;
     mutable PrDrawList* PR_NULLABLE content;
     PrLayoutPainter painter;
     const PrDrawImage* PR_NULLABLE image;
     mutable PrLayoutVec painted;
+    mutable PrColorScheme paintedScheme;
     float limit;                      // Image: the brightest that the image paints (PrLayoutContent::limit)
     PrLayoutImageRendering rendering; // Image
     uint64_t embed;                   // Embed: its id

@@ -706,6 +706,10 @@ void fillStep(const Markdown* document, const MarkdownTopBlock& block, const Mar
             break;
         case PrMarkdownNodeKind_MathBlock:
             step->display = true;
+            step->info = view(values.info);
+            break;
+        case PrMarkdownNodeKind_MermaidBlock:
+            step->info = view(values.info);
             break;
         case PrMarkdownNodeKind_List:
             step->list = values.list;

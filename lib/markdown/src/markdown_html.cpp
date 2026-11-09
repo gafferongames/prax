@@ -4,7 +4,9 @@
 
 #include "pr/ascii.h"
 #include "pr/assert.h"
+#include "pr/base64.h"
 #include "pr/count_of.h"
+#include "pr/memory.h"
 #include "pr/raw_array.h"
 #include "pr/tex.h"
 #include "pr/text_buffer.h"
@@ -103,8 +105,10 @@ struct Writer {
 
     bool inFrontMatter;             // true while the steps of front matter, which has no HTML, are walked
 
-    bool inMath;                                      // true while the steps of math are walked
-    PrTextBuffer tex;                                 // the TeX of the math being walked
+    // True while the steps of math or a diagram are walked, and the TeX or the diagram's source that their text holds.
+    bool inSource;
+    PrTextBuffer source;
+
     RawArray<PrMarkdownHtmlAttribute> mathAttributes; // the attributes of the MathML start tag being written
 };
 
@@ -276,6 +280,25 @@ void endWaitingParagraph(Writer* w) {
     text(w, "\n");
 }
 
+// Writes a Mermaid diagram as an image in a paragraph: its source as a data: URL of type text/vnd.mermaid, encoded in
+// base64, and its source again as its alt text, which a reader sees where the image is not drawn.
+void writeDiagram(Writer* w, PrStringView source) {
+    start(w, "p");
+    PrTextBuffer url = {};
+    prTextBufferAppend(&url, "data:text/vnd.mermaid;base64,");
+    size_t size = prBase64EncodedSize(source.size);
+    char* encoded = static_cast<char*>(prMemoryAlloc(size));
+    prBase64Encode(source, encoded, size);
+    prTextBufferAppend(&url, PrStringView{encoded, size});
+    prMemoryFree(encoded);
+    Tag img = startTag(w, "img", true);
+    attribute(w, &img, "src", prTextBufferView(&url));
+    attribute(w, &img, "alt", source);
+    writeTag(w, img);
+    prTextBufferReset(&url);
+    end(w, "p");
+}
+
 // Writes the MathML of the TeX `tex` as events. Each formula is typeset alone, so a definition in one does not reach
 // the next, and a block's HTML depends only on the block.
 void writeMath(Writer* w, PrStringView tex, bool display) {
@@ -353,16 +376,21 @@ void writeStep(void* PR_NULLABLE context, const PrMarkdownStep* step) {
         }
         return;
     }
-    // Math's TeX is the text of its children, which becomes MathML when the math ends.
-    if (w->inMath) {
+    // Math's TeX is the text of its children, which becomes MathML when the math ends. A diagram's source becomes its
+    // image in the same way.
+    if (w->inSource) {
         if (step->kind == PrMarkdownStepKind_Text) {
-            prTextBufferAppend(&w->tex, step->text);
+            prTextBufferAppend(&w->source, step->text);
             return;
         }
-        if ((step->node == PrMarkdownNodeKind_Math || step->node == PrMarkdownNodeKind_MathBlock) && !enter) {
-            w->inMath = false;
-            writeMath(w, prTextBufferView(&w->tex), step->display);
-            if (step->node == PrMarkdownNodeKind_MathBlock)
+        bool math = step->node == PrMarkdownNodeKind_Math || step->node == PrMarkdownNodeKind_MathBlock;
+        if ((math || step->node == PrMarkdownNodeKind_MermaidBlock) && !enter) {
+            w->inSource = false;
+            if (math)
+                writeMath(w, prTextBufferView(&w->source), step->display);
+            else
+                writeDiagram(w, prTextBufferView(&w->source));
+            if (step->node != PrMarkdownNodeKind_Math)
                 text(w, "\n");
         }
         return;
@@ -549,11 +577,12 @@ void writeStep(void* PR_NULLABLE context, const PrMarkdownStep* step) {
         }
         case PrMarkdownNodeKind_Math:
         case PrMarkdownNodeKind_MathBlock:
+        case PrMarkdownNodeKind_MermaidBlock:
             if (enter) {
-                if (step->node == PrMarkdownNodeKind_MathBlock)
+                if (step->node != PrMarkdownNodeKind_Math)
                     cr(w);
-                prTextBufferClear(&w->tex);
-                w->inMath = true;
+                prTextBufferClear(&w->source);
+                w->inSource = true;
             }
             break;
         case PrMarkdownNodeKind_Highlight:
@@ -684,7 +713,7 @@ void writeStep(void* PR_NULLABLE context, const PrMarkdownStep* step) {
 void writerReset(Writer* w) {
     prTextBufferReset(&w->values);
     prTextBufferReset(&w->description);
-    prTextBufferReset(&w->tex);
+    prTextBufferReset(&w->source);
     w->mathAttributes.reset();
 }
 

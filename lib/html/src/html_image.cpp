@@ -2,6 +2,7 @@
 
 #include "pr/ascii.h"
 #include "pr/integer.h"
+#include "pr/mime.h"
 #include "pr/string_ops.h"
 
 namespace pr_impl {
@@ -150,9 +151,8 @@ bool svgSize(PrStringView text, uint32_t* width, uint32_t* height) {
     return true;
 }
 
-} // namespace
-
-bool htmlImageSize(PrStringView bytes, uint32_t* width, uint32_t* height) {
+// Returns true if `bytes` are a raster image whose header the engine reads, and writes the size that it records.
+bool imageSize(PrStringView bytes, uint32_t* width, uint32_t* height) {
     const uint8_t* data = reinterpret_cast<const uint8_t*>(bytes.data);
     size_t size = bytes.size;
     *width = 0;
@@ -191,13 +191,19 @@ bool htmlImageSize(PrStringView bytes, uint32_t* width, uint32_t* height) {
         *height = data[7] != 0 ? data[7] : 256;
         return true;
     }
-    return svgSize(bytes, width, height);
+    return false;
 }
 
-bool htmlImageIsSvg(PrStringView bytes) {
-    uint32_t width = 0;
-    uint32_t height = 0;
-    return svgSize(bytes, &width, &height);
+} // namespace
+
+HtmlImageKind htmlImageKind(PrStringView type, PrStringView bytes, uint32_t* width, uint32_t* height) {
+    *width = 0;
+    *height = 0;
+    if (prAsciiEqualsFold(prMimeTypeEssence(type), "text/vnd.mermaid"))
+        return HtmlImageKind_Diagram;
+    if (svgSize(bytes, width, height))
+        return HtmlImageKind_Svg;
+    return imageSize(bytes, width, height) ? HtmlImageKind_Raster : HtmlImageKind_None;
 }
 
 } // namespace pr_impl

@@ -154,12 +154,6 @@ std::vector<Document> mathml() {
         for (Document& d : eyeasme(eyeasmeCheckout))
             documents.push_back(std::move(d));
     }
-    fs::path sample = fs::path(PR_TEX_TESTS_DIR) / "mathematics.md";
-    if (fs::is_regular_file(sample, error)) {
-        Document d{"tex/mathematics.md", "Real mathematics in TeX, through lib/tex and Markdown", fileSource(sample)};
-        d.folders = {"TeX"};
-        documents.push_back(std::move(d));
-    }
     return documents;
 }
 

@@ -145,23 +145,29 @@ size_t svgViewEnd(PrStringView text) {
     return 0;
 }
 
-void imageDraw(const SvgImage* image, PrVec2 extent, PrDrawList* list) {
-    if (image->background.a > 0)
-        prDrawListRect(list, PrRect{0, 0, extent.x, extent.y}, {.color = image->background});
+// The index of the tree and background that the image draws in `scheme`.
+uint32_t schemeIndex(const SvgImage* image, PrColorScheme scheme) {
+    return image->schemed && scheme == PrColorScheme_Dark ? 1 : 0;
+}
+
+void imageDraw(const SvgImage* image, PrColorScheme scheme, PrVec2 extent, PrDrawList* list) {
+    uint32_t at = schemeIndex(image, scheme);
+    if (image->backgrounds[at].a > 0)
+        prDrawListRect(list, PrRect{0, 0, extent.x, extent.y}, {.color = image->backgrounds[at]});
     SvgDrawHost host{.view = &image->view};
     if (image->scaledFrom.x <= 0 || image->scaledFrom.y <= 0) {
-        svgTreeDraw(&image->tree, extent, &host, list);
+        svgTreeDraw(&image->trees[at], extent, &host, list);
         return;
     }
     PrVec2 scale{extent.x / image->scaledFrom.x, extent.y / image->scaledFrom.y};
     prDrawListPushTransformAffine2(list, prAffine2Scale(scale));
-    svgTreeDraw(&image->tree, image->scaledFrom, &host, list);
+    svgTreeDraw(&image->trees[at], image->scaledFrom, &host, list);
     prDrawListPopTransform(list);
 }
 
 // The functions of an image's painter, whose context is the image.
-void painterDraw(void* PR_NULLABLE context, PrVec2 extent, PrDrawList* list) {
-    imageDraw(static_cast<const SvgImage*>(context), extent, list);
+void painterDraw(void* PR_NULLABLE context, const PrLayoutPaintDesc* desc, PrDrawList* list) {
+    imageDraw(static_cast<const SvgImage*>(context), desc->scheme, desc->extent, list);
 }
 
 void painterRetain(void* PR_NULLABLE context) {
@@ -211,11 +217,12 @@ const PrDomElement* PR_NULLABLE svgImageView(PrStringView fragment, const PrDomE
     return target;
 }
 
-void svgImageDraw(const SvgImage* image, PrVec2 extent, PrDrawList* list) {
-    imageDraw(image, extent, list);
+void svgImageDraw(const SvgImage* image, PrColorScheme scheme, PrVec2 extent, PrDrawList* list) {
+    imageDraw(image, scheme, extent, list);
 }
 
-void svgImageDrawRendering(const SvgImage* image, PrRect area, PrDrawList* list) {
+void svgImageDrawRendering(const SvgImage* image, PrColorScheme scheme, PrRect area, PrDrawList* list) {
+    uint32_t at = schemeIndex(image, scheme);
     SvgRootView view = image->view;
     view.aspect = SvgAspect{.x = SvgAlign_None, .y = SvgAlign_None};
     view.clips = !image->overflows;
@@ -225,10 +232,10 @@ void svgImageDrawRendering(const SvgImage* image, PrRect area, PrDrawList* list)
     }
     PrVec2 extent{prRectWidth(area), prRectHeight(area)};
     prDrawListPushTransformAffine2(list, prAffine2Translate(PrVec2{area.left, area.top}));
-    if (image->background.a > 0)
-        prDrawListRect(list, PrRect{0, 0, extent.x, extent.y}, {.color = image->background});
+    if (image->backgrounds[at].a > 0)
+        prDrawListRect(list, PrRect{0, 0, extent.x, extent.y}, {.color = image->backgrounds[at]});
     SvgDrawHost host{.view = &view};
-    svgTreeDraw(&image->tree, extent, &host, list);
+    svgTreeDraw(&image->trees[at], extent, &host, list);
     prDrawListPopTransform(list);
 }
 
@@ -240,7 +247,8 @@ void svgImageRelease(const SvgImage* PR_NULLABLE image) {
     if (image == nullptr || image->references.fetchSub(1) != 1)
         return;
     SvgImage* own = const_cast<SvgImage*>(image);
-    svgTreeReset(&own->tree);
+    for (SvgTree& tree : own->trees)
+        svgTreeReset(&tree);
     prMemoryFree(own);
 }
 

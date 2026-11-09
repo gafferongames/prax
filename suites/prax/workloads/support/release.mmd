@@ -1,0 +1,4 @@
+flowchart LR
+    push([Push]) --> build[Build] --> tests[Tests] --> gate{Green?}
+    gate -->|yes| staging[(Staging)] --> release([Release])
+    gate -->|no| notify>Notify author]

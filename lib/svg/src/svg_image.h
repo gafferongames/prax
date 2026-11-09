@@ -16,13 +16,18 @@ PR_ASSUME_NONNULL_BEGIN
 
 namespace pr_impl {
 
-// An SVG image: the tree of a document that has no presentation, built once and detached from the document. The tree is
-// drawn and never changed, so the image is safe on any thread.
+// An SVG image: the trees of a document that has no presentation, built once and detached from the document. The trees
+// are drawn and never changed, so the image is safe on any thread.
 struct SvgImage {
     mutable Atomic<uint32_t> references;
-    SvgTree tree;
     PrSvgNaturalSize natural;
-    PrColor background;         // the root's background color, which the canvas takes and the image fills with
+
+    // By PrColorScheme: the tree that the image draws in the scheme, and the root's background color, which the canvas
+    // takes and the image fills with. An image whose style does not depend on the scheme has one tree, for the light
+    // scheme, which it draws in both.
+    SvgTree trees[2];
+    PrColor backgrounds[2];
+    bool schemed;               // the image has a tree for the dark scheme
 
     // The view that the image is drawn with: the root's viewBox and preserveAspectRatio, or those that the fragment of
     // the URL that named the image gives. The root's viewport clips.
@@ -41,14 +46,15 @@ struct SvgImage {
 // preserveAspectRatio, and the ID of a view element its attributes. Any other fragment leaves the view as it is.
 const PrDomElement* PR_NULLABLE svgImageView(PrStringView fragment, const PrDomElement* root, SvgRootView* view);
 
-// Draws the image over the rectangle from the origin to `extent`, as CSS shows an image: its view placed in that size.
-void svgImageDraw(const SvgImage* image, PrVec2 extent, PrDrawList* list);
+// Draws the image in `scheme` over the rectangle from the origin to `extent`, as CSS shows an image: its view placed in
+// that size.
+void svgImageDraw(const SvgImage* image, PrColorScheme scheme, PrVec2 extent, PrDrawList* list);
 
-// Draws the image as an image element shows an SVG image (SVG2/embedded.html#ImageElement): `area` is the
+// Draws the image in `scheme` as an image element shows an SVG image (SVG2/embedded.html#ImageElement): `area` is the
 // image-rendering rectangle, which is the image's viewport, and the root's preserveAspectRatio is ignored, as if it
 // were none. A root with a width and a height but no viewBox takes them as its viewBox (w3c/svgwg#249). The content is
 // clipped to `area` unless the root's overflow is visible.
-void svgImageDrawRendering(const SvgImage* image, PrRect area, PrDrawList* list);
+void svgImageDrawRendering(const SvgImage* image, PrColorScheme scheme, PrRect area, PrDrawList* list);
 
 // Adds or releases a reference. The last release frees the image.
 void svgImageRetain(const SvgImage* image);

@@ -68,6 +68,11 @@ the reference implementations' algorithms, because content relies on their resul
   only on the block. A macro that one formula defines does not reach the next, and each formula's equations are
   numbered from 1. A client that typesets TeX itself walks the document, whose Math nodes hold the TeX. A fenced code
   block whose info string is `math` is display math, as GitHub renders it, and is a MathBlock node.
+- A diagram is an image. A fenced code block whose info string is `mermaid` is a MermaidBlock node, which holds the
+  diagram's source, and its HTML is an `<img>` whose source is a `data:` URL of type `text/vnd.mermaid` holding that
+  source. lib/html draws such an image with lib/mermaid (docs/mermaid.md), so the diagram is sized and placed as any
+  image is. The image's alt text is the source, which a reader sees where the image is not drawn. A client that draws
+  diagrams itself walks the document, whose MermaidBlock nodes hold the source.
 
 ## Cost
 

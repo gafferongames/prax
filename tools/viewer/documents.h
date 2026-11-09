@@ -1,13 +1,19 @@
-// What the viewer shows: documents, each a source that the engine draws beside the references that it is compared
-// against. Collections list the documents, and the viewer opens one at a time.
+// What the viewer shows: documents. Each document is a source that the engine draws beside the references that it is
+// compared against. Collections list the documents, and the viewer opens one at a time.
 //
-// Every source is the document of a viewport: it is laid out in the viewport that its collection declares, drawn from
-// the viewport's top left, and scrolled through its own overflow. A source that has an extent of its own and no
-// viewport is fitted to the viewport and centered (fittedIn). A source is a page wherever the engine can host one: an
-// HTML, XHTML or Markdown page, an SVG document, and an image or a series of images, which a page made for it shows
-// (imagePage, snapshotPage). Only what no page hosts has a type of its own: a Lottie animation, which lib/lottie draws
-// and no page element plays; rlottie, a player other than the engine; and a PDF, which the platform rasterizes. A
-// reference that the engine draws is also a source, opened in the same way as the document.
+// Every source is the document of a viewport. It is laid out in the viewport that its collection declares, drawn from
+// the viewport's top left, and scrolled through its own overflow. A source that has its own extent and no viewport is
+// fitted to the viewport and centered (fittedIn).
+//
+// A source is a page wherever the engine can host one: an HTML, XHTML or Markdown page, an SVG document, or an image or
+// series of images shown on a page made for it (imagePage, snapshotPage). Only sources that no page can host have types
+// of their own:
+// - a Lottie animation, which lib/lottie draws and no page element plays
+// - a Mermaid diagram, which lib/mermaid draws
+// - rlottie, a player other than the engine
+// - a PDF, which the platform rasterizes
+//
+// A reference that the engine draws is also a source, opened the same way as the document.
 
 #pragma once
 
@@ -48,6 +54,7 @@ struct TextBackends {
 enum {
     SourceType_Page,          // a page that the engine loads and runs (source_html.h)
     SourceType_Lottie,        // a Lottie animation, drawn by lib/lottie
+    SourceType_Mermaid,       // a Mermaid diagram, drawn by lib/mermaid
     SourceType_Rlottie,       // a Lottie animation, played by rlottie
     SourceType_Pdf,           // a PDF, whose pages the platform rasterizes
 };
@@ -85,9 +92,10 @@ bool prints(const Source& source);
 // outlives the process.
 std::filesystem::path viewerCache();
 
-// Returns the source for a file, by its extension: a Lottie animation for JSON, a page that shows the image for a PNG
-// (imagePage), and otherwise a page of the file, which is HTML, XHTML, Markdown or SVG by the type that the page host
-// serves it as. A page or an animation sets its text with `settings`.
+// Returns the source for a file, chosen by its extension: a Lottie animation for JSON, a Mermaid diagram for .mmd, a
+// page that shows the image for a PNG (imagePage), and otherwise a page of the file. That page is HTML, XHTML, Markdown
+// or SVG, according to the type that the page host serves the file as. A page or an animation sets its text with
+// `settings`.
 Source fileSource(const std::filesystem::path& path, const std::filesystem::path& settings = {});
 
 // Returns a page, made in the viewer's cache, that shows the image at `path` as its document, fitted to the viewport

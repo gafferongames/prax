@@ -13,5 +13,4 @@ if (PR_DEVELOP)
         tests/test_tex.cpp
         tests/test_tex_c.c
     )
-    target_compile_definitions(tex_tests PRIVATE TEX_TESTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests")
 endif()

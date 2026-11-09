@@ -20,6 +20,7 @@
 
 #include "dom/src/dom_xml.h"
 #include "html/src/html_charset.h"
+#include "html/src/html_image.h"
 #include "html/src/html_parser.h"
 #include "html/src/html_performance.h"
 #include "html/src/html_window.h"
@@ -146,6 +147,7 @@ struct HtmlDocumentLoad {
 struct HtmlAvailableImage {
     PrRawString url;
     PrRawString bytes;
+    HtmlImageKind kind;
 };
 
 // A module of a window's module map (html/#module-map), by its index in the browsing context's modules.

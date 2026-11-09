@@ -2455,6 +2455,62 @@ TEST_CASE("an img of an SVG image is sized by its root's width and height and dr
     CHECK(verified(prHtmlPagePresentation(page.page)));
 }
 
+TEST_CASE("an img of a Mermaid diagram is sized by the diagram's layout and draws it with a painter") {
+    // "graph TD\nA-->B-->C", as Markdown writes a diagram: a column of three nodes, taller than it is wide.
+    Viewed page("<style>body { margin: 0 } img { display: block }</style>"
+        "<img id=d src=\"data:text/vnd.mermaid;base64,Z3JhcGggVEQKQS0tPkItLT5D\">");
+    PrDomAgent* agent = prHtmlPageAgent(page.page);
+    page.fetcher.settle(agent);
+    prHtmlViewUpdate(page.view);
+    page.settle();
+    PrHtmlImageElement* img = prHtmlImageElementQuery(prDomElementAsEventTarget(page.byId("d")));
+    REQUIRE(img != nullptr);
+    uint32_t width = prHtmlImageElementNaturalWidth(img);
+    uint32_t height = prHtmlImageElementNaturalHeight(img);
+    CHECK(width > 20);
+    CHECK(height > width);
+    PrCssPresentation* presentation = prHtmlPagePresentation(page.page);
+    PrLayoutNode node = prCssPresentationLayoutNode(presentation, prDomElementAsNode(page.byId("d")));
+    CHECK(prLayoutNodeContent(prCssPresentationTree(presentation), node).kind == PrLayoutContentKind_Painter);
+    CHECK(prCssElementGetBoundingClientRect(page.byId("d")).width == doctest::Approx(width).epsilon(0.02));
+    PrDrawList* list = prDrawListCreate();
+    prHtmlViewPaint(page.view, list);
+    CHECK(prDrawListCommandCount(list) > 0);
+    prDrawListRelease(list);
+    CHECK(verified(presentation));
+}
+
+TEST_CASE("an img of a Mermaid diagram draws in the dark theme where the element uses a dark color scheme") {
+    // The diagram stretched over the whole view, so that its nodes' fills cover most of what paints.
+    Viewed page("<style>body { margin: 0 } img { display: block; width: 40px; height: 40px }</style>"
+        "<img id=d src=\"data:text/vnd.mermaid;base64,Z3JhcGggVEQKQS0tPkI=\">");
+    PrDomAgent* agent = prHtmlPageAgent(page.page);
+    page.fetcher.settle(agent);
+    // The mean brightness of the pixels that the diagram paints, from 0 to 255.
+    auto brightness = [&]() {
+        prHtmlViewUpdate(page.view);
+        page.settle();
+        std::vector<uint8_t> pixels = page.paint();
+        double sum = 0;
+        uint32_t count = 0;
+        for (size_t i = 0; i < pixels.size(); i += 4) {
+            if (pixels[i + 3] == 0)
+                continue;
+            sum += (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3.0;
+            ++count;
+        }
+        REQUIRE(count > 0);
+        return sum / count;
+    };
+    CHECK(brightness() > 150);
+    // A restyle into a dark scheme draws the same diagram in the dark theme, and back again in the default theme.
+    prDomElementSetAttribute(page.byId("d"), "style", "color-scheme: dark");
+    CHECK(brightness() < 100);
+    prDomElementSetAttribute(page.byId("d"), "style", "color-scheme: light");
+    CHECK(brightness() > 150);
+    CHECK(verified(prHtmlPagePresentation(page.page)));
+}
+
 TEST_CASE("an SVG image without a width or a height draws at the size it is shown, as an img and as a background") {
     // No natural size: the image fills the box. A viewBox alone gives a ratio, which the viewBox's own
     // preserveAspectRatio fits into the box.

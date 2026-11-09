@@ -324,19 +324,22 @@ enum {
 typedef uint8_t PrLayoutWheelEvents;
 
 PR_NO_PADDING_BEGIN
-// The color of text, whether a box is visible, whether an empty table cell paints, whether a box takes the pointer, and
-// whether a wheel over it waits. A group's colors are extended sRGB with straight alpha, as draw lists carry them, in
-// 16-bit floats. Read by painting and hit testing. Each field but `wheelEvents` is inherited.
+// The color of text, whether a box is visible, whether an empty table cell paints, whether a box takes the pointer,
+// whether a wheel over it waits, and the box's used color scheme, which the painters of its content and its background
+// images draw in (css-color-adjust-1/#color-scheme-prop). A group's colors are extended sRGB with straight alpha, as
+// draw lists carry them, in 16-bit floats. Read by painting and hit testing. Each field but `wheelEvents` is inherited.
 typedef struct PrLayoutColorStyle {
     PrColor16 color;
     PrLayoutVisibility visibility;
     PrLayoutEmptyCells emptyCells;
     PrLayoutPointerEvents pointerEvents;
     PrLayoutWheelEvents wheelEvents;
+    PrColorScheme scheme;
+    uint8_t _pad;
 } PrLayoutColorStyle;
 PR_NO_PADDING_END
 
-// Returns opaque black, visible, empty cells shown, the pointer taken, and passive to the wheel.
+// Returns opaque black, visible, empty cells shown, the pointer taken, passive to the wheel, and a light scheme.
 PrLayoutColorStyle prLayoutColorStyleDefault(void);
 
 // Interns or creates a color group and returns its index, or returns the color group at `index`.
@@ -829,10 +832,17 @@ enum {
 };
 typedef uint8_t PrLayoutImageRendering;
 
-// Draws content into `list` over the rectangle from the origin to `extent`, in pixels, which is the size that the
-// content is shown at. Called on the thread that records the scene, which may be a layout worker during a job, so it
-// may read only state that the client changes between jobs. It must be deterministic in `extent` and that state.
-typedef void (*PrLayoutPaintFn)(void* PR_NULLABLE context, PrVec2 extent, PrDrawList* list);
+// What a painter draws for: the size that the content is shown at, in pixels, and the used color scheme of the box that
+// shows it (PrLayoutColorStyle::scheme).
+typedef struct PrLayoutPaintDesc {
+    PrVec2 extent;
+    PrColorScheme scheme;
+} PrLayoutPaintDesc;
+
+// Draws content into `list` over the rectangle from the origin to the extent of `desc`. Called on the thread that
+// records the scene, which may be a layout worker during a job, so it may read only state that the client changes
+// between jobs. It must be deterministic in `desc` and that state.
+typedef void (*PrLayoutPaintFn)(void* PR_NULLABLE context, const PrLayoutPaintDesc* desc, PrDrawList* list);
 
 // Content that draws itself at whatever size it is shown, as an SVG image or an application's canvas does, rather than
 // being scaled from one drawing: a callback, and the context that it is called with. A painter with `retain` and

@@ -569,7 +569,8 @@ CanvasShown* show(CanvasContext* c, PrDrawSampling sampling) {
 
 // Draws what `shown` shows over the rectangle from the origin to `extent`: the segments drawn into the bitmap, each
 // once, then the bitmap (PrLayoutPaintFn). The list holds `shown`.
-void paintShown(void* PR_NULLABLE context, PrVec2 extent, PrDrawList* list) {
+void paintShown(void* PR_NULLABLE context, const PrLayoutPaintDesc* desc, PrDrawList* list) {
+    PrVec2 extent = desc->extent;
     CanvasShown* shown = static_cast<CanvasShown*>(context);
     CanvasBitmap* bitmap = shown->bitmap;
     PrVec2 size{float(bitmap->extent.x), float(bitmap->extent.y)};
@@ -611,7 +612,8 @@ void flush(CanvasContext* c) {
         return;
     CanvasShown* shown = show(c, PrDrawSampling_Nearest);
     PrDrawList* list = prDrawListCreate();
-    paintShown(shown, PrVec2{1, 1}, list);
+    PrLayoutPaintDesc pixel{.extent = PrVec2{1, 1}};
+    paintShown(shown, &pixel, list);
     prDrawListFreeze(list);
     shownRelease(shown);
     // The list's group draws into the bitmap. A GPU renderer draws the group while preparing, and a renderer that draws

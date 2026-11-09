@@ -91,6 +91,33 @@ PrRect only(Embedded& e, const std::string& body) {
 
 using namespace pr_impl;
 
+TEST_CASE("an SVG image draws in the scheme that it is asked for, as its queries and light-dark() colors resolve") {
+    Images images;
+    images.svgs["query.svg"] = "<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'><style>rect { fill: red }"
+        " @media (prefers-color-scheme: dark) { rect { fill: blue } }</style><rect width='20' height='20'/></svg>";
+    images.svgs["function.svg"] = "<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' "
+        "style='color-scheme: light dark'><rect width='20' height='20' fill='light-dark(red, blue)'/></svg>";
+    images.svgs["plain.svg"] = "<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'>"
+        "<rect width='20' height='20' fill='green'/></svg>";
+    // The color of the one fill that the image draws in `scheme`.
+    auto fillOf = [&](const char* name, PrColorScheme scheme) {
+        PrSvgLoadedImage loaded{};
+        REQUIRE(loadImage(&images, nullptr, name, &loaded));
+        PrDrawList* list = prDrawListCreate();
+        prSvgImageDraw(loaded.svg, scheme, PrVec2{20, 20}, list);
+        std::vector<Drawn> commands = Drawing::commandsOf(list);
+        prDrawListRelease(list);
+        prSvgImageRelease(loaded.svg);
+        REQUIRE(commands.size() == 1);
+        return commands[0].color;
+    };
+    CHECK(fillOf("query.svg", PrColorScheme_Light).r == 1.0f);
+    CHECK(fillOf("query.svg", PrColorScheme_Dark).b == 1.0f);
+    CHECK(fillOf("function.svg", PrColorScheme_Light).r == 1.0f);
+    CHECK(fillOf("function.svg", PrColorScheme_Dark).b == 1.0f);
+    CHECK(fillOf("plain.svg", PrColorScheme_Dark).g > 0.4f);
+}
+
 TEST_CASE("preserveAspectRatio fits a raster's ratio into the positioning rectangle") {
     Embedded e;
     std::string image = "<image href='flag.png' x='20' y='10' width='120' height='40' ";

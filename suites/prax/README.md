@@ -56,7 +56,7 @@ an eyebrow, citations or guides. What the rest of this file says of a page's mar
 each page fits 600 by 800, uses its features directly, and cites no test suite. A page is right if it looks as its
 author meant it to in every browser, and a difference between the browsers and the engine is found by looking at them
 side by side. A third, `syntax`, holds sources for an editor rather than pages for a browser. A fourth, `mermaid`,
-holds diagrams that the viewer draws (below).
+holds diagrams that the viewer draws, and a fifth, `markdown`, holds Markdown documents (below).
 
 ### Workloads
 
@@ -110,6 +110,17 @@ gathers controls, as `examples/studio_gallery` gathers Studio Kit's.
 - **It is valid for mermaid.js**, so that any difference between the two is the engine's to explain. The engine's
   layout is its own (`docs/graph.md`). A difference in where nodes go is expected, but a difference in what is drawn
   is not.
+
+### The Markdown documents
+
+`markdown` holds documents in Markdown (`.md`), which the viewer loads as text/markdown, so that they render through
+lib/markdown's HTML, as a document a reader opens. They show what Markdown's extensions draw in a document: math that
+lib/tex sets, and diagrams that lib/mermaid draws. A browser shows Markdown as plain text, so they have no browser's
+render to compare.
+
+- **A document is about one subject**, as a page of real documentation is, and uses the extension that it shows where
+  that documentation would.
+- **Its content is plausible**: real mathematics, or a design note whose diagrams say what its prose says.
 
 ## How it is organized
 

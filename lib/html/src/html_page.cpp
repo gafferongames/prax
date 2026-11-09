@@ -44,6 +44,7 @@
 #include "html/src/html_link.h"
 #include "html/src/html_markdown.h"
 #include "html/src/html_media.h"
+#include "html/src/html_mermaid.h"
 #include "html/src/html_parser.h"
 #include "html/src/html_window.h"
 #include "html/src/html_xml.h"
@@ -1578,9 +1579,12 @@ bool loadSecureImage(void* PR_NULLABLE context, PrDomDocument* from, PrStringVie
     PrRawString type{};
     if (prUrlProcessData(url, &body, &type) == PrStatus_Ok) {
         PrStringView bytes = prRawStringView(&body);
-        if (htmlImageIsSvg(bytes)) {
+        uint32_t width = 0;
+        uint32_t height = 0;
+        HtmlImageKind kind = htmlImageKind(prRawStringView(&type), bytes, &width, &height);
+        if (kind == HtmlImageKind_Svg) {
             out->svg = svgImageOf(bytes, domUrlFragment(url), codec);
-        } else if (codec != nullptr) {
+        } else if (kind == HtmlImageKind_Raster && codec != nullptr) {
             PrByteView view{reinterpret_cast<const uint8_t*>(bytes.data), bytes.size};
             prDrawImageCreateFromBytes(codec, view, &out->raster, nullptr);
         }
@@ -1637,11 +1641,12 @@ bool decodeImage(void* PR_NULLABLE context, PrByteView bytes, PrStringView fragm
     *out = DomDecodedImage{};
     uint32_t width = 0;
     uint32_t height = 0;
-    if (!htmlImageSize(text, &width, &height))
+    HtmlImageKind kind = htmlImageKind(PrStringView{}, text, &width, &height);
+    if (kind == HtmlImageKind_None)
         return false;
-    if (htmlImageIsSvg(text)) {
+    if (kind == HtmlImageKind_Svg) {
         out->vector = svgPainter(page, text, fragment, &out->natural);
-    } else if (page->host.images != nullptr &&
+    } else if (kind == HtmlImageKind_Raster && page->host.images != nullptr &&
             prDrawImageCreateFromBytes(page->host.images, bytes, &out->image, &out->orientation) == PrStatus_Ok) {
         // The decoded image is in its orientation, which turns a header's width and height a quarter turn for some
         // orientations (css-images-3/#the-image-orientation).
@@ -1664,7 +1669,7 @@ void correctForDensity(DomElementState* state) {
     state->naturalHeight = uint32_t(prF64Round(double(state->naturalHeight) / state->density));
 }
 
-void showImage(PrHtmlPage* page, PrDomElement* element, PrStringView bytes) {
+void showImage(PrHtmlPage* page, PrDomElement* element, PrStringView bytes, HtmlImageKind kind) {
     DomElementState* state = element->state;
     prDrawImageRelease(state->picture);
     state->picture = nullptr;
@@ -1673,10 +1678,22 @@ void showImage(PrHtmlPage* page, PrDomElement* element, PrStringView bytes) {
     state->orientation = PrImageOrientation_Identity;
     prLayoutPainterRelease(state->vector);
     state->vector = PrLayoutPainter{};
-    if (state->image == PrDomImageState_CompletelyAvailable && htmlImageIsSvg(bytes)) {
+    bool available = state->image == PrDomImageState_CompletelyAvailable;
+    if (available && kind == HtmlImageKind_Diagram) {
+        PrVec2 extent{};
+        state->vector = htmlMermaidPainter(element, bytes, &extent);
+        state->vectorNatural = prLayoutNaturalSizeNone();
+        if (state->vector.paint != nullptr) {
+            state->vectorNatural.width = prLayoutUnitFromPx(extent.x);
+            state->vectorNatural.height = prLayoutUnitFromPx(extent.y);
+            state->naturalWidth = uint32_t(prF32Round(extent.x));
+            state->naturalHeight = uint32_t(prF32Round(extent.y));
+            correctForDensity(state);
+        }
+    } else if (available && kind == HtmlImageKind_Svg) {
         PrStringView fragment = domUrlFragment(prRawStringView(&state->imageUrl));
         state->vector = svgPainter(page, bytes, fragment, &state->vectorNatural);
-    } else if (state->image == PrDomImageState_CompletelyAvailable && page->host.images != nullptr) {
+    } else if (available && kind == HtmlImageKind_Raster && page->host.images != nullptr) {
         PrByteView view{reinterpret_cast<const uint8_t*>(bytes.data), bytes.size};
         PrImageOrientation orientation = PrImageOrientation_Identity;
         if (prDrawImageCreateFromBytes(page->host.images, view, &state->picture, &orientation) == PrStatus_Ok) {
@@ -1719,18 +1736,21 @@ void imageFetched(void* PR_NULLABLE data, const DomFetchResult* result) {
     EmbedFetch* fetch = static_cast<EmbedFetch*>(data);
     if (isCurrent(fetch)) {
         DomElementState* state = fetch->element->state;
-        bool loaded = result->status == PrStatus_Ok &&
-            htmlImageSize(result->body, &state->naturalWidth, &state->naturalHeight);
+        // A diagram's size is its layout's, which showing it computes.
+        HtmlImageKind kind = HtmlImageKind_None;
+        if (result->status == PrStatus_Ok)
+            kind = htmlImageKind(result->contentType, result->body, &state->naturalWidth, &state->naturalHeight);
+        bool loaded = kind != HtmlImageKind_None;
         correctForDensity(state);
         PrStringView url = prRawStringView(&fetch->url);
         PrStringView request = prStringSlice(url, 0, prStringFindByte(url, '#'));
         if (loaded && availableImage(fetch->page, request) == nullptr) {
-            HtmlAvailableImage available = {prRawStringCopy(request), prRawStringCopy(result->body)};
+            HtmlAvailableImage available = {prRawStringCopy(request), prRawStringCopy(result->body), kind};
             fetch->page->availableImages.push(available);
         }
         if (loaded)
             state->image = PrDomImageState_CompletelyAvailable;
-        showImage(fetch->page, fetch->element, loaded ? result->body : PrStringView{});
+        showImage(fetch->page, fetch->element, loaded ? result->body : PrStringView{}, kind);
         queueElementEvent(fetch->page, fetch->element, !loaded);
     }
     dropEmbedFetch(fetch);
@@ -1748,7 +1768,7 @@ void updateImage(PrHtmlPage* page, PrDomElement* element, PrStringView source, d
     state->image = PrDomImageState_Broken;
     state->naturalWidth = 0;
     state->naturalHeight = 0;
-    showImage(page, element, PrStringView{});
+    showImage(page, element, PrStringView{}, HtmlImageKind_None);
     if (source.size == 0) {
         if (source.data != nullptr)
             queueElementEvent(page, element, true);
@@ -1759,10 +1779,12 @@ void updateImage(PrHtmlPage* page, PrDomElement* element, PrStringView source, d
         state->imageUrl = prUrlSerialize(url, PrUrlSerialization_Whole);
         PrRawString request = prUrlSerialize(url, PrUrlSerialization_ExcludeFragment);
         if (const HtmlAvailableImage* available = availableImage(page, prRawStringView(&request))) {
-            htmlImageSize(prRawStringView(&available->bytes), &state->naturalWidth, &state->naturalHeight);
+            PrStringView bytes = prRawStringView(&available->bytes);
+            if (available->kind != HtmlImageKind_Diagram)
+                htmlImageKind(PrStringView{}, bytes, &state->naturalWidth, &state->naturalHeight);
             correctForDensity(state);
             state->image = PrDomImageState_CompletelyAvailable;
-            showImage(page, element, prRawStringView(&available->bytes));
+            showImage(page, element, bytes, available->kind);
             queueElementEvent(page, element, false);
         } else {
             EmbedFetch* fetch = newEmbedFetch(page, element, prUrlSerialize(url, PrUrlSerialization_Whole));
@@ -1838,10 +1860,11 @@ void objectFetched(void* PR_NULLABLE data, const DomFetchResult* result) {
         if (!domFetchIsOk(result)) {
             queueElementEvent(fetch->page, element, true);
         } else if (prAsciiStartsWithFold(essence, "image/") && !prMimeTypeIsXml(essence)) {
-            bool decoded = htmlImageSize(result->body, &state->naturalWidth, &state->naturalHeight);
+            HtmlImageKind kind = htmlImageKind(essence, result->body, &state->naturalWidth, &state->naturalHeight);
+            bool decoded = kind != HtmlImageKind_None;
             if (decoded)
                 state->image = PrDomImageState_CompletelyAvailable;
-            showImage(fetch->page, element, decoded ? result->body : PrStringView{});
+            showImage(fetch->page, element, decoded ? result->body : PrStringView{}, kind);
             queueElementEvent(fetch->page, element, !decoded);
         } else if (prAsciiEqualsFold(essence, "text/html") || prMimeTypeIsXml(essence)) {
             attachFrame(fetch->page, element, result->body, prRawStringView(&fetch->url),
@@ -1859,7 +1882,7 @@ void objectChanged(PrHtmlPage* page, PrDomElement* element) {
     state->image = PrDomImageState_Broken;
     state->naturalWidth = 0;
     state->naturalHeight = 0;
-    showImage(page, element, PrStringView{});
+    showImage(page, element, PrStringView{}, HtmlImageKind_None);
     dropFrame(page, element);
     PrStringView data = domAttributeValue(element, "data");
     if (!inWindow(page, element) || data.size == 0)

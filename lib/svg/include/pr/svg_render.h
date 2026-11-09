@@ -127,8 +127,9 @@ PrSvgNaturalSize prSvgImageNaturalSize(const PrSvgImage* image);
 // Returns a painter that draws the image. The painter's retain and release add and release references to the image.
 PrLayoutPainter prSvgImagePainter(const PrSvgImage* image);
 
-// Draws the image into `list` over the rectangle from the origin to `extent`, in CSS pixels.
-void prSvgImageDraw(const PrSvgImage* image, PrVec2 extent, PrDrawList* list);
+// Draws the image into `list` over the rectangle from the origin to `extent`, in CSS pixels, in `scheme`: the scheme
+// that its prefers-color-scheme queries and its light-dark() colors resolve for.
+void prSvgImageDraw(const PrSvgImage* image, PrColorScheme scheme, PrVec2 extent, PrDrawList* list);
 
 // Draws `element` and its descendants into `list`, without the rest of the document. They are drawn in the user space
 // of the element's parent, whose origin is the origin of the list's current transform. The element is styled as it is

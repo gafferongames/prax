@@ -407,6 +407,31 @@ TEST_CASE("a fenced code block of math is display math") {
     CHECK(streams("```math\na\n\nb\n```\n", options));
 }
 
+TEST_CASE("a fenced code block of mermaid is a diagram, written as an image of its source") {
+    PrMarkdownOptions options = everything();
+    // "graph TD\nA-->B" in base64, and the source again as the image's alt text.
+    CHECK(html("```mermaid\ngraph TD\nA-->B\n```\n", &options) ==
+        "<p><img src=\"data:text/vnd.mermaid;base64,Z3JhcGggVEQKQS0tPkI=\" alt=\"graph TD\nA--&gt;B\" /></p>\n");
+    // A diagram without the extension is code.
+    CHECK(html("```mermaid\nA\n```\n", gfm()) == "<pre><code class=\"language-mermaid\">A\n</code></pre>\n");
+    // The walk gives the block's info string, and its source as its child.
+    PrMarkdown* document = prMarkdownCreate(&options);
+    prMarkdownParse(document, "~~~ mermaid wide\npie\n~~~\n");
+    std::string walked;
+    prMarkdownWalk(document, 0, 1, [](void* context, const PrMarkdownStep* step) {
+        std::string* out = static_cast<std::string*>(context);
+        if (step->kind == PrMarkdownStepKind_Enter && step->node == PrMarkdownNodeKind_MermaidBlock)
+            *out += "[" + viewString(step->info) + ": ";
+        if (step->kind == PrMarkdownStepKind_Text)
+            *out += viewString(step->text);
+        if (step->kind == PrMarkdownStepKind_Leave)
+            *out += "]";
+    }, &walked);
+    CHECK(walked == "[mermaid wide: pie]");
+    prMarkdownDestroy(document);
+    CHECK(streams("```mermaid\ngraph TD\n\nA-->B\n```\n", options));
+}
+
 TEST_CASE("front matter is held as it is written, and keeps the blocks after its opening fence tentative") {
     PrMarkdownOptions options = everything();
     PrMarkdown* document = prMarkdownCreate(&options);

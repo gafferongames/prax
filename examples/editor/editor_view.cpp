@@ -476,7 +476,8 @@ void solid(RenderMode mode, PrColor color, Shape shape) {
 }
 
 // Draws the level from above: the ground with its grid, and each entity as a mark of its kind.
-void paintViewport(void* context, PrVec2 size, PrDrawList* list) {
+void paintViewport(void* context, const PrLayoutPaintDesc* desc, PrDrawList* list) {
+    PrVec2 size = desc->extent;
     const EditorState& editor = *static_cast<const EditorState*>(context);
     float scale = pixelsPerMeter(size);
     PrVec2 center{size.x / 2, size.y / 2};

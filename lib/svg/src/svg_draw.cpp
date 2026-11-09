@@ -678,7 +678,7 @@ void drawImage(SvgDrawer& d, const SvgImageShape& image) {
             image.sampling);
         prDrawListRect(d.list, area, {.brush = &brush});
     } else {
-        svgImageDrawRendering(image.picture.svg, area, d.list);
+        svgImageDrawRendering(image.picture.svg, image.picture.scheme, area, d.list);
     }
     if (image.clips)
         prDrawListPopClip(d.list);
@@ -1246,7 +1246,7 @@ LayerResult imageLayer(SvgDrawer& d, SvgNodeIndex index, const SvgEffects& maski
         if (layer.kind == SvgMaskLayerKind_Gradient)
             prLayoutGradientDraw(&layer.gradient, own, own, source);
         else
-            svgImageDrawRendering(layer.picture.svg, own, source);
+            svgImageDrawRendering(layer.picture.svg, layer.picture.scheme, own, source);
         brush = prDrawBrushImage(prDrawSourceList(source, own), tile, PrDrawSampling_Linear);
     }
     brush.image.tiles.spacing = spacing;
