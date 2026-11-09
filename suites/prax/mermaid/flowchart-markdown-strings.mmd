@@ -1,0 +1,9 @@
+flowchart LR
+    triage["`**Triage**
+    Sort new reports by severity and assign an owner within one business day`"]
+    fix["`Write a fix with a *regression test* that fails before it and passes after`"]
+    review["`**Review**
+    Another engineer approves the change, and the _release notes_ entry`"]
+    ship["`Ship in the next **weekly** release`"]
+    triage --> fix --> review --> ship
+    review -- "`changes *requested*`" --> fix

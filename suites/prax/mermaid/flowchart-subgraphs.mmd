@@ -1,0 +1,20 @@
+flowchart TB
+    c1 --> a2
+    subgraph one [Ingest]
+        a1 --> a2
+    end
+    subgraph two [Transform]
+        direction LR
+        b1 --> b2 --> b3
+    end
+    subgraph three [Publish]
+        subgraph inner [Channels]
+            c2[Web]
+            c3[Mobile]
+        end
+        c4[Archive]
+    end
+    one --> two
+    b3 --> c2
+    b3 --> c3
+    two --> c4

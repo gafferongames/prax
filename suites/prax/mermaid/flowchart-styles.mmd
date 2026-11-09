@@ -1,0 +1,11 @@
+flowchart LR
+    classDef good fill:#d4edda,stroke:#28a745,color:#155724
+    classDef bad fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#721c24
+    request[Request] --> auth{Authorized?}
+    auth -->|yes| ok[200 OK]:::good
+    auth -->|no| denied[403 Forbidden]
+    class denied bad
+    ok --> log[Audit log]
+    denied --> log
+    style log fill:#fff3cd,stroke:#856404,stroke-dasharray: 5 3
+    linkStyle 2 stroke:#dc3545,stroke-width:3px

@@ -1,0 +1,20 @@
+---
+title: Checkout
+---
+sequenceDiagram
+    box Purple Frontend
+        participant UI
+        participant API
+    end
+    box rgb(220,240,220) Backend
+        participant Orders
+    end
+    participant Bank
+    UI->>API: Submit order
+    activate API
+    API->>Orders: Create
+    Orders->>Bank: Charge card
+    Bank-->>Orders: OK
+    Orders-->>API: Created
+    deactivate API
+    API-->>UI: Confirmation

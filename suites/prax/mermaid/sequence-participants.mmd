@@ -1,0 +1,17 @@
+sequenceDiagram
+    participant P as Participant
+    actor A as Actor
+    participant B@{ "type": "boundary" }
+    participant C@{ "type": "control" }
+    participant E@{ "type": "entity" }
+    participant D@{ "type": "database" }
+    participant L@{ "type": "collections" }
+    participant Q@{ "type": "queue" }
+    P->>A: Hello
+    A->>B: Check
+    B->>C: Route
+    C->>E: Load
+    E->>D: Query
+    D->>L: Gather
+    L->>Q: Enqueue
+    Q-->>P: Done

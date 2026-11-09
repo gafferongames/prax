@@ -36,11 +36,24 @@ enum {
 };
 typedef uint8_t PrTextAlign;
 
+// A range of a layout's text that is set in its own font, such as a bold or italic word. The font sets the range's size
+// too.
+typedef struct PrTextLayoutSpan {
+    uint32_t start;
+    uint32_t end;
+    PrTextFont* font;
+} PrTextLayoutSpan;
+
 // What a layout sets, and how. A zeroed description gives a line as wide as its text and as tall as the font, aligned
 // at the start, left to right.
 typedef struct PrTextLayoutDesc {
     PrStringView text;                          // UTF-8; a line feed ends a line and a paragraph
-    PrTextFont* font;
+    PrTextFont* font;                           // the font of the text that no span covers, and of the lines' height
+
+    // Ranges set in other fonts, in order and not overlapping, or null.
+    const PrTextLayoutSpan* PR_NULLABLE spans;
+    uint32_t spanCount;
+
     PrTextShaper* shaper;
     PrTextDirection direction;                  // the base direction of each paragraph
     PrTextAlign align;
@@ -79,7 +92,7 @@ PrTextLayout* prTextLayoutCreate(void);
 void prTextLayoutDestroy(PrTextLayout* PR_NULLABLE layout);
 
 // Sets the text of `desc` in lines, replacing the contents of the layout. The layout copies the text, and holds a
-// reference to the font while it holds the result.
+// reference to each font while it holds the result.
 void prTextLayoutSet(PrTextLayout* layout, const PrTextLayoutDesc* desc);
 
 // Returns the extent of the lines: the width that they are given if it is above zero, or else the width of their widest

@@ -1,0 +1,16 @@
+classDiagram
+    class Animal {
+        +String name
+        +int age
+        +makeSound() void
+    }
+    class Duck {
+        +swim()
+    }
+    class Empty
+    class Fields {
+        -int count
+    }
+    Animal <|-- Duck
+    Animal <|-- Empty
+    Animal <|-- Fields

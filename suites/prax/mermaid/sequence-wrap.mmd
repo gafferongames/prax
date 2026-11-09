@@ -1,0 +1,16 @@
+---
+config:
+  sequence:
+    wrap: true
+---
+sequenceDiagram
+    participant A as A participant whose name is longer than its box
+    participant B as nowrap:A participant that keeps its name on one line
+    participant C
+    A->>B: A message long enough that it wraps across several lines between its participants
+    B->>C: nowrap:This message stays on a single line however long it gets
+    C->>C: A message to itself that wraps around
+    Note right of C: A note to the right that wraps inside a participant's width
+    Note over A,B: A note over two participants, which wraps to the width that spans them both
+    Note over C: A note over one participant, which wraps
+    Note left of A: nowrap:A note that does not wrap

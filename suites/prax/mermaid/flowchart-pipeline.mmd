@@ -1,0 +1,14 @@
+flowchart LR
+    push([git push]) --> lint[Lint]
+    push --> build[Build]
+    build --> unit[Unit tests]
+    build --> suites[Conformance suites]
+    lint --> gate{All green?}
+    unit --> gate
+    suites --> gate
+    gate -->|yes| package[[Package]]
+    gate -->|no| notify>Notify author]
+    package --> staging[(Staging)]
+    staging --> smoke[Smoke tests]
+    smoke --> release([Release])
+    smoke -. failure .-> notify

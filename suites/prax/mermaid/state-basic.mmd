@@ -1,0 +1,10 @@
+stateDiagram-v2
+    [*] --> Still
+    Still --> [*]
+    Still --> Moving : push
+    Moving --> Still : stop
+    Moving --> Crash
+    Crash --> [*]
+    state "A described state" as Described
+    Described : with a second line
+    Crash --> Described

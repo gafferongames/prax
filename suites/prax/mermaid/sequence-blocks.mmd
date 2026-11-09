@@ -1,0 +1,35 @@
+sequenceDiagram
+    autonumber
+    participant Client
+    participant Server
+    participant DB
+    Client->>+Server: Request
+    loop Every minute
+        Server->>DB: Poll
+    end
+    alt is cached
+        Server-->>Client: Cached result
+    else not cached
+        Server->>+DB: Query
+        DB-->>-Server: Rows
+    end
+    opt Extra
+        Server->>Server: Log
+    end
+    par Notify
+        Server-)Client: Event A
+    and
+        Server-)DB: Event B
+    end
+    critical Commit
+        Server->>DB: Write
+    option Timeout
+        Server-->>Client: Retry later
+    end
+    break on failure
+        Server-->>Client: Error
+    end
+    rect rgb(200, 220, 255)
+        Client->>Server: Highlighted
+    end
+    Server-->>-Client: Response

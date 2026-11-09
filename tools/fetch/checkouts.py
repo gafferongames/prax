@@ -183,6 +183,8 @@ LOTTIE_IOS_COMMIT = "b20173c0b6cf47d6159ea00e9584de5e0133da77"
 RLOTTIE_COMMIT = "683bbaa39dd0d366cf6b4bc300b4dfbee677ea6b"
 DOTLOTTIE_WEB_VERSION = "0.80.0"
 LOTTIE_SPEC_COMMIT = "4b55957472f8718e34e9c1298f0e8f021b6c597f"
+# mermaid.js, which the viewer compares lib/mermaid with.
+MERMAID_VERSION = "12.3.0"
 # The Encoding Standard's repository, whose encodings and indexes the charset generator reads.
 ENCODING_COMMIT = "be17ac5c49881336538acfc7b40dba3c8009144b"
 # release-48
@@ -486,6 +488,9 @@ CHECKOUTS = {
     "canvaskit": lambda: [Files("canvaskit", [(name, NPM + "canvaskit-wasm@%s/bin/full/%s" % (CANVASKIT_VERSION, name))
                                               for name in ("canvaskit.js", "canvaskit.wasm")],
                                 ("version", CANVASKIT_VERSION))],
+    # mermaid.js, the reference that the viewer shows beside lib/mermaid's diagrams (tools/suite/mermaid/mermaid.html).
+    "mermaid": lambda: [Files("mermaid", [("mermaid.min.js", NPM + "mermaid@%s/dist/mermaid.min.js" % MERMAID_VERSION)],
+                              ("version", MERMAID_VERSION))],
     "rlottie": rlottie,
     # The Lottie animations that the viewer and the suites play, from the players' own tests: lottie-ios's samples
     # (JSON and dotLottie) with the snapshots that its tests took of them, Skottie's feature tests, rlottie's examples,

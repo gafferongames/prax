@@ -1,0 +1,12 @@
+---
+title: Input validation
+---
+flowchart TD
+    start([Start]) --> read[Read input]
+    read --> valid{Valid?}
+    valid -->|yes| process[Process request]
+    valid -->|no| error[Show error]
+    error --> read
+    process --> save[(Save record)]
+    save --> done([Done])
+    process -. cached .-> done

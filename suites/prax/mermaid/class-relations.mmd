@@ -1,0 +1,27 @@
+classDiagram
+    direction LR
+    class Shape {
+        <<interface>>
+        +area()$ double
+        +name String
+    }
+    class List~T~ {
+        -T[] items
+        +add(T item) bool
+        +get(int index)* T
+    }
+    namespace Garden {
+        class Pond
+        class Lily
+    }
+    Shape <|.. Circle : implements
+    Car "1" *-- "4" Wheel : has
+    Library o-- Book
+    Driver --> Car : drives
+    Car ..> Fuel
+    Car -- Road
+    Pond *-- "many" Lily
+    Engine ()-- Car
+    List~T~ <|-- Queue
+    note for Car "A car has\nfour wheels"
+    note "A floating note"

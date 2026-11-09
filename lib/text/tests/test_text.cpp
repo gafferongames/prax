@@ -1162,6 +1162,40 @@ TEST_CASE("a text layout breaks lines where text may break, the spaces a line en
     prFontSetDestroy(set);
 }
 
+TEST_CASE("a text layout sets each span in its own font and size, and the rest in its font") {
+    PrFontSet* set = setOf({{"NotoSans.ttf"}});
+    PrTextFont* font = fontOf(set, {"Noto Sans"});
+    PrFontFamily family = prFontFamilyFromName("Noto Sans");
+    PrFontStyle style = prFontStyleDefault();
+    style.size = 32;
+    PrTextFontDesc largeDesc{.set = set, .families = &family, .familyCount = 1, .style = style};
+    PrTextFont* large = prTextFontCreate(&largeDesc);
+    PrTextShaper* hb = prTextHarfBuzzCreate();
+    PrTextLayout* layout = prTextLayoutCreate();
+    PrTextLayoutSpan span{.start = 4, .end = 7, .font = large};
+    PrTextLayoutDesc desc{.text = "one two three", .font = font, .spans = &span, .spanCount = 1, .shaper = hb};
+    prTextLayoutSet(layout, &desc);
+    REQUIRE(prTextLayoutRunCount(layout) == 3);
+    CHECK(prTextLayoutRun(layout, 0).size == 16.0f);
+    CHECK(prTextLayoutRun(layout, 1).size == 32.0f);
+    CHECK(prTextLayoutRun(layout, 2).size == 16.0f);
+    CHECK(prTextLayoutRunStart(layout, 1) == 4);
+    CHECK(prTextLayoutRunStart(layout, 2) == 7);
+    // The larger span widens the line, and the layout keeps its own reference to the span's font.
+    float spanned = prTextLayoutLine(layout, 0).width;
+    prTextFontRelease(large);
+    desc.spans = nullptr;
+    desc.spanCount = 0;
+    PrTextLayout* plain = prTextLayoutCreate();
+    prTextLayoutSet(plain, &desc);
+    CHECK(spanned > prTextLayoutLine(plain, 0).width);
+    prTextLayoutDestroy(plain);
+    prTextLayoutDestroy(layout);
+    prTextShaperDestroy(hb);
+    prTextFontRelease(font);
+    prFontSetDestroy(set);
+}
+
 TEST_CASE("a text layout aligns each line in the width the lines take, its start and end by its direction") {
     PrFontSet* set = setOf({{"NotoSans.ttf"}});
     PrTextFont* font = fontOf(set, {"Noto Sans"});

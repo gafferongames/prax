@@ -1,0 +1,17 @@
+sequenceDiagram
+    participant Alice
+    actor Bob
+    participant C as Carol the Server
+    Alice->>Bob: Hello Bob, how are you?
+    Bob-->>Alice: Great!
+    Alice-)C: Async request
+    C--)Alice: Async reply
+    Alice-xC: Rejected
+    C--xAlice: Dotted cross
+    Alice->C: Open solid
+    C-->Alice: Open dotted
+    Alice<<->>Bob: Both ways
+    Bob->>Bob: Think it over
+    Note right of Bob: Bob thinks
+    Note over Alice,C: A note across everyone
+    Note left of Alice: Left<br/>of Alice

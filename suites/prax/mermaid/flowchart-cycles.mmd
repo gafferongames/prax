@@ -1,0 +1,10 @@
+flowchart TD
+    idle[Idle] --> connecting[Connecting]
+    connecting -->|ok| connected[Connected]
+    connecting -->|timeout| retry[Waiting to retry]
+    retry --> connecting
+    connected -->|drop| retry
+    connected -->|close| idle
+    connected --> connected
+    retry -->|give up| failed[Failed]
+    failed --> idle

@@ -55,7 +55,8 @@ by its name alone, and its own index lists its pages and no sections (`tools/sui
 an eyebrow, citations or guides. What the rest of this file says of a page's markup and of the browsers still holds:
 each page fits 600 by 800, uses its features directly, and cites no test suite. A page is right if it looks as its
 author meant it to in every browser, and a difference between the browsers and the engine is found by looking at them
-side by side. A third, `syntax`, holds sources for an editor rather than pages for a browser (below).
+side by side. A third, `syntax`, holds sources for an editor rather than pages for a browser. A fourth, `mermaid`,
+holds diagrams that the viewer draws (below).
 
 ### Workloads
 
@@ -96,6 +97,19 @@ gathers controls, as `examples/studio_gallery` gathers Studio Kit's.
 - **It is valid**, so that what looks wrong is the highlighting, not a parse that the source made fail. Where a
   language holds another, as Markdown's fences, PHP's pages or a shell's heredocs do, the sample includes it, to show
   the injection.
+
+### The Mermaid diagrams
+
+`mermaid` holds diagrams in Mermaid's language (`.mmd`). The viewer draws each one with lib/mermaid beside mermaid.js
+(`tools/suite/mermaid/mermaid.html`), both fitted to the pane.
+
+- **A diagram is about one thing.** It covers one feature of the language, such as shapes, links or subgraphs, or it
+  is the kind of diagram that people write, such as a pipeline or a system's services, which combines features.
+- **Its content is plausible.** Labels are real text, as long as labels in real diagrams, so that nodes size and edges
+  route as they would in a document.
+- **It is valid for mermaid.js**, so that any difference between the two is the engine's to explain. The engine's
+  layout is its own (`docs/graph.md`). A difference in where nodes go is expected, but a difference in what is drawn
+  is not.
 
 ## How it is organized
 

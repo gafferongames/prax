@@ -1,0 +1,12 @@
+flowchart TD
+    request["<b>POST</b> /orders<br><i>JSON body</i>"]
+    validate["Validate with <code>OrderSchema</code>"]
+    reject["<span style='color:#c0392b'><b>400</b> Bad Request</span>"]
+    store["Insert into <u>orders</u> table"]
+    legacy["<s>Write to the legacy queue</s><br>retired in v4"]
+    respond["<b>201</b> Created &amp; <em>Location</em> header"]
+    request --> validate
+    validate -- "<i>invalid</i>" --> reject
+    validate -- "<b>valid</b>" --> store
+    store -.-> legacy
+    store --> respond

@@ -16,6 +16,7 @@ namespace {
 // A placed run: its font, size and glyphs in TextLayout::glyphs, with their scales if any scale is not one.
 struct PlacedRun {
     const PrFont* font;
+    float size;
     uint32_t glyphStart;
     uint32_t glyphCount;
     uint32_t textStart;
@@ -27,6 +28,8 @@ struct TextLayout {
     PrTextFont* PR_NULLABLE font;
     PrTextShaping* PR_NULLABLE shaping;
     PrTextShapingScratch* PR_NULLABLE scratch;
+    RawArray<PrTextPiece> pieces;
+    RawArray<PrTextFont*> spanFonts;    // the fonts of the spans, which the layout holds references to
     float size;
     float width;                    // the width that the lines take
     float height;
@@ -84,7 +87,7 @@ void orderLine(TextLayout& t, const PrTextLine& line) {
 }
 
 // Places the parts of `line` from `left` on its baseline, as runs of glyphs, and records the edges of each cluster.
-void placeLine(TextLayout& t, PrTextLine& line, const PrTextLayoutDesc& d, float left) {
+void placeLine(TextLayout& t, PrTextLine& line, float left) {
     line.left = left;
     line.runStart = t.placed.count;
     float pen = left;
@@ -97,7 +100,10 @@ void placeLine(TextLayout& t, PrTextLine& line, const PrTextLayoutDesc& d, float
         const PrTextItemRun& run = runs[part.run].item;
         if (run.face == kPrTextMatchNone)
             continue;
-        PlacedRun placed{prTextFontMatchedFont(d.font, run.face), t.glyphs.count, 0, part.start, false};
+        PrTextFont* font = t.pieces.data[run.piece].font;
+        PlacedRun placed{
+            prTextFontMatchedFont(font, run.face), prTextFontStyle(font).size, t.glyphs.count, 0, part.start, false,
+        };
         // A right-to-left run's glyphs are in the order of the text, and are drawn from its last.
         uint32_t first = glyphAt[part.start];
         uint32_t count = glyphAt[part.end] - first;
@@ -120,6 +126,44 @@ void placeLine(TextLayout& t, PrTextLine& line, const PrTextLayoutDesc& d, float
             t.placed.push(placed);
     }
     line.runCount = t.placed.count - line.runStart;
+}
+
+void releaseSpanFonts(TextLayout& t) {
+    for (uint32_t i = 0; i < t.spanFonts.count; ++i)
+        prTextFontRelease(t.spanFonts.data[i]);
+    t.spanFonts.clear();
+}
+
+// Fills `t.pieces` with Text pieces that cover the text: the spans of `desc`, and pieces in its font between them. Each
+// piece has a style of its own, so that runs break between them.
+void buildPieces(TextLayout& t, const PrTextLayoutDesc& desc, const PrTextFeatureSet* features) {
+    t.pieces.clear();
+    uint32_t bytes = t.text.count;
+    uint32_t at = 0;
+    auto add = [&](uint32_t end, PrTextFont* font) {
+        PrTextPiece piece{
+            .kind = PrTextPieceKind_Text,
+            .start = at,
+            .end = end,
+            .font = font,
+            .style = t.pieces.count,
+            .features = features,
+        };
+        t.pieces.push(piece);
+        at = end;
+    };
+    for (uint32_t i = 0; i < desc.spanCount; ++i) {
+        const PrTextLayoutSpan& span = desc.spans[i];
+        uint32_t start = span.start < bytes ? span.start : bytes;
+        uint32_t end = span.end < bytes ? span.end : bytes;
+        if (start < at || end <= start)
+            continue;
+        if (start > at)
+            add(start, desc.font);
+        add(end, span.font);
+    }
+    if (at < bytes || t.pieces.count == 0)
+        add(bytes, desc.font);
 }
 
 // Returns the line that holds byte `offset`: the last line that starts at or before it.
@@ -148,6 +192,9 @@ void prTextLayoutDestroy(PrTextLayout* PR_NULLABLE layout) {
     prTextFontRelease(layout->font);
     prTextShapingDestroy(layout->shaping);
     prTextShapingScratchDestroy(layout->scratch);
+    releaseSpanFonts(*layout);
+    layout->spanFonts.reset();
+    layout->pieces.reset();
     layout->text.reset();
     layout->lines.reset();
     layout->glyphs.reset();
@@ -165,6 +212,11 @@ void prTextLayoutSet(PrTextLayout* layout, const PrTextLayoutDesc* desc) {
     prTextFontRetain(desc->font);
     prTextFontRelease(layout->font);
     layout->font = desc->font;
+    for (uint32_t i = 0; i < desc->spanCount; ++i)
+        prTextFontRetain(desc->spans[i].font);
+    releaseSpanFonts(*layout);
+    for (uint32_t i = 0; i < desc->spanCount; ++i)
+        layout->spanFonts.push(desc->spans[i].font);
     layout->size = prTextFontStyle(desc->font).size;
     layout->text.clear();
     layout->text.append(desc->text.data, uint32_t(desc->text.size));
@@ -182,11 +234,11 @@ void prTextLayoutSet(PrTextLayout* layout, const PrTextLayoutDesc* desc) {
         .featureCount = desc->featureCount,
     };
     PrTextFeatureSet* features = prTextFeatureSetCreate(&featureDesc);
-    PrTextPiece piece{.kind = PrTextPieceKind_Text, .end = bytes, .font = desc->font, .features = features};
+    buildPieces(*layout, *desc, features);
     PrTextShapingDesc shapingDesc{
         .text = text,
-        .pieces = &piece,
-        .pieceCount = 1,
+        .pieces = layout->pieces.data,
+        .pieceCount = layout->pieces.count,
         .direction = desc->direction,
         .shaper = desc->shaper,
     };
@@ -196,6 +248,8 @@ void prTextLayoutSet(PrTextLayout* layout, const PrTextLayoutDesc* desc) {
     }
     prTextShapingSet(layout->shaping, &shapingDesc, layout->scratch);
     prTextFeatureSetRelease(features);
+    for (uint32_t i = 0; i < layout->pieces.count; ++i)
+        layout->pieces.data[i].features = nullptr;
     breakLines(*layout, desc->width);
     layout->clusterLeft.resize(bytes);
     layout->clusterRight.resize(bytes);
@@ -246,7 +300,7 @@ void prTextLayoutSet(PrTextLayout* layout, const PrTextLayoutDesc* desc) {
         line.top = top;
         line.height = lineHeight;
         line.baseline = top + (lineHeight - ascent - descent) / 2 + ascent;
-        placeLine(*layout, line, *desc, left);
+        placeLine(*layout, line, left);
         top += lineHeight;
     }
     layout->height = top;
@@ -274,7 +328,7 @@ PrFontGlyphRun prTextLayoutRun(const PrTextLayout* layout, uint32_t index) {
     const PlacedRun& placed = layout->placed.data[index];
     PrFontGlyphRun run{};
     run.font = placed.font;
-    run.size = layout->size;
+    run.size = placed.size;
     run.glyphs = layout->glyphs.data + placed.glyphStart;
     run.glyphCount = placed.glyphCount;
     run.transforms = placed.scaled ? layout->transforms.data + placed.glyphStart : nullptr;

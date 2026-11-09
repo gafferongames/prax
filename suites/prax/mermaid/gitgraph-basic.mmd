@@ -1,0 +1,16 @@
+gitGraph
+    commit
+    commit id: "Normal" tag: "v1.0.0"
+    branch develop
+    checkout develop
+    commit id: "Dev"
+    commit type: HIGHLIGHT
+    checkout main
+    commit type: REVERSE
+    branch feature
+    commit
+    checkout develop
+    merge feature
+    checkout main
+    merge develop tag: "v2.0.0"
+    cherry-pick id: "Dev"

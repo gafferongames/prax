@@ -72,6 +72,10 @@ html-06-user-interaction html/interaction.html
 mathml-core mathml-core
 # MathML 4's presentation markup past MathML Core; its other chapters are not walked yet.
 mathml4-03-presentation-markup mathml4/#presentation-markup
+
+# Mermaid diagrams, for lib/mermaid to draw beside mermaid.js (README.md, "Pages that walk no specification").
+mermaid
+
 pointerevents pointerevents4
 svg2-02-conformance-criteria SVG2/conform.html
 svg2-03-rendering-model SVG2/render.html

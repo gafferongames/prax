@@ -1,0 +1,26 @@
+stateDiagram-v2
+    [*] --> Active
+    state Active {
+        [*] --> Idle
+        Idle --> Busy : job
+        Busy --> Idle
+    }
+    state fork_state <<fork>>
+    Active --> fork_state
+    fork_state --> Left
+    fork_state --> Right
+    state join_state <<join>>
+    Left --> join_state
+    Right --> join_state
+    state check <<choice>>
+    join_state --> check
+    check --> Done : ok
+    check --> Active : retry
+    state Parallel {
+        [*] --> A
+        --
+        [*] --> B
+    }
+    Done --> Parallel
+    note right of Done : Finished work
+    Parallel --> [*]

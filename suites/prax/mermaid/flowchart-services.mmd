@@ -1,0 +1,21 @@
+flowchart TB
+    user((User)) --> cdn[CDN]
+    cdn --> gateway
+    subgraph backend [Backend]
+        gateway[API gateway] --> accounts[Accounts]
+        gateway --> orders[Orders]
+        orders --> payments[Payments]
+        subgraph data [Data]
+            direction LR
+            db[(Postgres)]
+            cache[(Redis)]
+            queue[[Queue]]
+        end
+        accounts --> db
+        orders --> db
+        orders --> cache
+        payments --> queue
+    end
+    queue --> worker[Billing worker]
+    worker --> mail>Email]
+    backend --> metrics{{Metrics}}

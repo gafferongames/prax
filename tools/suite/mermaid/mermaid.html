@@ -1,0 +1,56 @@
+<!doctype html>
+<!--
+  A Mermaid diagram drawn by mermaid.js in its classic look, which the viewer shows beside the
+  diagram that lib/mermaid draws. Open it as mermaid.html?src=<the diagram's URL>. The diagram is
+  fitted to the page and centered, as the viewer fits the engine's diagram. window.prReady
+  settles once the diagram is drawn.
+
+  A page loaded from a file can read neighboring files with XMLHttpRequest, so the page reads
+  the diagram's source that way.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; overflow: hidden; }
+  @media (prefers-color-scheme: dark) { html, body { background: #333; } }
+  #diagram { width: 100vw; height: 100vh; }
+  #diagram svg { width: 100%; height: 100%; max-width: none !important; }
+  #error { font: 14px sans-serif; color: #c00; padding: 8px; white-space: pre-wrap; }
+</style>
+<script src="../../../third_party/mermaid/mermaid.min.js"></script>
+</head>
+<body>
+<div id="diagram"></div>
+<div id="error"></div>
+<script>
+  function read(url) {
+    return new Promise(function (resolve, reject) {
+      var request = new XMLHttpRequest();
+      request.open('GET', new URL(url, location.href).href);
+      request.responseType = 'text';
+      request.onload = function () { resolve(request.response); };
+      request.onerror = function () { reject(new Error('cannot read ' + url)); };
+      request.send();
+    });
+  }
+
+  // Mermaid's classic look, which lib/mermaid draws, with its classic dagre layout. Mermaid 12 made a new look and ELK
+  // the defaults. The theme follows the scheme that the browser prefers, as lib/mermaid's does.
+  var dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({ startOnLoad: false, look: 'classic', theme: dark ? 'dark' : 'default', layout: 'dagre' });
+  var src = new URLSearchParams(location.search).get('src');
+  window.prReady = read(src)
+    .then(function (source) { return mermaid.render('diagram-svg', source); })
+    .then(function (result) {
+      var container = document.getElementById('diagram');
+      container.innerHTML = result.svg;
+      var svg = container.querySelector('svg');
+      svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    })
+    .catch(function (error) {
+      document.getElementById('error').textContent = String(error && error.message || error);
+    });
+</script>
+</body>
+</html>

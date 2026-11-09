@@ -21,6 +21,7 @@ double __cdecl cos(double x);
 double __cdecl exp(double x);
 double __cdecl fabs(double x);
 double __cdecl log(double x);
+double __cdecl log10(double x);
 double __cdecl sin(double x);
 double __cdecl sqrt(double x);
 double __cdecl tan(double x);
@@ -170,6 +171,9 @@ static inline double prF64Exp2(double value) {
 }
 static inline double prF64Log2(double value) {
     return PR_MATH_BUILTIN(log2)(value);
+}
+static inline double prF64Log10(double value) {
+    return PR_MATH_BUILTIN(log10)(value);
 }
 static inline double prF64Floor(double value) {
     return PR_MATH_BUILTIN(floor)(value);
