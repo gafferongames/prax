@@ -184,11 +184,11 @@ TEST_CASE("vterm reports: XTGETTCAP reports the sequences of the extensions that
 
 TEST_CASE("vterm reports: the color scheme is dark until the caller sets it, and a query reports it") {
     Term term;
-    CHECK(prVtermColorScheme(term.vterm) == PrAppColorScheme_Dark);
+    CHECK(prVtermColorScheme(term.vterm) == PrColorScheme_Dark);
     term.write("\x1b[?996n");
     CHECK(term.output() == "\x1b[?997;1n");
-    prVtermSetColorScheme(term.vterm, PrAppColorScheme_Light);
-    CHECK(prVtermColorScheme(term.vterm) == PrAppColorScheme_Light);
+    prVtermSetColorScheme(term.vterm, PrColorScheme_Light);
+    CHECK(prVtermColorScheme(term.vterm) == PrColorScheme_Light);
     // Without mode 2031, the change is not reported.
     CHECK(term.output().empty());
     term.write("\x1b[?996n");
@@ -206,20 +206,20 @@ TEST_CASE("vterm reports: mode 2031 reports each change of the color scheme, and
     term.write("\x1b[?2031h\x1b[?2031$p");
     CHECK(term.output() == "\x1b[?2031;1$y");
 
-    prVtermSetColorScheme(term.vterm, PrAppColorScheme_Light);
+    prVtermSetColorScheme(term.vterm, PrColorScheme_Light);
     CHECK(term.output() == "\x1b[?997;2n");
     // Setting the scheme that the terminal already has is not a change.
-    prVtermSetColorScheme(term.vterm, PrAppColorScheme_Light);
+    prVtermSetColorScheme(term.vterm, PrColorScheme_Light);
     CHECK(term.output().empty());
-    prVtermSetColorScheme(term.vterm, PrAppColorScheme_Dark);
+    prVtermSetColorScheme(term.vterm, PrColorScheme_Dark);
     CHECK(term.output() == "\x1b[?997;1n");
 
     term.write("\x1b[?2031l");
-    prVtermSetColorScheme(term.vterm, PrAppColorScheme_Light);
+    prVtermSetColorScheme(term.vterm, PrColorScheme_Light);
     CHECK(term.output().empty());
 
     // A full reset ends the mode.
     term.write("\x1b[?2031h\x1b" "c");
-    prVtermSetColorScheme(term.vterm, PrAppColorScheme_Dark);
+    prVtermSetColorScheme(term.vterm, PrColorScheme_Dark);
     CHECK(term.output().empty());
 }

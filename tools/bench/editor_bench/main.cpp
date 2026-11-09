@@ -40,7 +40,7 @@ namespace {
 // The viewport, in logical pixels, on an SDR display, in the dark theme. Each case gives the display's pixel ratio.
 constexpr PrVec2 kExtent{1440, 900};
 constexpr PrAppDisplay kDisplay{.pixelRatio = 2, .headroom = 1, .potentialHeadroom = 1, .gamut = PrColorSpace_Srgb};
-constexpr PrAppUserPreferences kPreferences{.colorScheme = PrAppColorScheme_Dark};
+constexpr PrAppUserPreferences kPreferences{.colorScheme = PrColorScheme_Dark};
 
 // The frames that settle the editor before its cases are measured.
 constexpr uint32_t kSettleFrames = 4;

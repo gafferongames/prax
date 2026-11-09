@@ -216,8 +216,7 @@ PrAppOutput frame(void* context, PrApp*, const PrAppFrame* f) {
     prCachePump(b.icons);
     if (f->preferences.colorScheme != b.scheme) {
         b.scheme = f->preferences.colorScheme;
-        PrKitThemeVariant variant =
-            b.scheme == PrAppColorScheme_Dark ? PrKitThemeVariant_Dark : PrKitThemeVariant_Light;
+        PrKitThemeVariant variant = b.scheme == PrColorScheme_Dark ? PrKitThemeVariant_Dark : PrKitThemeVariant_Light;
         PrKitTheme theme = prKitThemeStudio(variant, b.fonts);
         prKitSetTheme(b.kit, &theme);
     }

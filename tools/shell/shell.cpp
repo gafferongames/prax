@@ -559,7 +559,7 @@ void parse(PageHost& host, const std::vector<std::string>& args, Run& run) {
         } else if (option == "--no-scripts") {
             host.disableScripts();
         } else if (option == "--dark") {
-            host.setUserPreferences(PrAppUserPreferences{.colorScheme = PrAppColorScheme_Dark});
+            host.setUserPreferences(PrAppUserPreferences{.colorScheme = PrColorScheme_Dark});
         } else if (option == "--verify") {
             host.verifyRendering();
             run.verify = true;

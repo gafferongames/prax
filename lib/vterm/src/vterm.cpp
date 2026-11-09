@@ -1447,7 +1447,7 @@ PrVterm* prVtermCreate(const PrVtermDesc* desc) {
     vtermGraphicsInit(&vterm->graphics, desc);
     paletteDefault(vterm->defaultPalette);
     prMemCopy(vterm->defaultRoles, kRoleColors, sizeof(kRoleColors));
-    vterm->colorScheme = PrAppColorScheme_Dark;
+    vterm->colorScheme = PrColorScheme_Dark;
     stateReset(vterm);
     return vterm;
 }
@@ -1701,12 +1701,12 @@ PrColor8 prVtermColorResolve(const PrVterm* vterm, PrVtermColor color, PrVtermCo
     }
 }
 
-PrAppColorScheme prVtermColorScheme(const PrVterm* vterm) {
+PrColorScheme prVtermColorScheme(const PrVterm* vterm) {
     return vterm->colorScheme;
 }
 
-void prVtermSetColorScheme(PrVterm* vterm, PrAppColorScheme scheme) {
-    PR_ASSERT(scheme <= PrAppColorScheme_Dark);
+void prVtermSetColorScheme(PrVterm* vterm, PrColorScheme scheme) {
+    PR_ASSERT(scheme <= PrColorScheme_Dark);
     if (scheme == vterm->colorScheme)
         return;
     vterm->colorScheme = scheme;

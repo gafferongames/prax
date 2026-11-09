@@ -176,8 +176,7 @@ int main(int argc, char** argv) {
         } else if (std::strcmp(argv[i], "--appearance") == 0) {
             if (std::strcmp(value, "dark") != 0 && std::strcmp(value, "light") != 0)
                 return usage();
-            h.preferences.colorScheme =
-                std::strcmp(value, "dark") == 0 ? PrAppColorScheme_Dark : PrAppColorScheme_Light;
+            h.preferences.colorScheme = std::strcmp(value, "dark") == 0 ? PrColorScheme_Dark : PrColorScheme_Light;
         } else if (std::strcmp(argv[i], "--size") != 0 ||
                 std::sscanf(value, "%ux%u", &h.size.x, &h.size.y) != 2 || h.size.x == 0 || h.size.y == 0) {
             return usage();

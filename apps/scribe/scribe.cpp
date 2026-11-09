@@ -443,7 +443,7 @@ void closeEditor(Scribe& s) {
 void buildScribe(Scribe& s, PrLayoutNode root, PrVec2 extent) {
     prCommandScope(s.ui, root, s.commands, s.keymap, "");
     // The terminals' programs see the color scheme that the window's theme follows.
-    PrAppColorScheme scheme = prUiUserPreferences(s.ui).colorScheme;
+    PrColorScheme scheme = prUiUserPreferences(s.ui).colorScheme;
     for (PrTerminal* terminal : s.terminals)
         prTerminalSetColorScheme(terminal, scheme);
     bool menuOpen = buildMenus(s, root);

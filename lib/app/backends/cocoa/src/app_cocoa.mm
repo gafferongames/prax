@@ -950,7 +950,7 @@ using namespace pr_impl;
     NSArray<NSAppearanceName>* names = @[ NSAppearanceNameAqua, NSAppearanceNameDarkAqua ];
     NSAppearanceName appearance = [NSApp.effectiveAppearance bestMatchFromAppearancesWithNames:names];
     if ([appearance isEqualToString:NSAppearanceNameDarkAqua])
-        preferences.colorScheme = PrAppColorScheme_Dark;
+        preferences.colorScheme = PrColorScheme_Dark;
     NSWorkspace* workspace = NSWorkspace.sharedWorkspace;
     if (workspace.accessibilityDisplayShouldIncreaseContrast)
         preferences.contrast = PrAppContrast_More;

@@ -361,7 +361,7 @@ struct Vterm {
     PrColor8 defaultPalette[kPrVtermPaletteCount];
     PrColor8 roles[3];              // by PrVtermColorRole
     PrColor8 defaultRoles[3];
-    PrAppColorScheme colorScheme;   // the dark or light scheme that the caller set, which a program cannot change
+    PrColorScheme colorScheme;   // the dark or light scheme that the caller set, which a program cannot change
 
     PrRawString title;
     PrRawString titles[kVtermTitleStackMax];

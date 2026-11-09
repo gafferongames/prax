@@ -2370,7 +2370,7 @@ void prTerminalVtermUnlock(PrTerminal* terminal) {
     unlockScreen(terminal);
 }
 
-void prTerminalSetColorScheme(PrTerminal* terminal, PrAppColorScheme scheme) {
+void prTerminalSetColorScheme(PrTerminal* terminal, PrColorScheme scheme) {
     lockScreen(terminal);
     if (prVtermColorScheme(terminal->vterm) != scheme) {
         prVtermSetColorScheme(terminal->vterm, scheme);

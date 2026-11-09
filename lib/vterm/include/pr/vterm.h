@@ -17,7 +17,6 @@
 
 #pragma once
 
-#include "pr/app_user_preferences.h"
 #include "pr/base.h"
 #include "pr/byte_view.h"
 #include "pr/color.h"
@@ -506,8 +505,8 @@ PrColor8 prVtermColorResolve(const PrVterm* vterm, PrVtermColor color, PrVtermCo
 
 // The color scheme of the caller's theme. The program can query it, and can ask to hear whenever it changes. A terminal
 // starts dark, to match its default roles. The program cannot change the scheme, so a reset keeps it.
-PrAppColorScheme prVtermColorScheme(const PrVterm* vterm);
-void prVtermSetColorScheme(PrVterm* vterm, PrAppColorScheme scheme);
+PrColorScheme prVtermColorScheme(const PrVterm* vterm);
+void prVtermSetColorScheme(PrVterm* vterm, PrColorScheme scheme);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Output

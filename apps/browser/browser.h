@@ -228,7 +228,7 @@ struct Browser {
     PrUi* PR_NULLABLE ui = nullptr;
     PrKit* PR_NULLABLE kit = nullptr;
     PrCache* PR_NULLABLE icons = nullptr;
-    PrAppColorScheme scheme = PrAppColorScheme_Light;
+    PrColorScheme scheme = PrColorScheme_Light;
     Chrome chrome;
 
     // The browser's commands and the chords bound to them (commands.h), and the context of each command, by its index

@@ -3598,7 +3598,7 @@ void htmlPageFollowFrameScheme(PrHtmlPage* parent, PrHtmlPage* page) {
             continue;
         PrAppUserPreferences preferences = page->preferences;
         bool dark = cssPresentationUsesDarkScheme(parent->presentation, frame.container);
-        preferences.colorScheme = dark ? PrAppColorScheme_Dark : PrAppColorScheme_Light;
+        preferences.colorScheme = dark ? PrColorScheme_Dark : PrColorScheme_Light;
         if (preferences.colorScheme != page->preferences.colorScheme)
             prHtmlPageSetUserPreferences(page, &preferences);
         return;

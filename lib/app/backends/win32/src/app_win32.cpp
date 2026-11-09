@@ -511,7 +511,7 @@ void refreshPreferences(Win32App* app) {
     PrAppUserPreferences& preferences = app->preferences;
     preferences = PrAppUserPreferences{};
     if (personalizeValue(L"AppsUseLightTheme", 1) == 0)
-        preferences.colorScheme = PrAppColorScheme_Dark;
+        preferences.colorScheme = PrColorScheme_Dark;
     HIGHCONTRASTW contrast{};
     contrast.cbSize = sizeof(contrast);
     if (SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0) &&
@@ -519,13 +519,13 @@ void refreshPreferences(Win32App* app) {
         preferences.contrast = PrAppContrast_More;
         COLORREF background = GetSysColor(COLOR_WINDOW);
         uint32_t luma = 2126u * GetRValue(background) + 7152u * GetGValue(background) + 722u * GetBValue(background);
-        preferences.colorScheme = luma < 10000u * 128u ? PrAppColorScheme_Dark : PrAppColorScheme_Light;
+        preferences.colorScheme = luma < 10000u * 128u ? PrColorScheme_Dark : PrColorScheme_Light;
     }
     BOOL animation = TRUE;
     if (SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &animation, 0))
         preferences.reducedMotion = !animation;
     preferences.reducedTransparency = personalizeValue(L"EnableTransparency", 1) == 0;
-    BOOL dark = preferences.colorScheme == PrAppColorScheme_Dark;
+    BOOL dark = preferences.colorScheme == PrColorScheme_Dark;
     DwmSetWindowAttribute(app->window, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
 }
 

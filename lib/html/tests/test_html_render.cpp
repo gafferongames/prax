@@ -2128,12 +2128,12 @@ TEST_CASE("the used color scheme follows the user's preference where an element 
         PrLayoutGroupIndex decoration = record.groups[PrLayoutGroup_Decoration];
         return prColorFromColor16(prLayoutDecorationStyleRecord(tree, decoration).background).b == 1.0f;
     };
-    auto prefer = [&](PrAppColorScheme scheme) {
+    auto prefer = [&](PrColorScheme scheme) {
         PrAppUserPreferences preferences{.colorScheme = scheme};
         prHtmlPageSetUserPreferences(htmlPage, &preferences);
         prHtmlPresentationUpdate(presentation, prLayoutVecFromPx(PrVec2{800, 600}));
     };
-    prefer(PrAppColorScheme_Light);
+    prefer(PrColorScheme_Light);
     CHECK_FALSE(dark("both"));
     CHECK_FALSE(dark("light"));
     CHECK(dark("dark"));
@@ -2141,7 +2141,7 @@ TEST_CASE("the used color scheme follows the user's preference where an element 
     CHECK(sameColor(prColorFromColor16(prLayoutTreeCanvasColor(prCssPresentationTree(presentation))), PrColor{1, 1, 1, 1}));
     // A dark preference reaches only the element that allows both schemes, which alone projects again.
     CHECK_FALSE(dark("unknown"));
-    prefer(PrAppColorScheme_Dark);
+    prefer(PrColorScheme_Dark);
     CHECK(prCssPresentationStats(presentation).elementsStyled == 1);
     CHECK(dark("both"));
     CHECK_FALSE(dark("light"));
@@ -2163,7 +2163,7 @@ TEST_CASE("the used color scheme follows the user's preference where an element 
     PrColor canvas = prColorFromColor16(prLayoutTreeCanvasColor(prCssPresentationTree(presentation)));
     CHECK(canvas.r < 0.2f);
     CHECK(canvas.a == 1.0f);
-    prefer(PrAppColorScheme_Light);
+    prefer(PrColorScheme_Light);
     CHECK_FALSE(dark("normal"));
     CHECK(sameColor(prColorFromColor16(prLayoutTreeCanvasColor(prCssPresentationTree(presentation))), PrColor{1, 1, 1, 1}));
     // A meta that changes its schemes reaches every box.
@@ -2219,7 +2219,7 @@ TEST_CASE("a frame's document sees its parent's display and user preferences, be
     PrAppDisplay display{.pixelRatio = 2, .headroom = 4, .potentialHeadroom = 8, .gamut = PrColorSpace_DisplayP3};
     prHtmlPageSetDisplay(htmlPage, &display);
     PrAppUserPreferences preferences{
-        .colorScheme = PrAppColorScheme_Dark,
+        .colorScheme = PrColorScheme_Dark,
         .contrast = PrAppContrast_More,
         .reducedMotion = true,
         .reducedTransparency = true,
@@ -4564,7 +4564,7 @@ TEST_CASE("light-dark() of images picks the image or none of the element's used 
             prLayoutBackgroundLayer(tree, layers, 1).kind,
         };
     };
-    auto prefer = [&](PrAppColorScheme scheme) {
+    auto prefer = [&](PrColorScheme scheme) {
         PrAppUserPreferences preferences{.colorScheme = scheme};
         prHtmlPageSetUserPreferences(htmlPage, &preferences);
         prHtmlPresentationUpdate(presentation, prLayoutVecFromPx(PrVec2{800, 600}));
@@ -4572,12 +4572,12 @@ TEST_CASE("light-dark() of images picks the image or none of the element's used 
     using Kinds = std::pair<PrLayoutImageKind, PrLayoutImageKind>;
     const Kinds lightKinds{PrLayoutImageKind_Gradient, PrLayoutImageKind_None};
     const Kinds darkKinds{PrLayoutImageKind_None, PrLayoutImageKind_Gradient};
-    prefer(PrAppColorScheme_Light);
+    prefer(PrColorScheme_Light);
     CHECK(kinds("light") == lightKinds);
     CHECK(kinds("dark") == darkKinds);
     CHECK(kinds("both") == lightKinds);
     // The preference reaches the element that allows both schemes, which alone projects again.
-    prefer(PrAppColorScheme_Dark);
+    prefer(PrColorScheme_Dark);
     CHECK(prCssPresentationStats(presentation).elementsStyled == 1);
     CHECK(kinds("both") == darkKinds);
     CHECK(kinds("light") == lightKinds);

@@ -61,8 +61,8 @@ struct WindowRun {
     PrDrawDisplay* PR_NULLABLE display;
 };
 
-PrKitThemeVariant variantOf(PrAppColorScheme scheme) {
-    return scheme == PrAppColorScheme_Dark ? PrKitThemeVariant_Dark : PrKitThemeVariant_Light;
+PrKitThemeVariant variantOf(PrColorScheme scheme) {
+    return scheme == PrColorScheme_Dark ? PrKitThemeVariant_Dark : PrKitThemeVariant_Light;
 }
 
 // Declares a round: a surface on the app background that fills the viewport, and the application's round under it.

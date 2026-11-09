@@ -227,7 +227,7 @@ void closeApp(TerminalApp& t) {
 void buildApp(TerminalApp& t, PrLayoutNode root, PrVec2 extent) {
     prCommandScope(t.ui, root, t.commands, t.keymap, "");
     // The terminals' programs see the color scheme that the window's theme follows.
-    PrAppColorScheme scheme = prUiUserPreferences(t.ui).colorScheme;
+    PrColorScheme scheme = prUiUserPreferences(t.ui).colorScheme;
     for (PrTerminal* terminal : t.terminals)
         prTerminalSetColorScheme(terminal, scheme);
     // Hidden terminals still read their programs' output, so their titles and exits stay current.

@@ -25,7 +25,7 @@ PrKitThemeVariant themeOf(void* context, PrStudioWindow*, const PrAppUserPrefere
         case GalleryTheme_Light: return PrKitThemeVariant_Light;
         default: break;
     }
-    return preferences->colorScheme == PrAppColorScheme_Dark ? PrKitThemeVariant_Dark : PrKitThemeVariant_Light;
+    return preferences->colorScheme == PrColorScheme_Dark ? PrKitThemeVariant_Dark : PrKitThemeVariant_Light;
 }
 
 } // namespace

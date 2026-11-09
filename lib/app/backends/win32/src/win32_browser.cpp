@@ -842,7 +842,7 @@ PrStatus win32BrowserCreate(PrApp* app, void* PR_NULLABLE host, const PrAppBrows
     b->pixelRatio = desc->pixelRatio;
     b->colorScheme = COREWEBVIEW2_PREFERRED_COLOR_SCHEME_AUTO;
     if (desc->preferences != nullptr) {
-        bool dark = desc->preferences->colorScheme == PrAppColorScheme_Dark;
+        bool dark = desc->preferences->colorScheme == PrColorScheme_Dark;
         b->colorScheme = dark ? COREWEBVIEW2_PREFERRED_COLOR_SCHEME_DARK : COREWEBVIEW2_PREFERRED_COLOR_SCHEME_LIGHT;
     }
     // The window is shown, so that the page renders, and never activates, so that the application keeps the focus.

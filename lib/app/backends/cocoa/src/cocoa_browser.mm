@@ -403,7 +403,7 @@ PrStatus cocoaBrowserCreate(PrApp* app, void* PR_NULLABLE host, const PrAppBrows
     if ([object.view respondsToSelector:@selector(_setWindowOcclusionDetectionEnabled:)])
         object.view._windowOcclusionDetectionEnabled = NO;
     if (desc->preferences != nullptr) {
-        bool dark = desc->preferences->colorScheme == PrAppColorScheme_Dark;
+        bool dark = desc->preferences->colorScheme == PrColorScheme_Dark;
         object.view.appearance = [NSAppearance appearanceNamed:dark ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
     }
     object.window.contentView = object.view;

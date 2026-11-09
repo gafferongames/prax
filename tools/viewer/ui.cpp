@@ -66,7 +66,7 @@ struct Ui {
     std::vector<PrLayoutSceneScroll> scrolls;
     std::vector<ShownImage> images;
     float pixelRatio = 1;
-    PrAppColorScheme scheme = PrAppColorScheme_Light;
+    PrColorScheme scheme = PrColorScheme_Light;
 
     // The nodes of the last round: the box left for documents, and the list of documents, which holds the keyboard
     // unless something else does.
@@ -595,8 +595,7 @@ PrRect uiLayout(Ui* ui, const PrAppFrame* frame, bool pageKeys, const std::vecto
         const std::vector<Reference>& references, const Figures& figures, Choices& choices) {
     if (frame->preferences.colorScheme != ui->scheme) {
         ui->scheme = frame->preferences.colorScheme;
-        PrKitThemeVariant variant =
-            ui->scheme == PrAppColorScheme_Dark ? PrKitThemeVariant_Dark : PrKitThemeVariant_Light;
+        PrKitThemeVariant variant = ui->scheme == PrColorScheme_Dark ? PrKitThemeVariant_Dark : PrKitThemeVariant_Light;
         PrKitTheme theme = prKitThemeStudio(variant, ui->fonts);
         prKitSetTheme(ui->kit, &theme);
     }

@@ -9,7 +9,7 @@ USAGE = {
     regenerate the tables from webref and the other sources""",
 }
 
-GENERATORS = ("gen_brotli", "gen_charset", "gen_css", "gen_dom", "gen_html", "gen_url", "gen_webidl", "gen_unicode",
+GENERATORS = ("gen_brotli", "gen_charset", "gen_color", "gen_css", "gen_dom", "gen_html", "gen_url", "gen_webidl", "gen_unicode",
               "gen_locale", "gen_mathml")
 
 

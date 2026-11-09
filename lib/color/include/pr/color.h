@@ -31,6 +31,14 @@ typedef struct PrColor {
 } PrColor;
 PR_NO_PADDING_END
 
+// A color scheme (css-color-adjust-1/#color-scheme-prop): light backgrounds with dark text, or the opposite. A user
+// prefers one, and content is drawn in one.
+enum {
+    PrColorScheme_Light,
+    PrColorScheme_Dark,
+};
+typedef uint8_t PrColorScheme;
+
 // A color of four 8-bit channels. It carries no color space and no alpha mode.
 typedef struct PrColor8 {
     uint8_t r;

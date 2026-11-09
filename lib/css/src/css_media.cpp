@@ -583,7 +583,7 @@ bool cssMediaEnvironmentSetUserPreferences(CssMediaEnvironment* environment, con
     const Preference set[] = {
         {
             PrCssDescriptor_MediaPrefersColorScheme,
-            PrCssKeyword(preferences.colorScheme == PrAppColorScheme_Dark ? PrCssKeyword_Dark : PrCssKeyword_Light),
+            PrCssKeyword(preferences.colorScheme == PrColorScheme_Dark ? PrCssKeyword_Dark : PrCssKeyword_Light),
         },
         {PrCssDescriptor_MediaPrefersContrast, contrast},
         {

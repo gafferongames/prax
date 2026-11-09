@@ -267,7 +267,7 @@ void vtermDeviceControl(Vterm* vterm, const VtermAction* action) {
 }
 
 void vtermColorSchemeReport(Vterm* vterm) {
-    vtermPut(vterm, vterm->colorScheme == PrAppColorScheme_Dark ? "\x1b[?997;1n" : "\x1b[?997;2n");
+    vtermPut(vterm, vterm->colorScheme == PrColorScheme_Dark ? "\x1b[?997;1n" : "\x1b[?997;2n");
 }
 
 } // namespace pr_impl

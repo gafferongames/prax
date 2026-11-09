@@ -207,7 +207,7 @@ void prTerminalVtermUnlock(PrTerminal* terminal);
 
 // Sets the color scheme that the program can query (prVtermSetColorScheme). If the program asked for changes, it is
 // told of a change.
-void prTerminalSetColorScheme(PrTerminal* terminal, PrAppColorScheme scheme);
+void prTerminalSetColorScheme(PrTerminal* terminal, PrColorScheme scheme);
 
 // The number of buckets in PrTerminalLockInfo. Bucket 0 counts waits shorter than 1 microsecond. Bucket `i` counts
 // waits from 2^(i-1) up to 2^i microseconds. The last bucket counts every longer wait.
