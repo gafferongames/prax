@@ -2,9 +2,16 @@
 // steps. They use the names of the frame's enumerations, which the generated prelude defines from the C headers, and
 // the records of draw_fragment_records.h, which the C++ side shares.
 //
-// The frame's data is one buffer that the uniforms name, and each array is read from its byte offset there, as typed
-// records. Half floats are read as pairs in a uint. Textures are read through the frame's table of handles, which
-// instances and records index, and samplers through the handles in the uniforms.
+// The frame's data is one buffer, and each array is read from its byte offset there, as typed records. Half floats are
+// read as pairs in a uint. Instances and records name textures by their index in the frame's table.
+//
+// The source compiles for two binding models. By default it reaches resources by handle: the uniforms name the frame's
+// buffer, the table holds the textures' handles, and the uniforms hold the samplers' handles. With
+// PR_DRAW_FRAGMENT_SLOTS defined, for a device without bindless, it reaches them through slots: the frame's buffer is
+// Buffer slot 0, and each kind of texture that an instance or a filter step reads has a Texture slot of its own
+// (FragmentSlot), which each draw binds to the texture that its instances read there, and an Image paint's slot to its
+// sampler beside it. Code that reads a texture or a sampler names both its index in the frame and its slot
+// (frameTexture, frameSampler), so that the same code serves both models.
 
 #include "pr/gpu.slang"
 
@@ -49,12 +56,29 @@ uint framePart(uint part) {
     return frame.parts[part >> 2][part & 3];
 }
 
+#if defined(PR_DRAW_FRAGMENT_SLOTS)
+
+PR_GPU_BUFFER(ByteAddressBuffer, frameData, 0);
+
+// Returns the value of type T at `offset` bytes into the frame's data.
+T frameLoad<T>(uint offset) {
+    return frameData.Load<T>(offset);
+}
+
+#else
+
+T frameLoad<T>(uint offset) {
+    return prGpuLoad<T>(frame.data, offset);
+}
+
+#endif
+
 // An array of the frame's data, read by index.
 struct Part<T> {
     uint offset;
 
     __subscript(uint i)->T {
-        get { return prGpuLoad<T>(frame.data, offset + i * sizeof(T)); }
+        get { return frameLoad<T>(offset + i * sizeof(T)); }
     }
 };
 
@@ -63,11 +87,11 @@ struct Bytes {
     uint offset;
 
     uint Load(uint at) {
-        return prGpuLoad<uint>(frame.data, offset + at);
+        return frameLoad<uint>(offset + at);
     }
 
     T Load<T>(uint at) {
-        return prGpuLoad<T>(frame.data, offset + at);
+        return frameLoad<T>(offset + at);
     }
 };
 
@@ -93,10 +117,32 @@ struct Bytes {
 #define frameRampTables (Part<uint2>(framePart(18)))       // half4
 #define frameRampCells (Part<uint>(framePart(19)))
 
-// The frame's texture at a zero-based index of its table.
-Texture2D<float4> textureAt(uint index) {
-    return prGpuGet<Texture2D<float4>>(frameTable[index]);
-}
+#if defined(PR_DRAW_FRAGMENT_SLOTS)
+
+// The Texture slots, by FragmentSlot. The slot numbers are literals, which the registers that PR_GPU_TEXTURE names
+// need.
+PR_GPU_TEXTURE(Texture2D<float4>, slotCoverage, 1);
+PR_GPU_TEXTURE(Texture2D<float4>, slotLayer0, 2);
+PR_GPU_TEXTURE(Texture2D<float4>, slotUnder0, 3);
+PR_GPU_TEXTURE(Texture2D<float4>, slotLayer1, 4);
+PR_GPU_TEXTURE(Texture2D<float4>, slotUnder1, 5);
+PR_GPU_TEXTURE(Texture2D<float4>, slotLayer2, 6);
+PR_GPU_TEXTURE(Texture2D<float4>, slotUnder2, 7);
+
+// The frame's texture at a zero-based index of its table, which the draw binds to the slot named `slot` (slotCoverage
+// and the others above).
+#define frameTexture(slot, index) (slot)
+
+// The frame's sampler at an index below kFragmentSamplers, which the draw binds beside the texture of the slot whose
+// sampler is `slot` (slotLayer0Sampler).
+#define frameSampler(slot, index) (slot)
+
+#else
+
+#define frameTexture(slot, index) (prGpuGet<Texture2D<float4>>(frameTable[index]))
+#define frameSampler(slot, index) (prGpuGet<SamplerState>(frame.samplers[(index) >> 2][(index) & 3]))
+
+#endif
 
 float4 halfColor(uint2 h) {
     return float4(f16tof32(h.x), f16tof32(h.x >> 16), f16tof32(h.y), f16tof32(h.y >> 16));
@@ -111,6 +157,7 @@ float3 copysignOf(float3 m, float3 s) {
     return asfloat((asuint(m) & 0x7fffffffu) | (asuint(s) & 0x80000000u));
 }
 
+// What the vertex shader passes to the fragment shaders, which take it in only at their entry points (Fragment).
 struct VertexOut {
     float4 position : SV_Position;
     float2 local : LOCAL;               // the pixel's point in the instance's local space
@@ -118,6 +165,27 @@ struct VertexOut {
     nointerpolation uint instance : INSTANCE;
     nointerpolation float4 clipRect : CLIP;
 };
+
+// A fragment's VertexOut, as the code under the entry points reads it. Slang's WGSL keeps the interpolation of a
+// VertexOut that passes to a function on the struct's copy in the module, which WGSL refuses without a location, so
+// only the entry points name VertexOut, and each reads its fields into a Fragment (fragmentOf).
+struct Fragment {
+    float4 position;
+    float2 local;
+    float coverage;
+    uint instance;
+    float4 clipRect;
+
+    __init(float4 position, float2 local, float coverage, uint instance, float4 clipRect) {
+        this.position = position;
+        this.local = local;
+        this.coverage = coverage;
+        this.instance = instance;
+        this.clipRect = clipRect;
+    }
+};
+
+#define fragmentOf(v) (Fragment((v).position, (v).local, (v).coverage, (v).instance, (v).clipRect))
 
 // The pass's target: its top left in the target's pixels, and its size.
 float4 clipPosition(float2 position, float4 target) {
@@ -231,18 +299,31 @@ float3 shapedDistance(FragmentCornerRect s, float2 p) {
     return d.x > d.y ? float3(max(d.x, 0.0) + min(d.x, 0.0), side.x, 0) : float3(d.y, 0, side.y);
 }
 
-// The fraction of the pixel inside the shape at the point of its space. How fast the distance changes across pixels is
-// its direction through the point's own rate of change, which has no kinks.
-float shapedCoverage(FragmentCornerRect s, float2 p) {
+// The fraction of the pixel inside the shape at the point of its space, whose rates of change across the target's x and
+// y are `dx` and `dy`. How fast the distance changes across pixels is its direction through the point's own rate of
+// change, which has no kinks.
+float shapedCoverage(FragmentCornerRect s, float2 p, float2 dx, float2 dy) {
     float3 d = shapedDistance(s, p);
-    float2 across = float2(dot(d.yz, prGpuDdxFine(p)), dot(d.yz, prGpuDdyFine(p)));
-    float g = length(across);
+    float g = length(float2(dot(d.yz, dx), dot(d.yz, dy)));
     return g > 0 ? clamp(0.5 - d.x / g, 0.0, 1.0) : (d.x < 0 ? 1.0 : 0.0);
 }
 
-// The fraction of the pixel inside a clip's shape, whose transform maps the pixel into its space.
+// The fraction of the pixel inside the shape at the point of its space, taking the point's rates of change from the
+// pixel's neighbors.
+float shapedCoverage(FragmentCornerRect s, float2 p) {
+    return shapedCoverage(s, p, prGpuDdxFine(p), prGpuDdyFine(p));
+}
+
+// The fraction of the pixel inside a clip's shape, whose transform maps the pixel into its space. The mapped point's
+// rates of change come from the transform rather than the pixel's neighbors, so that it needs no gradient instruction
+// and can be called in a loop that varies across pixels.
 float shapeCoverage(FragmentClipShape s, float2 pixel) {
-    float c = shapedCoverage(s.shape, mapPoint(s.transform, pixel));
+    FragmentMatrix3 m = s.transform;
+    float w = dot(float3(m.m[2][0], m.m[2][1], m.m[2][2]), float3(pixel, 1));
+    float2 p = mapPoint(m, pixel);
+    float2 dx = (float2(m.m[0][0], m.m[1][0]) - p * m.m[2][0]) / w;
+    float2 dy = (float2(m.m[0][1], m.m[1][1]) - p * m.m[2][1]) / w;
+    float c = shapedCoverage(s.shape, p, dx, dy);
     return s.invert != 0 ? 1 - c : c;
 }
 
@@ -373,15 +454,14 @@ bool gradientParameter(FragmentPaint r, float2 b, inout float t) {
         t = turn - floor(turn);
         return true;
     }
-    default: {
-        // Diamond.
-        if (!(g[2] > 0 && g[3] > 0))
-            return false;
-        float2 d = abs(b - float2(g[0], g[1]));
-        t = d.x / g[2] + d.y / g[3];
-        return true;
+    default: break;
     }
-    }
+    // Diamond. It follows the switch, because fxc does not see that a switch whose every case returns does.
+    if (!(g[2] > 0 && g[3] > 0))
+        return false;
+    float2 d = abs(b - float2(g[0], g[1]));
+    t = d.x / g[2] + d.y / g[3];
+    return true;
 }
 
 // Maps `t` as the mode extends the gradient (prDrawGradientExtend). Returns false past the range of None, where it
@@ -438,6 +518,7 @@ struct ImageSource {
     uint tileY;
     uint sampling;
     uint alpha;                 // PrDrawAlpha of the texels
+    bool2 whole;                // whether `texels` spans the texture whole along each axis
 };
 
 // Returns a filtered color, premultiplied as the source's alpha says.
@@ -459,38 +540,13 @@ float4 cubicWeights(float t) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Images through the hardware's samplers (FragmentImageRead_Sampler)
 
-// The address modes of the samplers, along one axis.
-static const uint kAddressClamp = 0;
-static const uint kAddressRepeat = 1;
-static const uint kAddressMirror = 2;
-static const uint kAddressZero = 3;
-
-// Returns the address mode along an axis: the tile mode's if the source's texels span the texture whole along it, and
-// transparent past the texture's edge otherwise. `spacing` is the gap between tiles, in texels.
-uint addressOf(uint mode, float spacing, bool whole) {
-    if (!whole || mode == PrDrawExtend_None)
-        return kAddressZero;
-    if (mode == PrDrawExtend_Pad)
-        return kAddressClamp;
-    if (spacing > 0)
-        return kAddressZero;
-    return mode == PrDrawExtend_Repeat ? kAddressRepeat : kAddressMirror;
-}
-
-// The driver's samplers, for each pair of address modes along x and y at x * 4 + y: bilinear samplers that read the
-// first level, then trilinear and anisotropic ones that read along a footprint.
-static const uint kAnisotropicSamplers = 16;
-
-// Samples the frame's texture `image` bilinearly at `uv`, in normalized coordinates, with the address modes along each
-// axis. A sample with `gradients` is trilinear and anisotropic along the footprint that `dx` and `dy` give, and any
-// other sample reads the first level.
-float4 hardwareSample(uint image, uint addressX, uint addressY, float2 uv, bool gradients, float2 dx, float2 dy) {
-    uint index = addressX * 4 + addressY + (gradients ? kAnisotropicSamplers : 0);
-    SamplerState s = prGpuGet<SamplerState>(frame.samplers[index >> 2][index & 3]);
-    Texture2D<float4> t = textureAt(image);
+// Samples the frame's texture `image` with the paint's sampler `s` at `uv`, in normalized coordinates. A sample with
+// `gradients` is trilinear and anisotropic along the footprint that `dx` and `dy` give, and any other sample reads the
+// first level.
+float4 hardwareSample(Texture2D<float4> image, SamplerState s, float2 uv, bool gradients, float2 dx, float2 dy) {
     if (gradients)
-        return t.SampleGrad(s, uv, dx, dy);
-    return t.SampleLevel(s, uv, 0);
+        return image.SampleGrad(s, uv, dx, dy);
+    return image.SampleLevel(s, uv, 0);
 }
 
 // Places a point `k` texels from the source's origin along one axis by the tile mode, and returns it in the texture's
@@ -513,25 +569,25 @@ float placeAxis(float k, float start, float size, float period, uint mode, bool 
     return start + r;
 }
 
-// Samples an image at (u, v), in the first level's texels from the source's origin. `dx` and `dy` are the change in (u,
-// v) to the pixel's right and lower neighbors, which a Mipmap sample reads if `footprint`.
-float4 sampleImage(ImageSource source, uint image, float2 uv, float2 dx, float2 dy, bool footprint) {
+// Samples an image at (u, v), in the first level's texels from the source's origin, with the paint's sampler `s`, whose
+// address modes the frame chooses as FragmentImageRead_Sampler describes. `dx` and `dy` are the change in (u, v) to the
+// pixel's right and lower neighbors, which a Mipmap sample reads if `footprint`.
+float4 sampleImage(ImageSource source, Texture2D<float4> image, SamplerState s, float2 uv, float2 dx, float2 dy,
+        bool footprint) {
     uint width;
     uint height;
     uint levels;
-    textureAt(image).GetDimensions(0, width, height, levels);
+    image.GetDimensions(0, width, height, levels);
     float2 size = float2(width, height);
     float4 t = source.texels;
-    bool wholeX = t.x == 0 && t.z == size.x;
-    bool wholeY = t.y == 0 && t.w == size.y;
+    bool wholeX = source.whole.x;
+    bool wholeY = source.whole.y;
     // A Nearest sample places the center of the source's texel that holds the point.
     if (source.sampling == PrDrawSampling_Nearest)
         uv = floor(uv) + 0.5;
     bool lands = true;
     float2 at = float2(placeAxis(uv.x, t.x, t.z - t.x, source.period.x, source.tileX, wholeX, lands),
                        placeAxis(uv.y, t.y, t.w - t.y, source.period.y, source.tileY, wholeY, lands));
-    uint addressX = addressOf(source.tileX, source.period.x - (t.z - t.x), wholeX);
-    uint addressY = addressOf(source.tileY, source.period.y - (t.w - t.y), wholeY);
     // The texel that a Nearest sample reads is the one that holds the placed point, clamped to the source's texels,
     // whose far edge a reflected point can reach.
     if (source.sampling == PrDrawSampling_Nearest) {
@@ -539,7 +595,7 @@ float4 sampleImage(ImageSource source, uint image, float2 uv, float2 dx, float2 
             return (float4)0;
         float2 last = min(ceil(t.zw) - 1, size - 1);
         uint2 texel = uint2(clamp(floor(at), max(floor(t.xy), (float2)0), last));
-        return premultiplied(textureAt(image).Load(int3(texel, 0)), source.alpha);
+        return premultiplied(image.Load(int3(texel, 0)), source.alpha);
     }
     if (source.sampling == PrDrawSampling_Cubic) {
         // Each axis's middle two taps are one bilinear sample between them, weighted by their sum, which is positive.
@@ -554,7 +610,7 @@ float4 sampleImage(ImageSource source, uint image, float2 uv, float2 dx, float2 
         float4 result = (float4)0;
         for (int j = 0; j < 3; ++j) {
             for (int i = 0; i < 3; ++i) {
-                float4 tap = hardwareSample(image, addressX, addressY, float2(cx[i], cy[j]) / size, false, 0, 0);
+                float4 tap = hardwareSample(image, s, float2(cx[i], cy[j]) / size, false, 0, 0);
                 result += premultiplied(tap, source.alpha) * (kx[i] * ky[j]);
             }
         }
@@ -563,8 +619,7 @@ float4 sampleImage(ImageSource source, uint image, float2 uv, float2 dx, float2 
         return result;
     }
     bool gradients = source.sampling == PrDrawSampling_Mipmap && footprint;
-    return premultiplied(hardwareSample(image, addressX, addressY, at / size, gradients, dx / size, dy / size),
-                         source.alpha);
+    return premultiplied(hardwareSample(image, s, at / size, gradients, dx / size, dy / size), source.alpha);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -607,7 +662,6 @@ int tapIndex(float k, TapAxis a) {
 
 // A level of an image's texture, and its taps' axes.
 struct ImageLevel {
-    uint image;                 // the frame's texture
     uint level;
     TapAxis x;
     TapAxis y;
@@ -615,22 +669,21 @@ struct ImageLevel {
 };
 
 // A texel, premultiplied, or transparent for a tap outside the texels.
-float4 levelTexel(ImageLevel l, int x, int y) {
+float4 levelTexel(Texture2D<float4> image, ImageLevel l, int x, int y) {
     if (x < 0 || y < 0)
         return (float4)0;
-    return premultiplied(textureAt(l.image).Load(int3(x, y, l.level)), l.alpha);
+    return premultiplied(image.Load(int3(x, y, l.level)), l.alpha);
 }
 
 // Samples a level by texel reads at (u, v), in the first level's texels from the source's origin.
-float4 readLevel(ImageSource r, uint image, uint level, uint sampling, float2 uv) {
+float4 readLevel(ImageSource r, Texture2D<float4> image, uint level, uint sampling, float2 uv) {
     uint width;
     uint height;
     uint levels;
-    textureAt(image).GetDimensions(level, width, height, levels);
+    image.GetDimensions(level, width, height, levels);
     int2 size = int2(width, height);
     float scale = 1.0 / float(1u << level);
     ImageLevel l;
-    l.image = image;
     l.level = level;
     l.x.start = r.texels.x * scale;
     l.x.size = (r.texels.z - r.texels.x) * scale;
@@ -645,7 +698,7 @@ float4 readLevel(ImageSource r, uint image, uint level, uint sampling, float2 uv
     l.alpha = r.alpha;
     uv *= scale;
     if (sampling == PrDrawSampling_Nearest)
-        return levelTexel(l, tapIndex(floor(uv.x), l.x), tapIndex(floor(uv.y), l.y));
+        return levelTexel(image, l, tapIndex(floor(uv.x), l.x), tapIndex(floor(uv.y), l.y));
     float2 f = uv - 0.5;
     float2 first = floor(f);
     float2 t = f - first;
@@ -661,7 +714,7 @@ float4 readLevel(ImageSource r, uint image, uint level, uint sampling, float2 uv
         float4 result = (float4)0;
         for (int j = 0; j < 4; ++j) {
             for (int i = 0; i < 4; ++i)
-                result += levelTexel(l, xs[i], ys[j]) * (wx[i] * wy[j]);
+                result += levelTexel(image, l, xs[i], ys[j]) * (wx[i] * wy[j]);
         }
         result.a = clamp(result.a, 0.0, 1.0);
         result.rgb = clamp(result.rgb, 0.0, result.a);
@@ -671,14 +724,14 @@ float4 readLevel(ImageSource r, uint image, uint level, uint sampling, float2 uv
     int right = tapIndex(first.x + 1, l.x);
     int top = tapIndex(first.y, l.y);
     int bottom = tapIndex(first.y + 1, l.y);
-    float4 upper = lerp(levelTexel(l, left, top), levelTexel(l, right, top), t.x);
-    float4 lower = lerp(levelTexel(l, left, bottom), levelTexel(l, right, bottom), t.x);
+    float4 upper = lerp(levelTexel(image, l, left, top), levelTexel(image, l, right, top), t.x);
+    float4 lower = lerp(levelTexel(image, l, left, bottom), levelTexel(image, l, right, bottom), t.x);
     return lerp(upper, lower, t.y);
 }
 
 // Reads an image by texel reads at (u, v), in the first level's texels from the source's origin, between the two levels
 // that `lod` falls between.
-float4 readTrilinear(ImageSource source, uint image, float2 uv, float lod, uint levels) {
+float4 readTrilinear(ImageSource source, Texture2D<float4> image, float2 uv, float lod, uint levels) {
     uint low = uint(lod);
     float t = lod - float(low);
     float4 result = readLevel(source, image, low, PrDrawSampling_Linear, uv);
@@ -693,11 +746,11 @@ static const uint kMaxAnisotropy = 16;
 // Reads an image by texel reads at (u, v), in the first level's texels from the source's origin. `dx` and `dy` are the
 // change in (u, v) to the pixel's right and lower neighbors. Mipmap sampling is anisotropic, as the cpu backend's is:
 // the level comes from the footprint's minor axis, and up to kMaxAnisotropy taps spread along the major axis.
-float4 readImage(ImageSource source, uint image, float2 uv, float2 dx, float2 dy) {
+float4 readImage(ImageSource source, Texture2D<float4> image, float2 uv, float2 dx, float2 dy) {
     uint width;
     uint height;
     uint levels;
-    textureAt(image).GetDimensions(0, width, height, levels);
+    image.GetDimensions(0, width, height, levels);
     float a = length(dx);
     float b = length(dy);
     float major = max(a, b);
@@ -721,22 +774,24 @@ float4 readImage(ImageSource source, uint image, float2 uv, float2 dx, float2 dy
 
 // Samples an image at (u, v) as the record's `read` says. `dx` and `dy` are the change in (u, v) to the pixel's right
 // and lower neighbors, which Mipmap sampling reads if `footprint`.
-float4 imageColor(FragmentPaint r, ImageSource source, uint image, float2 uv, float2 dx, float2 dy, bool footprint) {
-    if (r.read == FragmentImageRead_Texels)
-        return readImage(source, image, uv, footprint ? dx : (float2)0, footprint ? dy : (float2)0);
-    return sampleImage(source, image, uv, dx, dy, footprint);
+float4 imageColor(FragmentPaint r, ImageSource source, Texture2D<float4> image, float2 uv, float2 dx, float2 dy,
+        bool footprint) {
+    if (r.read != FragmentImageRead_Texels)
+        return sampleImage(source, image, frameSampler(slotLayer0Sampler, r.sampler), uv, dx, dy, footprint);
+    return readImage(source, image, uv, footprint ? dx : (float2)0, footprint ? dy : (float2)0);
 }
 
 // The piece of an image drawn in pieces at a point of brush space, picked as fragment.h describes.
 uint pieceAt(FragmentPaint r, float2 b) {
+    // The first piece is the nearest until another is nearer. WGSL has no constant infinity to start from.
     uint best = 0;
-    float nearest = asfloat(0x7f800000u);
+    float nearest = 0;
     for (uint i = 0; i < r.pieceCount; ++i) {
         float4 d = framePieces[(r.pieces + i) * 2];
         if (b.x >= d.x && b.x < d.z && b.y >= d.y && b.y < d.w)
             return i;
         float distance = max(max(d.x - b.x, b.x - d.z), 0.0) + max(max(d.y - b.y, b.y - d.w), 0.0);
-        if (distance < nearest) {
+        if (i == 0 || distance < nearest) {
             nearest = distance;
             best = i;
         }
@@ -745,7 +800,7 @@ uint pieceAt(FragmentPaint r, float2 b) {
 }
 
 // An image in pieces' color at the pixel, whose center maps to `b` in brush space: its piece's texels, clamped to them.
-float4 piecePaint(FragmentPaint r, float2 b, float2 pixel, uint image) {
+float4 piecePaint(FragmentPaint r, float2 b, float2 pixel, Texture2D<float4> image) {
     uint i = pieceAt(r, b);
     float4 d = framePieces[(r.pieces + i) * 2];
     float4 s = framePieces[(r.pieces + i) * 2 + 1];
@@ -758,6 +813,7 @@ float4 piecePaint(FragmentPaint r, float2 b, float2 pixel, uint image) {
     piece.tileY = PrDrawExtend_Pad;
     piece.sampling = r.sampling;
     piece.alpha = r.alpha;
+    piece.whole = bool2(r.wholeX != 0, r.wholeY != 0);
     bool footprint = r.sampling == PrDrawSampling_Mipmap;
     float2 dx = 0;
     float2 dy = 0;
@@ -802,7 +858,7 @@ bool intoCopy(inout float k, float size, float period, inout uint mode) {
 }
 
 // An image brush's color at the pixel, whose center maps to `b` in brush space.
-float4 imagePaint(FragmentPaint r, float2 b, float2 pixel, uint image) {
+float4 imagePaint(FragmentPaint r, float2 b, float2 pixel, Texture2D<float4> image) {
     float4 tileRect = r.tile;
     float4 texels = r.texels;
     float2 tile = tileRect.zw - tileRect.xy;
@@ -823,6 +879,7 @@ float4 imagePaint(FragmentPaint r, float2 b, float2 pixel, uint image) {
     source.tileY = r.tileY;
     source.sampling = r.sampling;
     source.alpha = r.alpha;
+    source.whole = bool2(r.wholeX != 0, r.wholeY != 0);
     // The point moves between copies in brush space, before it is scaled to texels, so that a point in any copy rounds
     // to the same texel coordinates as the matching point in the first copy.
     float2 local = b - tileRect.xy;
@@ -840,11 +897,11 @@ float4 imagePaint(FragmentPaint r, float2 b, float2 pixel, uint image) {
 }
 
 // A layer's pixel at a pixel of the target, transparent outside it.
-float4 layerPixel(uint layer, float4 rect, float2 pixel) {
+float4 layerPixel(Texture2D<float4> layer, float4 rect, float2 pixel) {
     float2 at = floor(pixel) - rect.xy;
     if (at.x < 0 || at.y < 0 || at.x >= rect.z || at.y >= rect.w)
         return (float4)0;
-    return textureAt(layer).Load(int3(int2(at), 0));
+    return layer.Load(int3(int2(at), 0));
 }
 
 // sRGB's transfer function and its inverse, mirrored below zero, as core defines them (PrColorTransfer_Srgb).
@@ -928,21 +985,34 @@ float tileCoverage(uint data, uint height, int2 at, bool evenOdd) {
     return windingCoverage(winding, evenOdd);
 }
 
-// The pixel of an entry's own texture at a pixel of the target, transparent outside a layer.
-float4 entryPixel(uint texture, float2 pixel) {
+// The pixel of an entry's own texture, `t`, at a pixel of the target, transparent outside a layer.
+float4 entryPixel(uint texture, Texture2D<float4> t, float2 pixel) {
     FragmentTexture e = frameEntries[texture - 1];
-    return layerPixel(texture - 1, float4(float2(e.origin), float2(e.extent)), pixel);
+    return layerPixel(t, float4(float2(e.origin), float2(e.extent)), pixel);
 }
 
 // A layer's pixel at a pixel of the target, transparent outside it, or a texture's texel there, over what the entry
-// stacks it on.
-float4 layerAt(uint texture, float2 pixel) {
+// stacks it on. `own` is the entry's texture, and `under` the texture of the entry that it stacks it on, if any.
+float4 layerAt(uint texture, Texture2D<float4> own, Texture2D<float4> under, float2 pixel) {
     FragmentTexture e = frameEntries[texture - 1];
-    float4 c = entryPixel(texture, pixel);
+    float4 c = entryPixel(texture, own, pixel);
     if (e.under != 0)
-        return c + (1 - c.a) * entryPixel(e.under, pixel);
+        return c + (1 - c.a) * entryPixel(e.under, under, pixel);
     return c + (1 - c.a) * halfColor(e.color);
 }
+
+// The table index of the texture that an entry is read over, or its own where it is read over a color, whose texture
+// layerAt does not read.
+uint underIndex(uint texture) {
+    uint under = frameEntries[texture - 1].under;
+    return under != 0 ? under - 1 : texture - 1;
+}
+
+// layerAt for the entry `texture`, whose textures a draw binds to the pair of slots `pair` (slotLayer<pair> and
+// slotUnder<pair>).
+#define frameLayerAt(pair, texture, pixel)                                                         \
+    layerAt((texture), frameTexture(slotLayer##pair, (texture) - 1),                                  \
+            frameTexture(slotUnder##pair, underIndex(texture)), (pixel))
 
 // The half widths of a mapped stroke each side at a fraction of the way along it.
 float2 mappedWidths(FragmentMap m, float fraction) {
@@ -1055,7 +1125,7 @@ float4 sidedColor(FragmentSidedRing r, float2 p) {
 // or in a helper lane that runs only for derivatives, where an index from it would read far outside the records. If
 // `Basic` is true, the instance must be basic (fragmentShadeBasic), and the code for every other kind of coverage is
 // compiled out.
-float instanceCoverage<let Basic : bool>(VertexOut input, FragmentInstance i, float2 pixel) {
+float instanceCoverage<let Basic : bool>(Fragment input, FragmentInstance i, float2 pixel) {
     uint kind = i.flags & FragmentInstanceFlag_Coverage;
     uint v = i.data * 4;            // the record's byte offset in the values
     int2 at = int2(floor(input.local));
@@ -1063,7 +1133,7 @@ float instanceCoverage<let Basic : bool>(VertexOut input, FragmentInstance i, fl
         switch (kind) {
         case FragmentCoverage_Rect: return rectArea(frameValues.Load<float4>(v), floor(pixel));
         case FragmentCoverage_Triangle: return input.coverage;
-        case FragmentCoverage_Atlas: return textureAt(i.data - 1).Load(int3(at, 0)).r;
+        case FragmentCoverage_Atlas: return frameTexture(slotCoverage, i.data - 1).Load(int3(at, 0)).r;
         default: return 1;
         }
     }
@@ -1085,7 +1155,7 @@ float instanceCoverage<let Basic : bool>(VertexOut input, FragmentInstance i, fl
     case FragmentCoverage_Shadow: return shadowCoverage(frameValues.Load<FragmentShadow>(v), input.local);
     case FragmentCoverage_Triangle: return input.coverage;
     case FragmentCoverage_Atlas:
-        return textureAt(i.data - 1).Load(int3(at, 0)).r;
+        return frameTexture(slotCoverage, i.data - 1).Load(int3(at, 0)).r;
     case FragmentCoverage_Bytes: {
         int2 cell = clamp(at, 0, int2(i.bounds.zw) - 1);
         uint byte = i.data + uint(cell.y) * uint(i.bounds.z) + uint(cell.x);
@@ -1101,7 +1171,7 @@ float instanceCoverage<let Basic : bool>(VertexOut input, FragmentInstance i, fl
 
 // Shades the pixel. If `Basic` is true, the instance must be basic (fragmentShadeBasic), and the code that only other
 // instances need is compiled out.
-Shaded shade<let Basic : bool>(VertexOut input) {
+Shaded shade<let Basic : bool>(Fragment input) {
     FragmentInstance i = frameInstances[input.instance];
     float2 pixel = input.position.xy + draw.origin;
     Shaded result;
@@ -1116,7 +1186,7 @@ Shaded shade<let Basic : bool>(VertexOut input) {
         for (uint k = 0; k < c.shapeCount; ++k)
             result.clip *= shapeCoverage(frameShapes[frameClipShapes[c.shapes + k]], pixel);
         if (c.mask != 0)
-            result.clip *= layerAt(c.mask, pixel).a;
+            result.clip *= frameLayerAt(1, c.mask, pixel).a;
     }
     float4 color = halfColor(i.color);
     if ((i.flags & FragmentInstanceFlag_Coverage) == FragmentCoverage_SidedRing)
@@ -1136,18 +1206,18 @@ Shaded shade<let Basic : bool>(VertexOut input) {
     if (r.kind == FragmentPaintKind_Solid) {
         result.paint = color;
     } else if (r.kind == FragmentPaintKind_Image) {
-        uint image = r.texture - 1;
+        Texture2D<float4> image = frameTexture(slotLayer0, r.texture - 1);
         float4 texel = r.pieceCount != 0 ? piecePaint(r, b, pixel, image) : imagePaint(r, b, pixel, image);
         result.paint = (r.limit > 0 ? limited(texel, r.limit) : texel) * color;
     } else if (r.kind == FragmentPaintKind_Layer) {
-        result.paint = layerAt(r.texture, pixel) * color;
+        result.paint = frameLayerAt(0, r.texture, pixel) * color;
     } else {
         float t = 0;
         bool paints = gradientParameter(r, b, t) && extended(r.extend, t);
         result.paint = paints ? rampColor(r.ramp, t) * color : (float4)0;
     }
     if (r.groupMask != FragmentMask_None)
-        result.paint *= maskValue(r.groupMask, layerAt(r.groupMaskTexture, pixel));
+        result.paint *= maskValue(r.groupMask, frameLayerAt(2, r.groupMaskTexture, pixel));
     return result;
 }
 
@@ -1249,7 +1319,7 @@ float4 composite(float4 s, float4 d, uint op, uint mode) {
 
 [shader("fragment")]
 float4 fragmentShade(VertexOut input) : SV_Target {
-    Shaded s = shade<false>(input);
+    Shaded s = shade<false>(fragmentOf(input));
     return s.paint * (s.shape * s.clip);
 }
 
@@ -1258,12 +1328,12 @@ float4 fragmentShade(VertexOut input) : SV_Target {
 // other instance, the shader is small and fast, and most of a user interface's pixels are basic.
 [shader("fragment")]
 float4 fragmentShadeBasic(VertexOut input) : SV_Target {
-    Shaded s = shade<true>(input);
+    Shaded s = shade<true>(fragmentOf(input));
     return s.paint * (s.shape * s.clip);
 }
 
 // The instance composited onto the destination `under`.
-float4 compositeOver(VertexOut input, float4 under) {
+float4 compositeOver(Fragment input, float4 under) {
     Shaded s = shade<false>(input);
     FragmentInstance i = frameInstances[input.instance];
     FragmentPaint r = framePaints[i.paint - 1];
@@ -1276,7 +1346,7 @@ float4 compositeOver(VertexOut input, float4 under) {
 // Composites onto the destination, which it reads from the target.
 [shader("fragment")]
 float4 fragmentBlend(VertexOut input PR_GPU_TARGET_PARAM) : SV_Target {
-    return compositeOver(input, prGpuTarget(input.position));
+    return compositeOver(fragmentOf(input), prGpuTarget(input.position));
 }
 
 // The snapshot of the layer that the pass draws into, on a device that cannot read its target (FragmentPass). Its texel
@@ -1286,7 +1356,7 @@ PR_GPU_TEXTURE(Texture2D<float4>, frameSnapshot, 0);
 // Composites onto the destination, which it reads from the snapshot of its layer.
 [shader("fragment")]
 float4 fragmentBlendSnapshot(VertexOut input) : SV_Target {
-    return compositeOver(input, frameSnapshot.Load(int3(int2(input.position.xy), 0)));
+    return compositeOver(fragmentOf(input), frameSnapshot.Load(int3(int2(input.position.xy), 0)));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1332,7 +1402,14 @@ float4 readInput(Inputs inputs, uint which, int2 p) {
     uint texture = inputs.filter.inputs[which];
     if (texture == 0)
         return (float4)0;
-    float4 c = layerAt(texture, float2(p));
+    // Each input has a pair of slots of its own. `which` is a constant at every call, so only its read remains.
+    float4 c;
+    if (which == 0)
+        c = frameLayerAt(0, texture, float2(p));
+    else if (which == 1)
+        c = frameLayerAt(1, texture, float2(p));
+    else
+        c = frameLayerAt(2, texture, float2(p));
     bool toLight = (inputs.flags & FragmentFilterFlag_LinearInputs) != 0 && which != 2
                    && !(which == 0 && (inputs.flags & FragmentFilterFlag_RawFirst) != 0);
     return toLight ? toLinear(c) : c;
@@ -1491,6 +1568,8 @@ float4 turbulence(uint d, float2 pixel) {
         s.w = int(frameFilterData[d + 12] * frequency.y + 4096 + float(s.y));
     }
     float4 result;
+    // Unrolled, so that it writes the vector's components at constant indices rather than through indexed memory.
+    [ForceUnroll]
     for (uint channel = 0; channel < 4; ++channel) {
         float sum = 0;
         float vx = p.x * frequency.x;
@@ -1598,6 +1677,8 @@ float4 filterStep(VertexOut vertexIn) : SV_Target {
     case FragmentFilterOp_ColorMatrix: {
         float4 s = straightOf(readInput(inputs, 0, p));
         float4 m;
+        // Unrolled, so that it writes the vector's components at constant indices rather than through indexed memory.
+        [ForceUnroll]
         for (uint r = 0; r < 4; ++r) {
             m[r] = frameFilterData[d + r * 5] * s.r + frameFilterData[d + r * 5 + 1] * s.g
                    + frameFilterData[d + r * 5 + 2] * s.b + frameFilterData[d + r * 5 + 3] * s.a
@@ -1609,6 +1690,8 @@ float4 filterStep(VertexOut vertexIn) : SV_Target {
     case FragmentFilterOp_Transfer: {
         float4 s = straightOf(readInput(inputs, 0, p));
         uint at = 0;
+        // Unrolled, so that it writes the vector's components at constant indices rather than through indexed memory.
+        [ForceUnroll]
         for (uint c = 0; c < 4; ++c)
             s[c] = transferChannel(d, at, s[c]);
         result = premultiplied(s);

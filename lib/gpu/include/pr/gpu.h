@@ -52,11 +52,11 @@ typedef uint64_t PrGpuFence;
 
 // The library's device backends, which the build turns on (README.md), and Default. Default is the backend that the
 // environment variable PR_GPU_BACKEND names (prGpuBackendFromName), if the build has it, so a program and its tests run
-// on any backend in the build. Otherwise Default is the first backend of the build that has not failed, trying the
-// platform's own first and the memory backend last. A backend has failed once a creation by it fails with NotSupported,
-// which only a creation finds out. A creation without a pool whose failure is known when it returns moves on to the
-// next backend at once. Otherwise the device is lost, and the application's recovery from the loss creates a device of
-// the next backend.
+// on any backend in the build. Otherwise Default is the first backend of the build that has not failed and makes a
+// device with the options, as one of slots alone, trying the platform's own first and the memory backend last. A
+// backend has failed once a creation by it fails with NotSupported, which only a creation finds out. A creation whose
+// failure is known when it returns moves on to the next backend at once. Otherwise the device is lost, and the
+// application's recovery from the loss creates a device of the next backend.
 enum {
     PrGpuBackend_Default,
     PrGpuBackend_Metal,
@@ -952,13 +952,15 @@ void prGpuCommandsSetPipeline(PrGpuCommands* commands, PrGpuPipeline pipeline);
 // Bind resources to the command buffer's slots for the draws and dispatches recorded after the call, as root data is
 // set. A slot is of one kind, numbered from zero below the device's maximum of its kind (PrGpuDeviceInfo), and is
 // shared by every stage of a pipeline. A shader declares the slots that it reads (pr/gpu.slang's PR_GPU_BUFFER and the
-// others). A zero buffer or texture unbinds the slot.
+// others). A zero buffer, texture or sampler unbinds it. Each draw or dispatch reads every resource that its pipeline's
+// shaders use, whether or not the run takes the code that uses it, so each must be bound then: a slot's buffer or
+// texture, and a Texture slot's sampler where a shader samples the texture.
 //
 // A Buffer slot is read from `offset` bytes into the buffer, which is a multiple of the device's storageOffsetAlignment
 // (PrGpuDeviceInfo). An RwBuffer slot may also be written. The buffer of either has PrGpuBufferUsageFlag_Storage, or is
-// a buffer of the command buffer's stream allocated for it. A Texture slot is sampled with its sampler, or read without
-// one if the sampler is zero, and its texture has PrGpuTextureUsageFlag_Sampled. An RwTexture slot is read and written
-// without a sampler, and its texture has PrGpuTextureUsageFlag_Storage.
+// a buffer of the command buffer's stream allocated for it. A Texture slot is sampled with its sampler, or read by
+// texel without it, and its texture has PrGpuTextureUsageFlag_Sampled. An RwTexture slot is read and written without a
+// sampler, and its texture has PrGpuTextureUsageFlag_Storage.
 //
 // A native draw (prGpuPassNativeDraw) unbinds every slot.
 void prGpuCommandsSetBuffer(PrGpuCommands* commands, uint32_t slot, PrGpuBuffer buffer, uint64_t offset);
