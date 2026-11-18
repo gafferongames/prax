@@ -1,5 +1,5 @@
-# Drawing: draw lists, and the backends that the build turns on, which render them or write them as documents. A backend
-# is built on the public API of draw and path.
+# Drawing: draw lists, and the backends that render them or write them as documents. Each backend is built on the
+# public API of draw and path. The selector (select/) creates a renderer or a writer of a given backend.
 pr_library(draw INCLUDE include
     src/draw.cpp
     src/draw_commands.cpp
@@ -15,65 +15,47 @@ pr_library(draw INCLUDE include
     src/draw_structure.cpp
     src/draw_transform.cpp
     src/draw_writer.cpp
+    backends/shared/src/draw_shared_memory.cpp
 )
-target_link_libraries(pr_draw PUBLIC prax::path prax::font prax::image prax::geom prax::gpu prax::color prax::compress prax::task
+target_link_libraries(pr_draw PUBLIC prax::path prax::font prax::image prax::geom prax::gpu prax::color prax::compress
+                                     prax::task
                               PRIVATE prax::core_cpp)
 # The display shader, which maps a frame of lib/draw's colors to a display (pr/draw_display.h).
 pr_slang(pr_draw src/draw_display.slang VARIABLE kDrawDisplayShaders)
 
-if (PR_DRAW_CPU)
-    target_sources(pr_draw PRIVATE
-        backends/cpu/src/draw_cpu.cpp
-        backends/cpu/src/cpu_filter.cpp
-        backends/cpu/src/cpu_pixels.cpp
-    )
-    pr_headers(pr_draw PUBLIC backends/cpu/include)
-    target_compile_definitions(pr_draw PRIVATE PR_DRAW_HAS_CPU)
-endif()
+# Code that backends share. The GPU renderers keep glyphs and paths in an atlas. The writers share a walk of the draw
+# list that writes what the format supports, lowers some commands, and rasterizes the rest with the CPU renderer. The
+# memory frames that CPU renderers draw into are part of the module's library, because the comparisons use them too.
+pr_backend_shared(draw atlas SOURCES backends/shared/src/draw_shared_atlas.cpp INCLUDE backends/shared/include)
+pr_backend_shared(draw writer SOURCES backends/shared/src/draw_shared_writer.cpp)
 
-# The Canvas 2D renderer, which draws through a web page's canvases, and so builds only for the web.
-if (PR_DRAW_CANVAS AND PR_GPU_CANVAS2D)
-    target_sources(pr_draw PRIVATE backends/canvas/src/draw_canvas.cpp)
-    pr_headers(pr_draw PUBLIC backends/canvas/include)
-    target_compile_definitions(pr_draw PRIVATE PR_DRAW_HAS_CANVAS)
+# Renderers.
+pr_backend(draw cpu INCLUDE backends/cpu/include SOURCES
+    backends/cpu/src/draw_cpu.cpp
+    backends/cpu/src/cpu_filter.cpp
+    backends/cpu/src/cpu_pixels.cpp
+)
+# The Canvas 2D renderer draws through a web page's canvases, so it builds only for the web.
+pr_backend(draw canvas WHEN PR_GPU_CANVAS2D INCLUDE backends/canvas/include SOURCES backends/canvas/src/draw_canvas.cpp)
+pr_backend(draw triangles SHARED atlas INCLUDE backends/triangles/include SOURCES
+    backends/triangles/src/draw_triangles.cpp
+    backends/triangles/src/draw_triangles_device.cpp
+)
+pr_backend(draw fragment SHARED atlas INCLUDE backends/fragment/include SOURCES
+    backends/fragment/src/draw_fragment.cpp
+    backends/fragment/src/draw_fragment_device.cpp
+)
+
+# Writers. A writer rasterizes what its format cannot express with the CPU renderer.
+pr_backend(draw pdf SHARED writer REQUIRES cpu INCLUDE backends/pdf/include SOURCES backends/pdf/src/draw_pdf.cpp)
+pr_backend(draw svg SHARED writer REQUIRES cpu INCLUDE backends/svg/include SOURCES backends/svg/src/draw_svg.cpp)
+
+# Build steps of backends other than compiling their sources.
+pr_backend_built(draw canvas PR_DRAW_BUILT_CANVAS)
+if (PR_DRAW_BUILT_CANVAS)
     pr_js_library(pr_draw backends/canvas/src/draw_canvas.js)
 endif()
-
-# What the backends share: the frames of the renderers that draw on the CPU, which the comparisons that draw on the CPU
-# also use, and the atlas that the GPU renderers keep glyphs and paths in.
-target_sources(pr_draw PRIVATE backends/shared/src/draw_shared_memory.cpp)
-if (PR_DRAW_TRIANGLES OR PR_DRAW_FRAGMENT)
-    target_sources(pr_draw PRIVATE backends/shared/src/draw_shared_atlas.cpp)
-    pr_headers(pr_draw PUBLIC backends/shared/include)
-endif()
-
-# What the writers share: the walk that draws natively, lowers, and rasterizes the rest with the CPU renderer.
-if (PR_DRAW_SVG OR PR_DRAW_PDF)
-    if (NOT PR_DRAW_CPU)
-        message(FATAL_ERROR "lib/draw's writers rasterize with its CPU renderer: PR_DRAW_SVG and PR_DRAW_PDF need PR_DRAW_CPU")
-    endif()
-    target_sources(pr_draw PRIVATE backends/shared/src/draw_shared_writer.cpp)
-endif()
-
-if (PR_DRAW_PDF)
-    target_sources(pr_draw PRIVATE backends/pdf/src/draw_pdf.cpp)
-    pr_headers(pr_draw PUBLIC backends/pdf/include)
-    target_compile_definitions(pr_draw PRIVATE PR_DRAW_HAS_PDF)
-endif()
-
-if (PR_DRAW_SVG)
-    target_sources(pr_draw PRIVATE backends/svg/src/draw_svg.cpp)
-    pr_headers(pr_draw PUBLIC backends/svg/include)
-    target_compile_definitions(pr_draw PRIVATE PR_DRAW_HAS_SVG)
-endif()
-
 if (PR_DRAW_FRAGMENT)
-    target_sources(pr_draw PRIVATE
-        backends/fragment/src/draw_fragment.cpp
-        backends/fragment/src/draw_fragment_device.cpp
-    )
-    pr_headers(pr_draw PUBLIC backends/fragment/include)
-    target_compile_definitions(pr_draw PRIVATE PR_DRAW_HAS_FRAGMENT)
     # The fragment renderer's shaders share the frame's constants and records with its C++ (draw_fragment_constants.h
     # and draw_fragment_records.h). They compile once for devices with bindless, and once for the slots alone.
     pr_slang(pr_draw backends/fragment/src/draw_fragment.slang VARIABLE kDrawFragmentShaders
@@ -81,16 +63,12 @@ if (PR_DRAW_FRAGMENT)
     pr_slang(pr_draw backends/fragment/src/draw_fragment.slang VARIABLE kDrawFragmentSlotShaders
         INCLUDE ${PROJECT_SOURCE_DIR}/lib DEFINES PR_DRAW_FRAGMENT_SLOTS)
 endif()
-
 if (PR_DRAW_TRIANGLES)
-    target_sources(pr_draw PRIVATE
-        backends/triangles/src/draw_triangles.cpp
-        backends/triangles/src/draw_triangles_device.cpp
-    )
-    pr_headers(pr_draw PUBLIC backends/triangles/include)
-    target_compile_definitions(pr_draw PRIVATE PR_DRAW_HAS_TRIANGLES)
     pr_slang(pr_draw backends/triangles/src/draw_triangles.slang VARIABLE kDrawTrianglesShaders)
 endif()
+
+# The selector for renderer and writer backends. Programs and composition libraries link it.
+pr_select(draw INCLUDE select/include SOURCES select/src/draw_select.cpp LINK prax::gpu)
 
 if (PR_DEVELOP)
     # The tools compare lib/draw with the comparisons, so a build without the tools has no comparisons.
@@ -108,7 +86,9 @@ if (PR_DEVELOP)
         tests/test_draw_writer.cpp
     )
     target_compile_definitions(draw_tests PRIVATE PR_FONTS_DIR="${PR_TEST_FONTS_DIR}")
-    target_link_libraries(draw_tests PRIVATE draw_compare prax::path prax::color prax::image prax::compress
+    target_link_libraries(draw_tests PRIVATE prax::compress_select prax::image_select prax::draw_select prax::gpu_select
+                                             draw_compare prax::path prax::color
+                                             prax::image prax::compress
                                              prax::font prax::gpu prax::task)
     if (PR_DRAW_CPU)
         target_sources(draw_tests PRIVATE
@@ -122,7 +102,7 @@ if (PR_DEVELOP)
         target_sources(draw_tests PRIVATE backends/canvas/tests/test_draw_canvas.cpp)
         pr_page_tests(draw backends/canvas/tests/test_draw_canvas_page.cpp
             PRELOAD "${PR_TEST_FONTS_DIR}/NotoSans[wdth,wght].ttf@/fonts/NotoSans[wdth,wght].ttf")
-        target_link_libraries(draw_page_tests PRIVATE prax::font prax::path prax::gpu)
+        target_link_libraries(draw_page_tests PRIVATE prax::font prax::path prax::gpu prax::gpu_select)
     endif()
     if (PR_DRAW_PDF)
         target_sources(draw_tests PRIVATE

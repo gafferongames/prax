@@ -922,10 +922,10 @@ bool confirmImport(AppState& state) {
         return false;
     PrPixelView pixels = prDrawImagePixels(state.import.image);
     size_t size = 0;
-    prImageCodecEncode(state.codec, "image/png", pixels, nullptr, 0, &size);
+    prImageCodecSetEncode(state.codec, "image/png", pixels, nullptr, 0, &size);
     Array<uint8_t> png(static_cast<uint32_t>(size));
     String saved;
-    bool encoded = prImageCodecEncode(state.codec, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok;
+    bool encoded = prImageCodecSetEncode(state.codec, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok;
     if (!encoded || !gallerySave(state.gallery, "Imported.png", PrByteView{png.data(), size}, &saved)) {
         state.import.message = "The image could not be written to the gallery.";
         return false;

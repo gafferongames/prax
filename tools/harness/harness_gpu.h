@@ -3,6 +3,7 @@
 #pragma once
 
 #include "pr/gpu.h"
+#include "pr/gpu_select.h"
 
 PR_ASSUME_NONNULL_BEGIN
 

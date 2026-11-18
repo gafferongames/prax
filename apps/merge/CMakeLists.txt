@@ -6,7 +6,9 @@ target_include_directories(merge_model PUBLIC ${PROJECT_SOURCE_DIR})
 target_link_libraries(merge_model PUBLIC prax::core_cpp PRIVATE prax::text_diff pr_warnings)
 
 pr_app(merge main.cpp FONT_BUNDLES NotoMono)
-target_link_libraries(merge PRIVATE merge_model prax::layout prax::studio_command prax::studio_kit
+target_link_libraries(merge PRIVATE prax::compress_select prax::image_select merge_model prax::layout
+                                    prax::studio_command
+                                    prax::studio_kit
                                     prax::studio_text_editor prax::studio_app prax::font_bundle prax::syntax prax::text
                                     prax::ui)
 if (PR_SYNTAX_TREESITTER)

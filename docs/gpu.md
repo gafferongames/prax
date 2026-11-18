@@ -17,7 +17,7 @@ each backend runs it on one graphics API.
 
 The library holds the backends that the build turns on. It builds with none of them for an application that brings
 its own (`pr/gpu_backend.h`). `prGpuDeviceCreate` creates a device by a backend, or by `PrGpuBackend_Default`. Default
-is the backend that the environment variable `PR_GPU_BACKEND` names, such as `metal` or `vulkan`, so a program and its
+is the backend that the environment variable `PR_BACKEND_GPU` names, such as `metal` or `vulkan`, so a program and its
 tests run on any backend in the build. Otherwise Default tries the build's backends in order, the platform's own first
 and the memory backend last, and passes over a backend once a creation by it fails with NotSupported. A creation that
 fails on a pool leaves a lost device, so the application's recovery from the loss creates the next backend's device.
@@ -156,6 +156,6 @@ producer needs it.
 tests each backend's embedding with the same shaders: recording into the application's command buffers and drawing in its
 passes. It runs under Metal's API validation, which it turns on with `MTL_DEBUG_LAYER` unless the environment sets it,
 and tests a window's swap chain on Vulkan and a view's on Metal. The renderers'
-tests compare their images with the `cpu` backend's ([draw.md](draw.md)), on the backend that `PR_GPU_BACKEND` chooses.
+tests compare their images with the `cpu` backend's ([draw.md](draw.md)), on the backend that `PR_BACKEND_GPU` chooses.
 `PR_D3D12_DEBUG=1` and `PR_VULKAN_DEBUG=1` turn on Direct3D 12's debug layer and Vulkan's validation layer for a device
 that is made without asking for validation, and write their errors to the standard error.

@@ -188,12 +188,22 @@ struct HtmlElementEvent {
     bool error;
 };
 
+// The codecs that an SVG image decodes the images that it names with.
+struct HtmlSvgImageLoader {
+    const PrImageCodecSet* PR_NULLABLE images;
+};
+
 // A browsing context (html/#browsing-context), which hosts a window.
 struct HtmlPage {
     PrHtmlWindow* window;       // the window of its active document (html/#nav-window)
     HtmlParser parser;          // the parse that an HTML load runs
     DomXmlBuilder xml;          // the parse that an XML load runs, whose parser is null outside one
     PrHtmlHost host;
+
+    // What the SVG images that the page shows load their images with: the host's codecs, which outlive the images
+    // (loadSecureImage).
+    HtmlSvgImageLoader svgImages;
+
     DomDocumentHost documentHost;                 // the host through which the window's document fetches and queues
                                                   // tasks
     HtmlFetch* PR_NULLABLE fetches;               // the fetches that it waits for, newest first

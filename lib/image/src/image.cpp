@@ -3,35 +3,26 @@
 #include "pr/image.h"
 
 #include "pr/alloc.h"
-#include "pr/ascii.h"
 #include "pr/assert.h"
 #include "pr/image_backend.h"
 #include "pr/mem.h"
 
 #include "image/src/convert.h"
 
-#if defined(PR_IMAGE_HAS_BUILTIN)
-#include "pr/image_builtin.h"
-#endif
-
 namespace pr_impl {
+
+// The codecs of a set, in priority order, which the set owns.
+struct ImageCodecSet {
+    PrImageCodec** codecs;
+    uint32_t count;
+    uint32_t headerBytes;   // the most bytes that a codec of the set recognizes an image by
+};
 
 namespace {
 
-constexpr PrStringView kBackendNames[PrImageCodecBackend_Count] = {"default", "builtin"};
-
-// The backends that the build has, which Default creates the first of, and then Default, so that a build without
-// backends creates none.
-constexpr PrImageCodecBackend kBuilt[] = {
-#if defined(PR_IMAGE_HAS_BUILTIN)
-    PrImageCodecBackend_Builtin,
-#endif
-    PrImageCodecBackend_Default,
-};
-
-// A decoder of one open image. Reads of the source use the prefix shown to the backend instead of reading it again.
+// A decoder of one open image. Reads of the source use the prefix shown to the codecs instead of reading it again.
 struct ImageDecoder {
-    PrImageCodec* codec;
+    const PrImageCodecSet* set;
     PrImageReader* reader;
     PrImageSource original;
     PrImageSource source;
@@ -96,36 +87,8 @@ bool hasFrame(const PrImageInfo& info, uint32_t frame) {
 
 using namespace pr_impl;
 
-PrImageCodecBackend prImageCodecBackendFromName(PrStringView name) {
-    for (PrImageCodecBackend backend = 0; backend < PrImageCodecBackend_Count; ++backend) {
-        if (prAsciiEqualsFold(kBackendNames[backend], name))
-            return backend;
-    }
-    return PrImageCodecBackend_Count;
-}
-
-PrStringView prImageCodecBackendName(PrImageCodecBackend backend) {
-    return backend < PrImageCodecBackend_Count ? kBackendNames[backend] : PrStringView{};
-}
-
-bool prImageCodecBackendIsBuilt(PrImageCodecBackend backend) {
-    for (PrImageCodecBackend built : kBuilt) {
-        if (built != PrImageCodecBackend_Default && (built == backend || backend == PrImageCodecBackend_Default))
-            return true;
-    }
-    return false;
-}
-
-PrImageCodec* PR_NULLABLE prImageCodecCreate(PrImageCodecBackend backend, PrCompressCodec* compressCodec) {
-    switch (backend == PrImageCodecBackend_Default ? kBuilt[0] : backend) {
-#if defined(PR_IMAGE_HAS_BUILTIN)
-        case PrImageCodecBackend_Builtin: return prImageBuiltinCreate(compressCodec);
-#endif
-        default: (void)compressCodec; return nullptr;
-    }
-}
-
 // C opaque types
+struct PrImageCodecSet : ImageCodecSet {};
 struct PrImageDecoder : ImageDecoder {};
 
 void prImageCodecDestroy(PrImageCodec* PR_NULLABLE codec) {
@@ -133,18 +96,50 @@ void prImageCodecDestroy(PrImageCodec* PR_NULLABLE codec) {
         codec->destroyFn(codec);
 }
 
-bool prImageCodecSupportsType(PrImageCodec* codec, PrStringView type) {
-    return codec->supportsTypeFn(codec, type);
+PrImageCodecSet* prImageCodecSetCreate(PrImageCodec* PR_NONNULL const* PR_NULLABLE codecs, uint32_t count) {
+    PrImageCodecSet* set = allocZeroed<PrImageCodecSet>();
+    set->codecs = count != 0 ? static_cast<PrImageCodec**>(prMemoryAlloc(sizeof(PrImageCodec*) * count)) : nullptr;
+    for (uint32_t i = 0; i < count; ++i) {
+        PR_ASSERT(codecs[i] != nullptr);
+        set->codecs[i] = codecs[i];
+        uint32_t headerBytes = codecs[i]->headerBytesFn(codecs[i]);
+        set->headerBytes = headerBytes > set->headerBytes ? headerBytes : set->headerBytes;
+    }
+    set->count = count;
+    return set;
 }
 
-PrStatus prImageCodecEncode(PrImageCodec* codec, PrStringView type, PrPixelView pixels, uint8_t* PR_NULLABLE out,
-        size_t capacity, size_t* size) {
+void prImageCodecSetDestroy(PrImageCodecSet* PR_NULLABLE set) {
+    if (set == nullptr)
+        return;
+    for (uint32_t i = 0; i < set->count; ++i)
+        prImageCodecDestroy(set->codecs[i]);
+    prMemoryFree(set->codecs);
+    prMemoryFree(set);
+}
+
+bool prImageCodecSetSupportsType(const PrImageCodecSet* set, PrStringView type) {
+    for (uint32_t i = 0; i < set->count; ++i) {
+        if (set->codecs[i]->supportsTypeFn(set->codecs[i], type))
+            return true;
+    }
+    return false;
+}
+
+PrStatus prImageCodecSetEncode(const PrImageCodecSet* set, PrStringView type, PrPixelView pixels,
+        uint8_t* PR_NULLABLE out, size_t capacity, size_t* size) {
     PR_ASSERT(pixels.extent.x != 0 && pixels.extent.y != 0 && size_t(pixels.extent.x) * 4 <= pixels.stride);
     PR_ASSERT(out != nullptr || capacity == 0);
     *size = 0;
-    if (codec->encodeFn == nullptr)
-        return PrStatus_NotSupported;
-    return codec->encodeFn(codec, type, pixels, out, capacity, size);
+    for (uint32_t i = 0; i < set->count; ++i) {
+        const PrImageCodec* codec = set->codecs[i];
+        if (codec->encodeFn == nullptr)
+            continue;
+        PrStatus status = codec->encodeFn(codec, type, pixels, out, capacity, size);
+        if (status != PrStatus_NotSupported)
+            return status;
+    }
+    return PrStatus_NotSupported;
 }
 
 PrImageLimits prImageLimitsDefault(void) {
@@ -174,9 +169,9 @@ PrStatus prImageSourceRead(const PrImageSource* source, uint64_t offset, void* P
     return status == PrStatus_Ok ? status : PrStatus_Io;
 }
 
-PrImageDecoder* prImageDecoderCreate(PrImageCodec* codec) {
+PrImageDecoder* prImageDecoderCreate(const PrImageCodecSet* set) {
     PrImageDecoder* decoder = allocZeroed<PrImageDecoder>();
-    decoder->codec = codec;
+    decoder->set = set;
     return decoder;
 }
 
@@ -191,7 +186,7 @@ void prImageDecoderDestroy(PrImageDecoder* PR_NULLABLE decoder) {
 PrStatus prImageDecoderOpen(PrImageDecoder* decoder, PrImageSource source, const PrImageLimits* PR_NULLABLE limits) {
     ImageDecoder* data = decoder;
     prImageDecoderClose(decoder);
-    PrImageCodec* codec = data->codec;
+    const PrImageCodecSet* set = data->set;
     PrImageLimits budget = limits != nullptr ? *limits : prImageLimitsDefault();
     PR_ASSERT(source.readAt != nullptr || source.memory.data != nullptr || source.memory.size == 0);
     uint64_t size = prImageSourceSize(&source);
@@ -199,7 +194,7 @@ PrStatus prImageDecoderOpen(PrImageDecoder* decoder, PrImageSource source, const
         return PrStatus_Limit;
     if (size == 0)
         return PrStatus_NotSupported;
-    uint32_t headerBytes = codec->headerBytesFn(codec);
+    uint32_t headerBytes = set->headerBytes;
     if (headerBytes > budget.headerBytes)
         return PrStatus_Limit;
     size_t prefixSize = size < headerBytes ? size_t(size) : headerBytes;
@@ -214,7 +209,12 @@ PrStatus prImageDecoderOpen(PrImageDecoder* decoder, PrImageSource source, const
     PrStatus status = prImageSourceRead(&source, 0, data->prefix, prefixSize);
     if (status != PrStatus_Ok)
         return status;
-    if (!codec->recognizeFn(codec, PrByteView{data->prefix, prefixSize}))
+    const PrImageCodec* codec = nullptr;
+    for (uint32_t i = 0; i < set->count && codec == nullptr; ++i) {
+        if (set->codecs[i]->recognizeFn(set->codecs[i], PrByteView{data->prefix, prefixSize}))
+            codec = set->codecs[i];
+    }
+    if (codec == nullptr)
         return PrStatus_NotSupported;
     data->original = source;
     data->limits = budget;
@@ -223,7 +223,7 @@ PrStatus prImageDecoderOpen(PrImageDecoder* decoder, PrImageSource source, const
     data->source.readAt = readCached;
     data->source.stream.context = data;
     data->source.stream.size = size;
-    status = codec->decoderOpenFn(codec, &data->source, &data->limits, &data->reader, &data->info);
+    status = codec->decoderOpenFn(codec, set, &data->source, &data->limits, &data->reader, &data->info);
     if (usable(status)) {
         PrStatus validation = validateInfo(data->info, data->limits);
         if (data->reader == nullptr)

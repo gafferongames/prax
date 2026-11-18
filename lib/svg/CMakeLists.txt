@@ -47,8 +47,9 @@ if (PR_DEVELOP)
     )
     # An SVG document stands alone, as the XML parser creates it. Text is shaped with kb, and what a test reads as
     # pixels is rendered on the CPU.
-    target_link_libraries(svg_tests PRIVATE prax::css prax::dom prax::draw prax::font prax::geom prax::path prax::text
-                                            prax::compress prax::image)
+    target_link_libraries(svg_tests PRIVATE prax::compress_select prax::image_select prax::css prax::dom prax::draw
+                                            prax::font prax::geom prax::path prax::text
+                                           )
     target_compile_definitions(svg_tests PRIVATE PR_FONTS_DIR="${PR_TEST_FONTS_DIR}")
     # lib/draw's SVG writer, read back.
     if (PR_DRAW_SVG)

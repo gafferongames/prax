@@ -10,9 +10,10 @@
 #include "pr/blob_ref.h"
 #include "pr/callback.h"
 #include "pr/charset_quickjs.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/count_of.h"
 #include "pr/css_presentation.h"
+#include "pr/draw_select.h"
 #include "pr/fetch.h"
 #include "pr/fetch_intercept.h"
 #include "pr/file.h"
@@ -24,7 +25,7 @@
 #include "pr/html_structure.h"
 #include "pr/html_view.h"
 #include "pr/http.h"
-#include "pr/image_builtin.h"
+#include "pr/image_select.h"
 #include "pr/json.h"
 #include "pr/layout_style.h"
 #include "pr/layout_tree.h"
@@ -81,13 +82,13 @@ struct HostState {
     PrFontSet* fonts = nullptr;
     PrTextFont* font = nullptr;             // the default text font of every page
     PrTextShaper* shaper = nullptr;         // shapes the text of every page
-    PrCompressCodec* compress = nullptr;
-    PrImageCodec* images = nullptr;            // decodes the images of every page
+    PrCompressCodecSet* compress = nullptr;
+    PrImageCodecSet* images = nullptr;         // decodes the images of every page
     PrMediaCodec* PR_NULLABLE media = nullptr; // reads the media resources of every page, or null
     PrAudioMixer* PR_NULLABLE mixer = nullptr; // plays the audio of every page, or null
 
-    // The device that presents the pages, or null if they are presented in memory.
-    PrGpuDevice* PR_NULLABLE device = nullptr;
+    // The renderer that presents the pages, or null if they have no content that a renderer draws into.
+    PrDrawRenderer* PR_NULLABLE renderer = nullptr;
 
     float pageGap = 0;          // the space between the pages of a paint for print media, in CSS pixels
 
@@ -626,7 +627,7 @@ PrHtmlHost startPage(HostState& state, const std::string& name, const std::strin
     host.images = state.images;
     host.media = state.media;
     host.mixer = state.mixer;
-    host.device = state.device;
+    host.renderer = state.renderer;
     host.compress = state.compress;
     host.fetcher = state.fetcher;
     host.localStorage = state.localStorage;
@@ -1006,8 +1007,8 @@ PageHost::PageHost(PrTextShaper* shaper, PrMediaCodec* PR_NULLABLE media, PrAudi
     PrTextFontDesc defaultFontDesc{.set = s.fonts, .style = prFontStyleDefault()};
     s.font = prTextFontCreate(&defaultFontDesc);
     s.shaper = shaper;
-    s.compress = prCompressBuiltinCreate();
-    s.images = prImageBuiltinCreate(s.compress);
+    s.compress = prCompressCodecSetCreateDefault();
+    s.images = prImageCodecSetCreateDefault(s.compress);
     s.media = media;
     s.mixer = mixer;
     startRun(s);
@@ -1018,8 +1019,8 @@ PageHost::~PageHost() {
     stopRun(s);
     closeNetwork(s);
     prTextFontRelease(s.font);
-    prImageCodecDestroy(s.images);
-    prCompressCodecDestroy(s.compress);
+    prImageCodecSetDestroy(s.images);
+    prCompressCodecSetDestroy(s.compress);
     prFontSetDestroy(s.fonts);
 }
 
@@ -1094,8 +1095,8 @@ void PageHost::setHinting(PrFontHinting hinting, PrFontHinter* PR_NULLABLE hinte
     prFontSetSetHinting(state_->fonts, hinting, hinter);
 }
 
-void PageHost::setDevice(PrGpuDevice* PR_NULLABLE device) {
-    state_->device = device;
+void PageHost::setRenderer(PrDrawRenderer* PR_NULLABLE renderer) {
+    state_->renderer = renderer;
 }
 
 void PageHost::setPageGap(float gap) {

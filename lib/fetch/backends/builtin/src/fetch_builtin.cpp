@@ -40,7 +40,7 @@ struct BuiltinFetcher : PrFetchNetwork {
     PrNet* net;                    // the network whose loop runs the fetches' callbacks
     PrFetchBlobStore* blobStore;   // the blob URLs that the fetcher answers
     PrHttp* PR_NULLABLE http;
-    PrCompressCodec* PR_NULLABLE compress;
+    const PrCompressCodecSet* PR_NULLABLE compress;
     PrStorage* PR_NULLABLE cache;
     PrRawString userAgent;         // the default User-Agent value
 };
@@ -812,7 +812,7 @@ void request(BuiltinFetch* fetch, const PrUrl* current) {
     if (headersFind(&fetch->sent, "accept").data == nullptr)
         headersAdd(&fetch->sent, "Accept", acceptOf(fetch->destination));
     if (headersFind(&fetch->sent, "accept-encoding").data == nullptr && fetcher->compress != nullptr) {
-        bool brotli = prCompressCodecDecodes(fetcher->compress, PrCompressFormat_Brotli);
+        bool brotli = prCompressCodecSetDecodes(fetcher->compress, PrCompressFormat_Brotli);
         headersAdd(&fetch->sent, "Accept-Encoding", brotli ? "gzip, deflate, br" : "gzip, deflate");
     }
     RawArray<PrFetchHeader> sent{};

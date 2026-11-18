@@ -4203,6 +4203,7 @@ FragmentRenderer* createRenderer(FragmentDevice* device, const PrDrawFragmentOpt
     r->fragment->targetReads = fragmentDeviceReadsTarget(device);
     r->destroyFn = destroyRenderer;
     r->frameCreateFn = createFrame;
+    r->name = "fragment";
     r->deviceFn = rendererDevice;
     r->dropResourcesFn = dropResources;
     return r;

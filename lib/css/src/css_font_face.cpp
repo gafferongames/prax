@@ -55,7 +55,7 @@ CssDeclaredName reflected(uint32_t descriptor) {
 // Returns the font of the first face of the file in `blob`, which the font retains, or null if the bytes are not a font
 // that the engine reads. `compress` decompresses a WOFF file, whose font holds the decoded file instead. If `compress`
 // is null, a WOFF file is not read.
-const PrFont* PR_NULLABLE fontOf(PrBlob* blob, PrCompressCodec* PR_NULLABLE compress) {
+const PrFont* PR_NULLABLE fontOf(PrBlob* blob, const PrCompressCodecSet* PR_NULLABLE compress) {
     PrByteView bytes = prBlobBytes(blob);
     bool woff = bytes.size >= 4 && bytes.data[0] == 'w' && bytes.data[1] == 'O' && bytes.data[2] == 'F';
     const PrFont* font = nullptr;
@@ -550,7 +550,7 @@ void reconcile(void* data) {
 } // namespace
 
 PrCssFontFace* cssFontFaceCreate(PrStringView family, PrStringView source, PrByteView data,
-        PrCompressCodec* PR_NULLABLE compress, const PrStringView* PR_NULLABLE descriptors) {
+        const PrCompressCodecSet* PR_NULLABLE compress, const PrStringView* PR_NULLABLE descriptors) {
     PrCssFontFace* face = allocZeroed<PrCssFontFace>();
     face->descriptors.rule = CssAtRule_FontFace;
     face->references = 1;

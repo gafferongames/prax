@@ -3,6 +3,7 @@
 #include "pr/draw_imgui.h"
 #include "pr/draw_list.h"
 #include "pr/gpu.h"
+#include "pr/gpu_select.h"
 #include "pr/string.h"
 #include "pr/vec.h"
 

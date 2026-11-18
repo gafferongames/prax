@@ -17,6 +17,8 @@ lib/<module>/backends/<backend>/  a backend of the module's interface, with publ
                                   module's library when the build turns it on
 lib/<module>/backends/shared/     code that the module's backends share, laid out like a backend, with internal
                                   headers in src. Only the module's backends and comparisons include it
+lib/<module>/select/              the module's selector, the library prax::<module>_select, which creates an object of
+                                  a chosen backend. Programs and composition libraries link it
 lib/<module>/comparisons/<name>/  a backend that wraps another implementation for comparison with the module. It is
                                   not a product backend, but it follows a backend's rules
 lib/<module>/CMakeLists.txt       the module's library and backends, its layers' libraries, and its tests
@@ -58,8 +60,9 @@ tools/harness/                    code shared by the harnesses, the tools and th
   folding, so functions that a consumer does not call add nothing to its binary.
 - An interface module defines a record of functions and the dispatch over it. It also holds the types that those
   operations take and return, as `lib/app` holds displays and user preferences. Its library includes each backend that
-  the build turns on with the option `PR_<MODULE>_<BACKEND>` (README.md). With no backends, it builds for a host that
-  brings its own.
+  the build turns on with the option `PR_<MODULE>_<BACKEND>` (README.md). The module's `CMakeLists.txt` declares each
+  backend with `pr_backend` (`cmake/backends.cmake`). With no backends, the library builds for a host that brings its
+  own.
 - A target links each module whose headers its files include, and links publicly if a public header includes them. It
   links nothing that it does not include (`lint.py`, `module-dependency`). The link lines in a target's
   `CMakeLists.txt` therefore list its dependencies, and a new dependency shows up there. An engine library is declared
@@ -69,10 +72,10 @@ tools/harness/                    code shared by the harnesses, the tools and th
 - Each file's basename is unique across `lib`. A source file has the same basename as the headers it implements, and
   defines their functions in the order that the header declares them.
 - Every public name begins with a tag that its module owns, as a whole word, and each tag has one owner (`lint.py`,
-  `tag`). A module owns the tag that matches its directory name, and a backend uses its interface's tag. The vocabulary
-  modules (core, geom and locale) define types that appear more in other modules' signatures than in their own, so
-  they own one tag per vocabulary instead. Core owns `String`, for example, and geom owns `Rect`. `lint.py` lists every
-  module's tags.
+  `tag`). A module owns the tag that matches its directory name. A backend and a selector use the tag of their
+  interface. The vocabulary modules (core, geom and locale) define types that appear more in other modules' signatures
+  than in their own, so they own one tag per vocabulary instead. Core owns `String`, for example, and geom owns `Rect`.
+  `lint.py` lists every module's tags.
 - A public C header is named for its tag: `pr/<tag>.h` or `pr/<tag>_<topic>.h`. A backend's tag is
   `<interface>_<backend>`.
 - Generated files carry a "do not edit" banner. To change one, change the generator or its pinned input and run
@@ -275,20 +278,43 @@ says what they must contain.
   (`readFn` implements `prNetStreamRead`), so that the backend's own fields keep their natural names. An object that
   exists in large numbers may point to a shared table instead.
   A backend's state derives from the struct and holds everything else, including what the interface's functions read,
-  such as a callback or the object's parent. The backend reaches its state with a `static_cast`. The interface keeps
-  no state of its own: its functions check arguments, handle null members and dispatch, so a backend implements only
-  the operations it supports. Code that several backends share, such as a cache, lives in `backends/shared`, and each
-  backend embeds its state. A backend's constructor is
+  such as a callback or the object's parent. A fact that the backend fixes when it creates the object, such as a
+  renderer's name, is a field of the struct rather than a function. The backend reaches its state with a
+  `static_cast`. The interface keeps no state of its own: its functions check arguments, handle null members and
+  dispatch, so a backend implements only the operations it supports. Code that several backends share, such as a
+  cache, lives in `backends/shared`, and each backend embeds its state. A backend's constructor is
   `pr<Interface><Backend>Create`, in the backend's own header, and takes whatever only that backend needs. An
-  interface is replaced whole. A host that wants to combine implementations, such as one image codec for PNG and
-  another for everything else, writes a backend that dispatches to them.
-- **Choosing a backend.** An interface with backends lists them in an enum, `Pr<Interface>Backend`, whose first member
-  is `Default` and last is `Count`. It provides `pr<Interface>BackendFromName`, `pr<Interface>BackendName` (lowercase,
-  as on a command line) and `pr<Interface>BackendIsBuilt`. Its generic constructor, `pr<Interface>Create`, takes the
-  backend as its first parameter, followed by the parameters of a backend's own constructor. Options that every
-  backend shares replace a backend's own options. It fails as the backend's constructor would. For a backend that the
-  build does not include, it reports NotSupported or returns null. `Default` is the platform's own backend, or the
-  first one the build includes.
+  interface is replaced whole.
+- **Formats.** A file format that Prax reads or writes is a library of its own, `lib/<format>`, which expresses the
+  format in its own terms, as `lib/png` and `lib/gltf` do. An interface that reads several formats, such as
+  `lib/image` or `lib/compress`, adapts each format library in a backend of its own, which is a codec of one format.
+  A caller holds a set of codecs (`PrImageCodecSet`, `PrCompressCodecSet`), which owns them in priority order, and the
+  first codec of a set that reads a format reads it. A program links only the codecs that it creates, so a program
+  that names no WebP codec carries no WebP decoder. A codec of the platform, such as ImageIO's, is another backend of
+  the same formats. A program puts it in a set in place of Prax's own, or beside it. What the format libraries'
+  coders share, such as the copy of an LZ77 match, lives in `lib/entropy`.
+- **Choosing a backend.** A program's `main` is its composition root: it decides how the pieces fit together, and so
+  which backends they use. A library takes its objects from its caller. It calls a backend's own constructor only if it
+  needs that particular backend, and `lint.py` lists those cases (`backend-header`). A composition library, such as
+  `lib/studio/app`, puts the pieces together for programs of a typical shape, and chooses backends as a program would.
+  A program of another shape composes the pieces itself.
+  A module with backends has a selector, `lib/<module>/select`, which programs and composition libraries link. The
+  selector lists the
+  backends in an enum, `Pr<Interface>Backend`, whose first member is `Default` and last is `Count`. `Default` is the
+  backend that the environment variable `PR_BACKEND_<NAME>` chooses. If the variable chooses nothing, `Default` is the
+  platform's own backend, or the first one that the build includes. The selector returns the interface's descriptor
+  (`pr<Interface>SelectInterface`). `lib/backend` uses the descriptor to name the backends, to report which ones the
+  build includes, and to read the variable (`pr/backend.h`). A program takes no argument that chooses a backend.
+  The selector's generic constructor, `pr<Interface>Create`, takes the backend as its first parameter, followed by the
+  parameters of a backend's own constructor. Options that every backend shares replace a backend's own options. The
+  generic constructor fails as the backend's constructor would. If the build does not include the backend, it returns
+  NotSupported or null.
+  The selector of an interface of formats chooses the backend of each format, and its descriptor and variable are the
+  format's: `pr<Interface>SelectInterface` takes the format, and `PR_BACKEND_IMAGE_PNG` chooses PNG's codec. A
+  format's `Default` is Prax's own codec, so that a program reads and writes each format the same way on every
+  platform. A set is what its program builds, so no variable chooses its members or their order. The selector also
+  creates a set of every format that Prax has, each with its Default backend, for a program that wants them all
+  (`pr<Interface>SetCreateDefault`).
 
 ## Reference
 

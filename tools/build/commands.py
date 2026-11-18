@@ -54,8 +54,8 @@ USAGE = {
     "example": """./dev.sh example [wasm|ios|PLATFORM-sim] <name> [args...]
 ./dev.sh example wasm|ios|PLATFORM-sim <name> --screenshot <png> [--seconds S] [args...]
     build an example under examples, and only what it needs, and run it with the arguments. `wasm` builds it for the
-    web, serves the checkout, and opens its page in the system's browser, with the arguments in the page's query, until
-    interrupted. --screenshot instead captures the page in headless Chrome, at 960x720, after it has run for S seconds
+    web, serves the checkout, and opens its page in the system's browser, with the arguments and the PR_ environment
+    variables in the page's query, until interrupted. --screenshot instead captures the page in headless Chrome, at 960x720, after it has run for S seconds
     (4 by default), and prints what the page logged. PLATFORM-sim, as ios-sim, builds its bundle for the platform's
     simulator, installs it on a simulator device of the platform, chosen as ./dev.sh test chooses it, and launches it
     there, streaming its output until it exits or is interrupted. `ios` does the same on a connected iPhone or iPad,
@@ -381,13 +381,16 @@ def example(argv):
 
 
 def page_url(server, page, args):
-    """The URL of `page` on the server, whose query passes `args` to the program (examples/shell.html)."""
+    """The URL of `page` on the server. Its query passes `args` to the program, and with them every environment variable
+    whose name begins with PR_, so that the page chooses the backends that a native run would (examples/shell.html)."""
     from urllib.parse import urlencode
 
     from tools.browsers import browsers
 
     url = "http://127.0.0.1:%d%s" % (server.server_address[1], browsers.url_of(page))
-    return url + ("?" + urlencode([("arg", a) for a in args]) if args else "")
+    query = [(name, value) for name, value in sorted(os.environ.items()) if name.startswith("PR_")]
+    query += [("arg", a) for a in args]
+    return url + ("?" + urlencode(query) if query else "")
 
 
 def serve_page(page, args):

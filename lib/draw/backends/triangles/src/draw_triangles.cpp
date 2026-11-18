@@ -2274,6 +2274,7 @@ TrianglesRenderer* createRenderer(TrianglesDevice* device, const PrDrawTriangles
     r->triangles = trianglesCreate(options != nullptr ? *options : prDrawTrianglesOptionsDefault());
     r->destroyFn = destroyRenderer;
     r->frameCreateFn = createFrame;
+    r->name = "triangles";
     r->deviceFn = rendererDevice;
     r->dropResourcesFn = dropResources;
     return r;

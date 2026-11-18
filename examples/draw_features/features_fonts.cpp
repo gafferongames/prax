@@ -4,7 +4,8 @@
 #include "examples/draw_features/features_fonts.h"
 
 #include "pr/blob_ref.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_brotli.h"
+#include "pr/compress_deflate.h"
 #include "pr/count_of.h"
 #include "pr/font_set.h"
 #include "pr/resource.h"
@@ -22,6 +23,15 @@ using namespace pr;
 namespace drawings {
 
 namespace {
+
+// The codecs of WOFF and WOFF2 fonts, zlib and Brotli, created once for the program.
+const PrCompressCodecSet* woffCodecs() {
+    static PrCompressCodecSet* set = [] {
+        PrCompressCodec* codecs[] = {prCompressDeflateCreate(), prCompressBrotliCreate()};
+        return prCompressCodecSetCreate(codecs, 2);
+    }();
+    return set;
+}
 
 constexpr uint32_t kWght = PR_FONT_TAG('w', 'g', 'h', 't');
 
@@ -1321,7 +1331,7 @@ void webFonts(PrDrawList* list, float, float, double) {
     if (collectionFaces[0] == nullptr) {
         const BlobRef bytes = fontBlob("woff2/available-002.woff2");
         for (uint32_t index = 0; index < 2; ++index)
-            prFontCreateWoff(bytes.bytes(), index, nullptr, prCompressBuiltinCreate(), &collectionFaces[index]);
+            prFontCreateWoff(bytes.bytes(), index, nullptr, woffCodecs(), &collectionFaces[index]);
     }
     for (uint32_t index = 0; index < 2; ++index) {
         const PrFont* face = collectionFaces[index];

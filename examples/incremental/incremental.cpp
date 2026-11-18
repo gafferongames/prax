@@ -14,6 +14,7 @@
 
 #include "pr/app.h"
 #include "pr/assert.h"
+#include "pr/compress_select.h"
 #include "pr/count_of.h"
 #include "pr/css_view.h"
 #include "pr/dom.h"
@@ -24,6 +25,7 @@
 #include "pr/html_markdown.h"
 #include "pr/html_page.h"
 #include "pr/html_view.h"
+#include "pr/image_select.h"
 #include "pr/kit_box.h"
 #include "pr/kit_button.h"
 #include "pr/kit_choice.h"
@@ -844,8 +846,13 @@ int main() {
         },
         .context = &e,
     };
-    PrStudioAppDesc app{.fonts = fonts, .window = &desc};
+    // The program decodes every format that Prax has.
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = compress != nullptr ? prImageCodecSetCreateDefault(compress) : nullptr;
+    PrStudioAppDesc app{.fonts = fonts, .compress = compress, .images = images, .window = &desc};
     PrStatus status = prStudioAppRun(&app);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
     prFontSetDestroy(fonts);
     if (status == PrStatus_NotSupported)
         printError("incremental: no GPU device to render with\n");

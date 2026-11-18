@@ -1,5 +1,6 @@
 #include "pr/draw_commands.h"
 #include "pr/draw_list.h"
+#include "pr/draw_select.h"
 #include "pr/draw_structure.h"
 #include "pr/draw_writer.h"
 #include "pr/string.h"
@@ -24,12 +25,14 @@ using namespace pr_impl;
 
 TEST_CASE("writer backends are named as a command line spells them") {
     for (PrDrawWriterBackend backend = 0; backend < PrDrawWriterBackend_Count; ++backend)
-        CHECK(prDrawWriterBackendFromName(prDrawWriterBackendName(backend)) == backend);
-    CHECK(prDrawWriterBackendFromName("SVG") == PrDrawWriterBackend_Svg);
-    CHECK(prDrawWriterBackendFromName("postscript") == PrDrawWriterBackend_Count);
-    bool any =
-        prDrawWriterBackendIsBuilt(PrDrawWriterBackend_Svg) || prDrawWriterBackendIsBuilt(PrDrawWriterBackend_Pdf);
-    CHECK(prDrawWriterBackendIsBuilt(PrDrawWriterBackend_Default) == any);
+        CHECK(PrDrawWriterBackend(prBackendFromName(prDrawWriterSelectInterface(),
+            prBackendName(prDrawWriterSelectInterface(), backend))) == backend);
+    CHECK(PrDrawWriterBackend(prBackendFromName(prDrawWriterSelectInterface(), "SVG")) == PrDrawWriterBackend_Svg);
+    CHECK(PrDrawWriterBackend(prBackendFromName(prDrawWriterSelectInterface(), "postscript")) ==
+        PrDrawWriterBackend_Count);
+    bool any = prBackendIsBuilt(prDrawWriterSelectInterface(), PrDrawWriterBackend_Svg) ||
+        prBackendIsBuilt(prDrawWriterSelectInterface(), PrDrawWriterBackend_Pdf);
+    CHECK(prBackendIsBuilt(prDrawWriterSelectInterface(), PrDrawWriterBackend_Default) == any);
     PrDrawWriter* writer = nullptr;
     PrStatus status = prDrawWriterCreate(PrDrawWriterBackend_Default, nullptr, &writer);
     CHECK((status == PrStatus_Ok) == any);

@@ -1,10 +1,10 @@
 #include "pr/array.h"
 #include "pr/blob_ref.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/file.h"
 #include "pr/font.h"
 #include "pr/font_set.h"
-#include "pr/image_builtin.h"
+#include "pr/image_select.h"
 #include "pr/mem.h"
 #include "pr/string.h"
 #include "pr/string_ops.h"
@@ -232,7 +232,7 @@ const PrFont* PR_NULLABLE systemEmoji() {
 }
 
 // Decodes an image of a glyph as straight-alpha Rgba8. Returns an empty array if the codec cannot.
-Array<uint8_t> decodeGlyphImage(PrImageCodec* codec, const PrFontGlyphImage& image) {
+Array<uint8_t> decodeGlyphImage(PrImageCodecSet* codec, const PrFontGlyphImage& image) {
     PrImageDecoder* decoder = prImageDecoderCreate(codec);
     Array<uint8_t> pixels;
     PrImageSource source{};
@@ -1183,8 +1183,8 @@ TEST_CASE("Apple Color Emoji's emjc images on iOS decode to the pixels of its PN
     const PrFont* mac = nullptr;
     REQUIRE(macFile.get() != nullptr);
     REQUIRE(prFontCreate(macFile, 0, nullptr, &mac) == PrStatus_Ok);
-    PrCompressCodec* compressCodec = prCompressBuiltinCreate();
-    PrImageCodec* codec = prImageBuiltinCreate(compressCodec);
+    PrCompressCodecSet* compressCodec = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* codec = prImageCodecSetCreateDefault(compressCodec);
     uint32_t compared = 0;
     uint32_t same = 0;
     for (uint32_t codePoint = 0x1f000; codePoint < 0x1fb00; ++codePoint) {
@@ -1232,8 +1232,8 @@ TEST_CASE("Apple Color Emoji's emjc images on iOS decode to the pixels of its PN
     }
     CHECK(images > 10000);
     CHECK(failed == 0);
-    prImageCodecDestroy(codec);
-    prCompressCodecDestroy(compressCodec);
+    prImageCodecSetDestroy(codec);
+    prCompressCodecSetDestroy(compressCodec);
     prFontRelease(mac);
     prFontRelease(ios);
 }

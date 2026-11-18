@@ -169,7 +169,7 @@ struct DomDocumentHost {
         void* PR_NULLABLE data, void (*PR_NULLABLE drop)(void* PR_NULLABLE data));
 
     // The codec that decompresses the compressed fonts that the document loads, or null for none.
-    PrCompressCodec* PR_NULLABLE compress;
+    const PrCompressCodecSet* PR_NULLABLE compress;
 
     // Decodes the image `bytes`, which a style names, into what draws it: a decoded image, or an SVG image's painter,
     // with a reference for the caller in either case. `fragment` is the fragment of the URL that named the image,

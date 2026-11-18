@@ -39,7 +39,7 @@ PrStatus prDrawImageCreate(const PrDrawImageDesc* desc, const PrDrawImage* PR_NU
 // sRGB in half floats; any other is sRGB in 8 bits. Writes the image's orientation to `orientation` if it is not null.
 // Returns NotSupported if the codec cannot read the image, and InvalidData if the image is corrupt. On failure, `*out`
 // is null.
-PrStatus prDrawImageCreateFromBytes(PrImageCodec* codec, PrByteView bytes,
+PrStatus prDrawImageCreateFromBytes(const PrImageCodecSet* codec, PrByteView bytes,
     const PrDrawImage* PR_NULLABLE* PR_NONNULL out, PrImageOrientation* PR_NULLABLE orientation);
 
 // Creates a copy of `image` with its pixels arranged as `orientation` maps them.

@@ -110,7 +110,7 @@ PrCanvas* htmlCanvasCreateContext2D(HtmlCanvas* canvas, const PrCanvasSettings& 
             domReflectedUnsigned(canvas->element, "height", 150),
         },
         .settings = settings,
-        .device = window != nullptr ? window->device : nullptr,
+        .renderer = window != nullptr ? window->renderer : nullptr,
         .element = canvas->element,
         .changed = queueCanvas,
         .changedContext = canvas,
@@ -134,7 +134,7 @@ PrStatus htmlCanvasToDataUrl(PrDomElement* element, PrStringView type, PrRawStri
     else
         extent = PrUVec2{domReflectedUnsigned(element, "width", 300), domReflectedUnsigned(element, "height", 150)};
     PrHtmlWindow* window = windowOf(element);
-    PrImageCodec* codec = window != nullptr ? window->images : nullptr;
+    const PrImageCodecSet* codec = window != nullptr ? window->images : nullptr;
     // A bitmap without pixels, or one that cannot be serialized, is the empty data: URL (html/#dom-canvas-todataurl).
     if (extent.x == 0 || extent.y == 0 || extent.x > kPrCanvasBitmapMaxSize || extent.y > kPrCanvasBitmapMaxSize ||
             codec == nullptr) {
@@ -159,10 +159,10 @@ PrStatus htmlCanvasToDataUrl(PrDomElement* element, PrStringView type, PrRawStri
     prTextBufferAppend(&mime, type);
     prAsciiLowerText(mime.data, mime.size);
     size_t size = 0;
-    if (prImageCodecEncode(codec, prTextBufferView(&mime), view, nullptr, 0, &size) != PrStatus_Ok) {
+    if (prImageCodecSetEncode(codec, prTextBufferView(&mime), view, nullptr, 0, &size) != PrStatus_Ok) {
         prTextBufferReset(&mime);
         prTextBufferAppend(&mime, "image/png");
-        if (prImageCodecEncode(codec, prTextBufferView(&mime), view, nullptr, 0, &size) != PrStatus_Ok) {
+        if (prImageCodecSetEncode(codec, prTextBufferView(&mime), view, nullptr, 0, &size) != PrStatus_Ok) {
             prTextBufferReset(&mime);
             pixels.reset();
             *out = prRawStringCopy("data:,");
@@ -171,7 +171,7 @@ PrStatus htmlCanvasToDataUrl(PrDomElement* element, PrStringView type, PrRawStri
     }
     RawArray<uint8_t> file;
     file.resize(uint32_t(size));
-    prImageCodecEncode(codec, prTextBufferView(&mime), view, file.data, size, &size);
+    prImageCodecSetEncode(codec, prTextBufferView(&mime), view, file.data, size, &size);
     PrStringView bytes{reinterpret_cast<const char*>(file.data), size};
     PrTextBuffer url = {};
     prTextBufferAppend(&url, "data:");

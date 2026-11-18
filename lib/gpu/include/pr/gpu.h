@@ -50,27 +50,6 @@ typedef struct PrGpuDevice PrGpuDevice;
 // A point that a device reaches once the work that returned it is done. Zero is reached on every device.
 typedef uint64_t PrGpuFence;
 
-// The library's device backends, which the build turns on (README.md), and Default. Default is the backend that the
-// environment variable PR_GPU_BACKEND names (prGpuBackendFromName), if the build has it, so a program and its tests run
-// on any backend in the build. Otherwise Default is the first backend of the build that has not failed and makes a
-// device with the options, as one of slots alone, trying the platform's own first and the memory backend last. A
-// backend has failed once a creation by it fails with NotSupported, which only a creation finds out. A creation whose
-// failure is known when it returns moves on to the next backend at once. Otherwise the device is lost, and the
-// application's recovery from the loss creates a device of the next backend.
-enum {
-    PrGpuBackend_Default,
-    PrGpuBackend_Metal,
-    PrGpuBackend_Metal4,
-    PrGpuBackend_Vulkan,
-    PrGpuBackend_D3d12,
-    PrGpuBackend_D3d11,
-    PrGpuBackend_Webgpu,
-    PrGpuBackend_Memory,
-    PrGpuBackend_Canvas2d,
-    PrGpuBackend_Count,
-};
-typedef uint8_t PrGpuBackend;
-
 // Features that not every device has.
 enum {
     PrGpuFeatureFlag_Timestamps = 1u << 0,              // command buffers report their GPU time
@@ -188,27 +167,8 @@ typedef struct PrGpuDeviceOptions {
     void* PR_NULLABLE readyContext;
 } PrGpuDeviceOptions;
 
-// Returns the backend that `name` names, as prGpuBackendName spells it, ignoring case, or Count if it names none.
-PrGpuBackend prGpuBackendFromName(PrStringView name);
-
-// Returns the name of a backend in lowercase, as a command line or PR_GPU_BACKEND spells it.
-PrStringView prGpuBackendName(PrGpuBackend backend);
-
-// Returns true if the build has the backend. The build has Default if it has any backend.
-bool prGpuBackendIsBuilt(PrGpuBackend backend);
-
 // Returns the default options: without validation.
 PrGpuDeviceOptions prGpuDeviceOptionsDefault(void);
-
-// Creates a device by the backend on the system's default adapter. Returns the device at once, while its creation may
-// still run. Null options mean the defaults. A backend's own header creates a device over the application's native
-// device. Returns null if the build does not have the backend.
-//
-// The device is ready once its creation is done (prGpuDeviceIsReady). Until then, it does no work, and the calls that
-// make objects fail with InvalidState. If the creation fails, such as on a system without an adapter that the backend
-// supports, the device is lost from the start. An application recovers from a failed creation as it recovers from a
-// loss.
-PrGpuDevice* PR_NULLABLE prGpuDeviceCreate(PrGpuBackend backend, const PrGpuDeviceOptions* PR_NULLABLE options);
 
 // Waits for the device's creation and its work to finish, then frees the device. Every object of the device must be
 // destroyed first.

@@ -11,8 +11,10 @@
 // closes, and the app quits when its last window closes.
 
 #include "pr/assert.h"
+#include "pr/compress_deflate.h"
 #include "pr/count_of.h"
 #include "pr/font_bundle.h"
+#include "pr/image_png.h"
 #include "pr/integer.h"
 #include "pr/print.h"
 #include "pr/string_ops.h"
@@ -109,14 +111,24 @@ int main(int argc, char** argv) {
     openApp(t);
     PrAppOptions options = prAppOptionsDefault();
     options.windowModel = PrAppWindowModel_Desktop;
+    // A program shows PNG images in the terminal (kitty's graphics protocol), and the emoji font's glyphs are PNG too.
+    // The terminal carries no other format.
+    PrCompressCodec* deflate = prCompressDeflateCreate();
+    PrCompressCodecSet* compress = prCompressCodecSetCreate(&deflate, 1);
+    PrImageCodec* png = prImagePngCreate(compress);
+    PrImageCodecSet* images = prImageCodecSetCreate(&png, 1);
     PrStudioAppDesc app{
         .fonts = fonts,
         .options = &options,
+        .compress = compress,
+        .images = images,
         .start = start,
         .event = [](void* context, PrStudioApp*, const PrAppEvent* event) { handleEvent(appOf(context), *event); },
         .context = &t,
     };
     PrStatus status = prStudioAppRun(&app);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
     closeApp(t);
     prFontSetDestroy(fonts);
     prFontSystemDestroy(system);

@@ -1,5 +1,5 @@
 #include "pr/array.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/fetch.h"
 #include "pr/fetch_load.h"
 #include "pr/file.h"
@@ -31,7 +31,7 @@ namespace {
 struct Fixture {
     PrNet* net;
     PrHttp* http;
-    PrCompressCodec* compress;
+    PrCompressCodecSet* compress;
     PrStorage* PR_NULLABLE cache;
     PrFetchNetwork* fetcher;
     NetPeer peer;
@@ -46,7 +46,7 @@ bool open(Fixture* fixture, PrStorage* PR_NULLABLE cache = nullptr) {
     fixture->net = prNetSocketsCreate();
     PrHttpDesc http{.net = fixture->net};
     fixture->http = prHttpCreate(PrHttpBackend_Default, &http);
-    fixture->compress = prCompressBuiltinCreate();
+    fixture->compress = prCompressCodecSetCreateDefault();
     fixture->cache = cache;
     PrFetchNetworkDesc desc{
         .net = fixture->net,
@@ -68,7 +68,7 @@ void closeOnLoop(void* PR_NULLABLE context) {
 void reset(Fixture* fixture) {
     prNetPostBlocking(fixture->net, closeOnLoop, fixture);
     prNetDestroy(fixture->net);
-    prCompressCodecDestroy(fixture->compress);
+    prCompressCodecSetDestroy(fixture->compress);
     prStorageDestroy(fixture->cache);
     netPeerReset(&fixture->peer);
 }

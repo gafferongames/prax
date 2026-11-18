@@ -3,9 +3,11 @@
 #include "examples/draw_features/drawing.h"
 
 #include "pr/blob_ref.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_brotli.h"
+#include "pr/compress_deflate.h"
+#include "pr/compress_select.h"
 #include "pr/image.h"
-#include "pr/image_builtin.h"
+#include "pr/image_select.h"
 #include "pr/print.h"
 #include "pr/resource.h"
 #include "pr/string.h"
@@ -16,6 +18,15 @@ namespace drawings {
 using namespace pr;
 
 namespace {
+
+// The codecs of WOFF and WOFF2 fonts, zlib and Brotli, created once for the program.
+const PrCompressCodecSet* woffCodecs() {
+    static PrCompressCodecSet* set = [] {
+        PrCompressCodec* codecs[] = {prCompressDeflateCreate(), prCompressBrotliCreate()};
+        return prCompressCodecSetCreate(codecs, 2);
+    }();
+    return set;
+}
 
 struct Caption {
     PrRect band;
@@ -224,13 +235,13 @@ const PrDrawImage* PR_NULLABLE decodedCard() {
     if (cachedDecoded != nullptr)
         return cachedDecoded;
     Array<uint8_t> rgba = testCardPixels();
-    PrCompressCodec* compressCodec = prCompressBuiltinCreate();
-    PrImageCodec* imageCodec = prImageBuiltinCreate(compressCodec);
+    PrCompressCodecSet* compressCodec = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* imageCodec = prImageCodecSetCreateDefault(compressCodec);
     const PrPixelView card{rgba.data(), kTestCardSize * 4, {kTestCardSize, kTestCardSize}};
     size_t size = 0;
-    prImageCodecEncode(imageCodec, "image/png", card, nullptr, 0, &size);
+    prImageCodecSetEncode(imageCodec, "image/png", card, nullptr, 0, &size);
     Array<uint8_t> png(size);
-    prImageCodecEncode(imageCodec, "image/png", card, png.data(), png.count(), &size);
+    prImageCodecSetEncode(imageCodec, "image/png", card, png.data(), png.count(), &size);
     PrImageSource source{};
     source.memory = png;
     PrImageDecoder* decoder = prImageDecoderCreate(imageCodec);
@@ -240,8 +251,8 @@ const PrDrawImage* PR_NULLABLE decodedCard() {
                 PrPixels{decoded.data(), kTestCardSize * 4, {kTestCardSize, kTestCardSize}}) == PrStatus_Ok)
         cachedDecoded = imageOf(decoded, kTestCardSize, kTestCardSize, PrDrawAlpha_Premultiplied);
     prImageDecoderDestroy(decoder);
-    prImageCodecDestroy(imageCodec);
-    prCompressCodecDestroy(compressCodec);
+    prImageCodecSetDestroy(imageCodec);
+    prCompressCodecSetDestroy(compressCodec);
     return cachedDecoded;
 }
 
@@ -296,7 +307,7 @@ const PrFont* fontDerived(const char* file, const PrFontDerivation& derivation) 
             const PrByteView view = resource.bytes();
             const bool woff = view.size >= 4 && view.data[0] == 'w' && view.data[1] == 'O' && view.data[2] == 'F';
             if (woff)
-                status = prFontCreateWoff(view, 0, nullptr, prCompressBuiltinCreate(), &font);
+                status = prFontCreateWoff(view, 0, nullptr, woffCodecs(), &font);
             else
                 status = prFontCreate(resource, 0, nullptr, &font);
         }

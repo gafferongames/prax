@@ -1,40 +1,37 @@
-# Compression: the interface, and the backend that the build turns on.
+# Compression: the interface, its sets of codecs, and the codecs that adapt the compression format libraries, one
+# backend for each. A program carries only the codecs that it creates, and so only their format libraries.
 pr_library(compress INCLUDE include
     src/compress.cpp
-    src/compress_zip.cpp
+    src/compress_frame.cpp
 )
 target_link_libraries(pr_compress PUBLIC prax::core PRIVATE prax::core_cpp)
 
+# Prax's own codecs, one for each bare format, which the build includes together.
+pr_backend(compress builtin INCLUDE backends/deflate/include SOURCES
+    backends/deflate/src/compress_deflate.cpp
+    backends/brotli/src/compress_brotli.cpp
+    backends/lzfse/src/compress_lzfse.cpp
+)
 if (PR_COMPRESS_BUILTIN)
-    target_sources(pr_compress PRIVATE
-        backends/builtin/src/compress_builtin.cpp
-        backends/builtin/src/deflate.cpp
-        backends/builtin/src/inflate.cpp
-        backends/builtin/src/lzfse.cpp
-    )
-    if (PR_COMPRESS_BROTLI)
-        target_sources(pr_compress PRIVATE
-            backends/builtin/src/brotli.cpp
-            backends/builtin/src/brotli_tables.cpp
-        )
-        target_compile_definitions(pr_compress PRIVATE PR_COMPRESS_HAS_BROTLI)
-    endif()
-    pr_headers(pr_compress PUBLIC backends/builtin/include)
-    target_compile_definitions(pr_compress PRIVATE PR_COMPRESS_HAS_BUILTIN)
+    pr_headers(pr_compress PUBLIC backends/brotli/include)
+    pr_headers(pr_compress PUBLIC backends/lzfse/include)
+    target_link_libraries(pr_compress PRIVATE prax::deflate prax::brotli prax::lzfse)
 endif()
+
+# The codec of Apple's Compression library, which a program chooses over Prax's own for a format.
+pr_backend(compress apple INCLUDE backends/apple/include SOURCES backends/apple/src/compress_apple.cpp)
+if (PR_COMPRESS_APPLE)
+    target_link_libraries(pr_compress PRIVATE compression)
+endif()
+
+# The selector: the choice of the backend of each bare format, and a set of every format.
+pr_select(compress INCLUDE select/include SOURCES select/src/compress_select.cpp)
 
 if (PR_DEVELOP)
     pr_module_tests(compress
         tests/test_compress.cpp
+        tests/test_compress_frame.cpp
         tests/test_compress_c.c
-        tests/test_compress_zip.cpp
     )
-    if (PR_COMPRESS_BUILTIN)
-        target_sources(compress_tests PRIVATE
-            backends/builtin/tests/test_brotli.cpp
-            backends/builtin/tests/test_deflate.cpp
-            backends/builtin/tests/test_inflate.cpp
-            backends/builtin/tests/test_lzfse.cpp
-        )
-    endif()
+    target_link_libraries(compress_tests PRIVATE prax::compress_select)
 endif()

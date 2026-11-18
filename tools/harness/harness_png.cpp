@@ -2,8 +2,8 @@
 
 #include "tools/harness/harness_png.h"
 
-#include "pr/compress_builtin.h"
-#include "pr/image_builtin.h"
+#include "pr/compress_select.h"
+#include "pr/image_select.h"
 
 #include <cstdio>
 #include <vector>
@@ -13,19 +13,19 @@ using namespace pr;
 namespace harness {
 
 bool harnessWritePng(const char* path, PrPixelView rgba) {
-    PrCompressCodec* compress = prCompressBuiltinCreate();
-    PrImageCodec* images = prImageBuiltinCreate(compress);
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = prImageCodecSetCreateDefault(compress);
     // Room for the rows stored uncompressed, which is the most that the encoding can grow to, so that one call
     // compresses the whole image.
     std::vector<uint8_t> png(size_t(rgba.extent.x) * rgba.extent.y * 4 + size_t(rgba.extent.y) * 2 + 4096);
     size_t size = 0;
-    bool ok = prImageCodecEncode(images, "image/png", rgba, png.data(), png.size(), &size) == PrStatus_Ok;
+    bool ok = prImageCodecSetEncode(images, "image/png", rgba, png.data(), png.size(), &size) == PrStatus_Ok;
     if (ok && size > png.size()) {
         png.resize(size);
-        ok = prImageCodecEncode(images, "image/png", rgba, png.data(), png.size(), &size) == PrStatus_Ok;
+        ok = prImageCodecSetEncode(images, "image/png", rgba, png.data(), png.size(), &size) == PrStatus_Ok;
     }
-    prImageCodecDestroy(images);
-    prCompressCodecDestroy(compress);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
     if (!ok)
         return false;
     FILE* file = std::fopen(path, "wb");

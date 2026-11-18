@@ -60,7 +60,7 @@ pr_module_tests(draw_imgui
     imgui/tests/test_draw_imgui.cpp
 )
 target_compile_definitions(draw_imgui_tests PRIVATE PR_FONTS_DIR="${PR_TEST_FONTS_DIR}")
-target_link_libraries(draw_imgui_tests PRIVATE prax::draw prax::gpu)
+target_link_libraries(draw_imgui_tests PRIVATE prax::gpu_select prax::draw prax::gpu)
 
 pr_module_tests(draw_blend2d
     blend2d/tests/test_draw_blend2d.cpp

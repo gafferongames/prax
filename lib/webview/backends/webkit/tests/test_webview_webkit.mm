@@ -1,4 +1,5 @@
 #include "pr/app.h"
+#include "pr/app_select.h"
 #include "pr/apple_string.h"
 #include "pr/array.h"
 #include "pr/string.h"

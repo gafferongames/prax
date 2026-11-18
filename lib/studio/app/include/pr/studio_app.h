@@ -2,8 +2,9 @@
 //
 // An application makes, for all of its windows, the platform's GPU device, the renderer and the display shader on it,
 // the platform's text shaper, and the decoder of glyphs that are images, over the font set that the program provides.
-// Each window renders into its own swap chain on the shared device, on the thread that runs the application. A lost
-// device is made again for every window.
+// It creates the platform application, the device and the renderer with their selectors' Default backends, so the
+// environment chooses them (pr/backend.h). Each window renders into its own swap chain on the shared device, on the
+// thread that runs the application. A lost device is made again for every window.
 //
 // A wake (prAppWake) asks every window for a frame, which takes up what woke the application. The application stops as
 // its last window closes, unless its description keeps it running.
@@ -50,12 +51,18 @@ typedef struct PrStudioAppDesc {
     // The fonts for every window's text. The program owns them, and they must outlive the run.
     PrFontSet* fonts;
 
-    // How the platform's application runs (prAppCreate), or null for the defaults.
+    // Options for the platform application (prAppCreate), or null for the defaults.
     const PrAppOptions* PR_NULLABLE options;
 
     // The pool that runs the device's creation, or null to create the device as the run starts (PrGpuDeviceOptions).
     // The program owns the pool, which must outlive the run.
     PrTaskPool* PR_NULLABLE pool;
+
+    // The image codecs that decode the windows' images and the fonts' image glyphs, such as a bitmap emoji font's, and
+    // the compression codecs that they decompress through, or null for none. The program chooses the formats
+    // (pr/image_select.h makes a set of every one), so that it carries only those. They must outlive the run.
+    const PrCompressCodecSet* PR_NULLABLE compress;
+    const PrImageCodecSet* PR_NULLABLE images;
 
     // A window that the application opens as it starts, or null for none.
     const PrStudioWindowDesc* PR_NULLABLE window;
@@ -67,10 +74,10 @@ typedef struct PrStudioAppDesc {
     void* PR_NULLABLE context;
 } PrStudioAppDesc;
 
-// Runs an application as `desc` describes until it stops, and frees it. Returns NotSupported if the platform has no
-// application, or if the creation of the device of a description without a pool fails. Returns InvalidState if the
-// window of the description failed to open, and Ok otherwise. The windows render once the device is ready. A device
-// whose creation fails on the pool is created again for a later frame, as a lost device is.
+// Runs the application that `desc` describes until it stops, then frees what the run created. Returns NotSupported if
+// the build has no application backend, or if `desc` has no pool and the device cannot be created. Returns InvalidState
+// if the description's window failed to open, and Ok otherwise. The windows render once the device is ready. If the
+// device cannot be created on the pool, a later frame tries again, as it does for a lost device.
 PrStatus prStudioAppRun(const PrStudioAppDesc* desc);
 
 // Stops the run, as prAppStop does.
@@ -83,6 +90,8 @@ PrFontSet* prStudioAppFonts(const PrStudioApp* app);
 PrTextShaper* prStudioAppShaper(const PrStudioApp* app);
 PrGpuDevice* PR_NULLABLE prStudioAppDevice(const PrStudioApp* app);
 PrDrawRenderer* PR_NULLABLE prStudioAppRenderer(const PrStudioApp* app);
+const PrCompressCodecSet* PR_NULLABLE prStudioAppCompress(const PrStudioApp* app);
+const PrImageCodecSet* PR_NULLABLE prStudioAppImages(const PrStudioApp* app);
 
 #if defined(__cplusplus)
 }

@@ -3,12 +3,12 @@
 #include "examples/draw_features/features_paint.h"
 
 #include "pr/color_space.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/count_of.h"
 #include "pr/draw_filter.h"
 #include "pr/draw_renderer.h"
 #include "pr/image.h"
-#include "pr/image_builtin.h"
+#include "pr/image_select.h"
 #include "pr/string.h"
 #include "pr/vec.h"
 

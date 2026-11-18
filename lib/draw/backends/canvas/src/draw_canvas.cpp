@@ -1373,6 +1373,7 @@ PrStatus prDrawCanvasCreate(PrGpuDevice* device, const PrDrawCanvasOptions* PR_N
     backend->device = device;
     backend->destroyFn = destroyBackend;
     backend->frameCreateFn = createFrame;
+    backend->name = "canvas";
     backend->deviceFn = rendererDevice;
     *out = backend;
     return PrStatus_Ok;

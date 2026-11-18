@@ -1,9 +1,9 @@
 #include "pr/array.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/draw_cpu.h"
 #include "pr/draw_glyph.h"
 #include "pr/file.h"
-#include "pr/image_builtin.h"
+#include "pr/image_select.h"
 #include "pr/string.h"
 
 #include "tools/harness/test.h"
@@ -23,7 +23,7 @@ const PrFont* load(const char* name) {
 }
 
 // Renders the list onto `size` by `size` transparent RGBA pixels, reading images with the decoders if they are given.
-Array<uint8_t> render(const PrDrawList* list, uint32_t size, PrImageCodec* imageCodec = nullptr) {
+Array<uint8_t> render(const PrDrawList* list, uint32_t size, PrImageCodecSet* imageCodec = nullptr) {
     Array<uint8_t> bytes(size_t(size) * size * 4);
     PrDrawCpuOptions options = prDrawCpuOptionsDefault();
     PrDrawGlyphDecoder* decoder = imageCodec != nullptr ? prDrawGlyphBitmapCreate(imageCodec) : nullptr;
@@ -92,8 +92,8 @@ TEST_CASE("a color glyph paints its own colors, times the tint's alpha") {
 }
 
 TEST_CASE("a bitmap glyph draws its strike's image, and nothing without a codec") {
-    PrCompressCodec* compressCodec = prCompressBuiltinCreate();
-    PrImageCodec* imageCodec = prImageBuiltinCreate(compressCodec);
+    PrCompressCodecSet* compressCodec = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* imageCodec = prImageCodecSetCreateDefault(compressCodec);
     struct Case {
         const char* font;
         uint32_t codePoint;
@@ -133,8 +133,8 @@ TEST_CASE("a bitmap glyph draws its strike's image, and nothing without a codec"
         prDrawListRelease(list);
         prFontRelease(font);
     }
-    prImageCodecDestroy(imageCodec);
-    prCompressCodecDestroy(compressCodec);
+    prImageCodecSetDestroy(imageCodec);
+    prCompressCodecSetDestroy(compressCodec);
 }
 
 TEST_CASE("a bitmap glyph that mirrors another glyph's image draws it reflected") {
@@ -151,8 +151,8 @@ TEST_CASE("a bitmap glyph that mirrors another glyph's image draws it reflected"
     while (glyph < prFontGlyphCount(font) && !(prFontGlyphImage(font, glyph, 64, &image) && image.mirrored))
         ++glyph;
     REQUIRE(glyph < prFontGlyphCount(font));
-    PrCompressCodec* compressCodec = prCompressBuiltinCreate();
-    PrImageCodec* imageCodec = prImageBuiltinCreate(compressCodec);
+    PrCompressCodecSet* compressCodec = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* imageCodec = prImageCodecSetCreateDefault(compressCodec);
     const PrDrawImage* decoded = nullptr;
     REQUIRE(prDrawImageCreateFromBytes(imageCodec, image.bytes, &decoded, nullptr) == PrStatus_Ok);
     // The glyph at its strike's size, a pixel of the image to a pixel of the target, with the image at the origin.
@@ -186,7 +186,7 @@ TEST_CASE("a bitmap glyph that mirrors another glyph's image draws it reflected"
     prDrawListRelease(plain);
     prDrawListRelease(list);
     prDrawImageRelease(decoded);
-    prImageCodecDestroy(imageCodec);
-    prCompressCodecDestroy(compressCodec);
+    prImageCodecSetDestroy(imageCodec);
+    prCompressCodecSetDestroy(compressCodec);
     prFontRelease(font);
 }

@@ -3,8 +3,10 @@
 // html - https://html.spec.whatwg.org/multipage/document-sequences.html
 
 #include "pr/compress.h"
+#include "pr/compress_select.h"
 #include "pr/html_page.h"
 #include "pr/image.h"
+#include "pr/image_select.h"
 #include "pr/string_ops.h"
 
 #include "html/tests/support/html_test_fetch.h"
@@ -98,7 +100,7 @@ String sheetMedia(PrHtmlPage* page, uint32_t index) {
 
 // Loads `source` at `url` in a page whose host decodes images with `images`, and returns the URL of its icon, or
 // "(none)" for the null string.
-String iconUrl(PrImageCodec* PR_NULLABLE images, PrStringView source, PrStringView url) {
+String iconUrl(PrImageCodecSet* PR_NULLABLE images, PrStringView source, PrStringView url) {
     PrHtmlHost host = prHtmlHostDefault();
     host.images = images;
     PrHtmlPage* page = prHtmlPageCreate(&host);
@@ -1410,16 +1412,16 @@ TEST_CASE("a document's icon is its last icon link, resolved against its base UR
 }
 
 TEST_CASE("an icon link whose type the host cannot decode names no icon") {
-    PrCompressCodec* compress = prCompressCodecCreate(PrCompressCodecBackend_Default);
-    PrImageCodec* images = prImageCodecCreate(PrImageCodecBackend_Default, compress);
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = prImageCodecSetCreateDefault(compress);
     REQUIRE(images != nullptr);
     PrStringView source = "<link rel=icon type=image/png href=a.png><link rel=icon type='Image/SVG+XML' href=b.svg>";
     CHECK(iconUrl(images, source, "https://example.test/") == "https://example.test/a.png");
     CHECK(iconUrl(nullptr, source, "https://example.test/") == "https://example.test/b.svg");
     CHECK(iconUrl(images, "<link rel=icon type='image/x-icon; charset=x' href=c.ico>", "https://example.test/") ==
         "https://example.test/c.ico");
-    prImageCodecDestroy(images);
-    prCompressCodecDestroy(compress);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
 }
 
 TEST_CASE("a document without an icon link has the favicon of its HTTP origin, and none elsewhere") {

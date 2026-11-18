@@ -3,9 +3,9 @@
 #include "apps/alchemy/provenance.h"
 
 #include "pr/array.h"
-#include "pr/image_png.h"
 #include "pr/integer.h"
 #include "pr/json.h"
+#include "pr/png_text.h"
 #include "pr/string.h"
 
 namespace alchemy {
@@ -119,7 +119,7 @@ ProvenanceOp readOp(const PrJson* d, PrJsonValueIndex object) {
 }
 
 // Keeps the text of a PNG file's chunk under the provenance keyword.
-void collect(void* PR_NULLABLE context, const PrImagePngText* text) {
+void collect(void* PR_NULLABLE context, const PrPngText* text) {
     if (text->keyword == kProvenanceKeyword)
         *static_cast<String*>(context) = text->text;
 }
@@ -158,9 +158,9 @@ bool provenanceParse(PrStringView text, ProvenanceRecord* out) {
     return ok;
 }
 
-bool provenanceRead(PrByteView png, PrCompressCodec* PR_NULLABLE compress, ProvenanceRecord* out) {
+bool provenanceRead(PrByteView png, PrCompressCodecSet* PR_NULLABLE compress, ProvenanceRecord* out) {
     String text;
-    PrStatus status = prImagePngEachText(png, compress, collect, &text);
+    PrStatus status = prPngEachText(png, compress, collect, &text);
     if (status != PrStatus_Ok && status != PrStatus_Truncated)
         return false;
     return !text.isEmpty() && provenanceParse(text, out);
@@ -169,10 +169,10 @@ bool provenanceRead(PrByteView png, PrCompressCodec* PR_NULLABLE compress, Prove
 Array<uint8_t> provenanceWrite(PrByteView png, const ProvenanceRecord& record) {
     String text = provenanceSerialize(record);
     size_t size = 0;
-    if (prImagePngSetText(png, kProvenanceKeyword, text, nullptr, 0, &size) != PrStatus_Ok)
+    if (prPngSetText(png, kProvenanceKeyword, text, nullptr, 0, &size) != PrStatus_Ok)
         return Array<uint8_t>();
     Array<uint8_t> out(static_cast<uint32_t>(size));
-    prImagePngSetText(png, kProvenanceKeyword, text, out.data(), size, &size);
+    prPngSetText(png, kProvenanceKeyword, text, out.data(), size, &size);
     out.resize(uint32_t(size));
     return out;
 }

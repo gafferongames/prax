@@ -226,7 +226,7 @@ typedef struct PrFetchNetworkDesc {
     PrHttp* PR_NULLABLE http;
 
     // The codec that decodes content codings. Without it, a request asks for none, and a body arrives as it was sent.
-    PrCompressCodec* PR_NULLABLE compress;
+    const PrCompressCodecSet* PR_NULLABLE compress;
 
     // The store of the HTTP cache (rfc 9111), which the fetcher reads and writes as a private cache does. Without it,
     // nothing is cached.

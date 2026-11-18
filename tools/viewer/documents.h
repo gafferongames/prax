@@ -15,6 +15,7 @@
 #include "pr/app_display.h"
 #include "pr/app_user_preferences.h"
 #include "pr/draw_list.h"
+#include "pr/draw_select.h"
 #include "pr/draw_writer.h"
 #include "pr/font.h"
 #include "pr/text.h"
@@ -174,9 +175,10 @@ bool print(const Reference& reference);
 
 // Loads the source with its own shaper, of the kind that `text` names, which sets its text, and with its fonts hinted
 // as `text` says. A source that the engine prints (prints) renders for `media`, and any other ignores it. The source is
-// presented by a renderer on `device`, or by a renderer in memory if `device` is null, and `device` must outlive it. A
-// source that does not load draws nothing.
-std::shared_ptr<Loaded> load(const Source& source, TextBackends text, page_host::Media media, PrGpuDevice* PR_NULLABLE device);
+// presented by `renderer`, or by a renderer in memory without one, and `renderer` must outlive it. A source that does
+// not load draws nothing.
+std::shared_ptr<Loaded> load(const Source& source, TextBackends text, page_host::Media media,
+    PrDrawRenderer* PR_NULLABLE renderer);
 
 // Brings the source to `time` in seconds, and returns its frame at that time, as its format numbers frames. Returns a
 // negative value for a source whose format has no frames. A still source ignores the time.

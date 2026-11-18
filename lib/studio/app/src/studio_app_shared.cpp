@@ -3,6 +3,8 @@
 #include "studio/app/src/studio_app_shared.h"
 
 #include "pr/alloc.h"
+#include "pr/draw_select.h"
+#include "pr/gpu_select.h"
 
 namespace pr_impl {
 

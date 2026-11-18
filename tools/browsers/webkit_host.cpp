@@ -22,6 +22,7 @@
 //                    [--appearance light|dark] <url>
 
 #include "pr/app.h"
+#include "pr/app_select.h"
 #include "pr/assert.h"
 #include "pr/string_ops.h"
 #include "pr/webview.h"

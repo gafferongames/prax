@@ -1,5 +1,6 @@
 #include "pr/array.h"
 #include "pr/gpu.h"
+#include "pr/gpu_select.h"
 #include "pr/mem.h"
 #include "pr/task.h"
 #include "pr/task_backend.h"
@@ -160,7 +161,7 @@ void onEachBackend(Test test) {
             Fixture f(backend, slotsOnly);
             if (f.device == nullptr)
                 continue;
-            PrStringView name = prGpuBackendName(backend);
+            PrStringView name = prBackendName(prGpuSelectInterface(), backend);
             CAPTURE(name);
             CAPTURE(slotsOnly);
             test(f);
@@ -181,9 +182,9 @@ void onEachBindless(Test test) {
 template <typename Test>
 void onEachBuilt(Test test) {
     for (PrGpuBackend backend = PrGpuBackend_Default + 1; backend < PrGpuBackend_Count; ++backend) {
-        if (!prGpuBackendIsBuilt(backend) || (!gpuTests() && backend != PrGpuBackend_Memory))
+        if (!prBackendIsBuilt(prGpuSelectInterface(), backend) || (!gpuTests() && backend != PrGpuBackend_Memory))
             continue;
-        PrStringView name = prGpuBackendName(backend);
+        PrStringView name = prBackendName(prGpuSelectInterface(), backend);
         CAPTURE(name);
         test(backend);
     }
@@ -231,13 +232,16 @@ TEST_CASE("the gpu headers compile as C") {
 
 TEST_CASE("a backend's name names it, in any case") {
     for (PrGpuBackend backend = 0; backend < PrGpuBackend_Count; ++backend)
-        CHECK(prGpuBackendFromName(prGpuBackendName(backend)) == backend);
-    CHECK(prGpuBackendFromName("Metal") == PrGpuBackend_Metal);
-    CHECK(prGpuBackendFromName("opengl") == PrGpuBackend_Count);
-    CHECK(prGpuBackendIsBuilt(PrGpuBackend_Default) == (prGpuBackendIsBuilt(PrGpuBackend_Metal) ||
-        prGpuBackendIsBuilt(PrGpuBackend_Metal4) || prGpuBackendIsBuilt(PrGpuBackend_Vulkan) ||
-        prGpuBackendIsBuilt(PrGpuBackend_D3d12) || prGpuBackendIsBuilt(PrGpuBackend_Webgpu) ||
-        prGpuBackendIsBuilt(PrGpuBackend_Canvas2d)));
+        CHECK(PrGpuBackend(prBackendFromName(prGpuSelectInterface(), prBackendName(prGpuSelectInterface(), backend))) == backend);
+    CHECK(PrGpuBackend(prBackendFromName(prGpuSelectInterface(), "Metal")) == PrGpuBackend_Metal);
+    CHECK(PrGpuBackend(prBackendFromName(prGpuSelectInterface(), "opengl")) == PrGpuBackend_Count);
+    CHECK(prBackendIsBuilt(prGpuSelectInterface(), PrGpuBackend_Default) ==
+        (prBackendIsBuilt(prGpuSelectInterface(), PrGpuBackend_Metal) ||
+            prBackendIsBuilt(prGpuSelectInterface(), PrGpuBackend_Metal4) ||
+            prBackendIsBuilt(prGpuSelectInterface(), PrGpuBackend_Vulkan) ||
+            prBackendIsBuilt(prGpuSelectInterface(), PrGpuBackend_D3d12) ||
+            prBackendIsBuilt(prGpuSelectInterface(), PrGpuBackend_Webgpu) ||
+            prBackendIsBuilt(prGpuSelectInterface(), PrGpuBackend_Canvas2d)));
 }
 
 TEST_CASE("a device created on a pool refuses work until its creation runs, then calls back once") {

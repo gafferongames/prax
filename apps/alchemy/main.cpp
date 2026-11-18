@@ -9,6 +9,7 @@
 #include "pr/assert.h"
 #include "pr/atomic.h"
 #include "pr/callback.h"
+#include "pr/compress_select.h"
 #include "pr/count_of.h"
 #include "pr/draw_cpu.h"
 #include "pr/draw_list.h"
@@ -18,6 +19,7 @@
 #include "pr/float.h"
 #include "pr/float_convert.h"
 #include "pr/http.h"
+#include "pr/image_select.h"
 #include "pr/min_max.h"
 #include "pr/net.h"
 #include "pr/print.h"
@@ -82,9 +84,9 @@ bool capture(Alchemy& a, const PrDrawList* list, PrStringView path, PrUVec2 exte
     if (prDrawRendererRenderPixels(cpu, list, into, PrPixelFormat_Rgba8) == PrStatus_Ok) {
         PrPixelView view{pixels.data(), extent.x * 4, extent};
         size_t size = 0;
-        prImageCodecEncode(a.state.codec, "image/png", view, nullptr, 0, &size);
+        prImageCodecSetEncode(a.state.codec, "image/png", view, nullptr, 0, &size);
         Array<uint8_t> png(size);
-        if (prImageCodecEncode(a.state.codec, "image/png", view, png.data(), png.count(), &size) == PrStatus_Ok)
+        if (prImageCodecSetEncode(a.state.codec, "image/png", view, png.data(), png.count(), &size) == PrStatus_Ok)
             written = prFileWrite(path, PrByteView{png.data(), size});
     }
     prDrawRendererDestroy(cpu);
@@ -167,8 +169,8 @@ void closeServices(void* context, PrStudioWindow*) {
     imageCacheDestroy(a.state.images);
     stateReset(a.state);
     prTaskPoolDestroy(a.state.pool);
-    prImageCodecDestroy(a.state.codec);
-    prCompressCodecDestroy(a.state.compress);
+    prImageCodecSetDestroy(a.state.codec);
+    prCompressCodecSetDestroy(a.state.compress);
     viewReset(a.view);
     commandsDestroy(a.commands);
 }
@@ -185,8 +187,8 @@ int main() {
     a.http = prHttpCreate(PrHttpBackend_Default, &httpDesc);
     PrWebSocketNetworkDesc socketDesc{.net = a.net, .tls = a.tls};
     a.websockets = prWebSocketNetworkCreate(PrWebSocketNetworkBackend_Default, &socketDesc);
-    a.state.compress = prCompressCodecCreate(PrCompressCodecBackend_Default);
-    a.state.codec = prImageCodecCreate(PrImageCodecBackend_Default, a.state.compress);
+    a.state.compress = prCompressCodecSetCreateDefault();
+    a.state.codec = prImageCodecSetCreateDefault(a.state.compress);
     a.state.pool = prTaskPoolCreate(PrTaskPoolBackend_Default, 4);
     a.state.images = imageCacheCreate(a.state.pool, a.state.codec, [] { wake(a); });
     a.state.client = comfyClientCreate({
@@ -231,7 +233,14 @@ int main() {
     // asks for Single, so that the captured window shows what its commands open.
     PrAppOptions options = prAppOptionsDefault();
     options.windowModel = a.capturePath.isEmpty() ? PrAppWindowModel_Desktop : PrAppWindowModel_Single;
-    PrStudioAppDesc app{.fonts = fonts, .options = &options, .pool = a.state.pool, .window = &desc};
+    PrStudioAppDesc app{
+        .fonts = fonts,
+        .options = &options,
+        .pool = a.state.pool,
+        .compress = a.state.compress,
+        .images = a.state.codec,
+        .window = &desc,
+    };
     PrStatus status = prStudioAppRun(&app);
     prFontSetDestroy(fonts);
     prFontSystemDestroy(system);

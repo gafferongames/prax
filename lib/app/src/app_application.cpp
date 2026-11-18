@@ -1,50 +1,16 @@
-// Applications: the backends, and the contract around each backend's functions.
+// Applications: the contract around each backend's functions.
 
 #include "pr/app_application.h"
 
 #include "pr/app_backend.h"
-#include "pr/ascii.h"
 #include "pr/assert.h"
 #include "pr/count_of.h"
 
 #include "app/src/app_names.h"
 
-#if defined(PR_APP_HAS_APPKIT)
-#include "pr/app_appkit.h"
-#endif
-#if defined(PR_APP_HAS_UIKIT)
-#include "pr/app_uikit.h"
-#endif
-#if defined(PR_APP_HAS_WIN32)
-#include "pr/app_win32.h"
-#endif
-#if defined(PR_APP_HAS_WEB)
-#include "pr/app_web.h"
-#endif
-
 namespace pr_impl {
 
 namespace {
-
-constexpr PrStringView kBackendNames[PrAppBackend_Count] = {"default", "appkit", "uikit", "win32", "web"};
-
-// The backends that the build has, which Default creates the first of, and then Default, so that a build without
-// backends creates none.
-constexpr PrAppBackend kBuilt[] = {
-#if defined(PR_APP_HAS_APPKIT)
-    PrAppBackend_AppKit,
-#endif
-#if defined(PR_APP_HAS_UIKIT)
-    PrAppBackend_UiKit,
-#endif
-#if defined(PR_APP_HAS_WIN32)
-    PrAppBackend_Win32,
-#endif
-#if defined(PR_APP_HAS_WEB)
-    PrAppBackend_Web,
-#endif
-    PrAppBackend_Default,
-};
 
 // The names of the enumerations, in the order of their enumerators.
 const char* const kLifecycles[] = {"Active", "Inactive", "Background"};
@@ -57,55 +23,12 @@ static_assert(countOf(kWindowModels) == PrAppWindowModel_Desktop + 1, "a name fo
 
 using namespace pr_impl;
 
-PrAppBackend prAppBackendFromName(PrStringView name) {
-    for (PrAppBackend backend = 0; backend < PrAppBackend_Count; ++backend) {
-        if (prAsciiEqualsFold(kBackendNames[backend], name))
-            return backend;
-    }
-    return PrAppBackend_Count;
-}
-
-PrStringView prAppBackendName(PrAppBackend backend) {
-    return backend < PrAppBackend_Count ? kBackendNames[backend] : PrStringView{};
-}
-
-bool prAppBackendIsBuilt(PrAppBackend backend) {
-    for (PrAppBackend built : kBuilt) {
-        if (built != PrAppBackend_Default && (built == backend || backend == PrAppBackend_Default))
-            return true;
-    }
-    return false;
-}
-
 PrStringView prAppWindowModelName(PrAppWindowModel model) {
     return appNameOf(kWindowModels, model);
 }
 
 PrAppOptions prAppOptionsDefault(void) {
     return PrAppOptions{.presence = PrAppPresence_Regular};
-}
-
-PrApp* PR_NULLABLE prAppCreate(PrAppBackend backend, const PrAppOptions* PR_NULLABLE options) {
-    PrAppOptions chosen = options != nullptr ? *options : prAppOptionsDefault();
-    // A build without a backend has no use for the options.
-    (void)chosen;
-    PrApp* app = nullptr;
-    switch (backend == PrAppBackend_Default ? kBuilt[0] : backend) {
-#if defined(PR_APP_HAS_APPKIT)
-        case PrAppBackend_AppKit: app = prAppAppKitCreate(&chosen); break;
-#endif
-#if defined(PR_APP_HAS_UIKIT)
-        case PrAppBackend_UiKit: app = prAppUiKitCreate(&chosen); break;
-#endif
-#if defined(PR_APP_HAS_WIN32)
-        case PrAppBackend_Win32: app = prAppWin32Create(&chosen); break;
-#endif
-#if defined(PR_APP_HAS_WEB)
-        case PrAppBackend_Web: app = prAppWebCreate(&chosen, nullptr); break;
-#endif
-        default: break;
-    }
-    return app;
 }
 
 void prAppDestroy(PrApp* PR_NULLABLE app) {

@@ -11,16 +11,23 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #1e1e1e; }
 </style>
 </head>
 <body>
-<!-- The page's query holds the program's arguments. Both ?--renderer=cpu&--scene=2 and ?arg=--renderer&arg=cpu pass
-     them. -->
+<!-- The page's query holds the program's arguments and environment variables. A parameter whose name begins with PR_
+     sets that variable, as ?PR_BACKEND_RENDERER=cpu does. Any other parameter is an argument: ?--scene=2 and
+     ?arg=--scene&arg=2 both pass the arguments --scene 2. -->
 <script>
-var Module = {arguments: []};
+var Module = {arguments: [], environment: {}};
 for (const [name, value] of new URLSearchParams(location.search)) {
+    if (name.startsWith("PR_")) {
+        Module.environment[name] = value;
+        continue;
+    }
     if (name !== "arg")
         Module.arguments.push(name);
     if (value !== "")
         Module.arguments.push(value);
 }
+// The runtime builds its environment before preRun, which adds the variables of the query.
+Module.preRun = [function (module) { Object.assign(module.ENV, module.environment); }];
 </script>
 {{{ SCRIPT }}}
 </body>

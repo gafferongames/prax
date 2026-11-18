@@ -6,10 +6,10 @@
 #include "pr/array.h"
 #include "pr/base64.h"
 #include "pr/compress.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/file.h"
 #include "pr/image.h"
-#include "pr/image_builtin.h"
+#include "pr/image_select.h"
 #include "pr/string.h"
 #include "pr/string_ops.h"
 #include "pr/vterm.h"
@@ -30,12 +30,12 @@ constexpr PrUVec2 kCell = {10, 20};
 
 // The codecs that the test terminals decode images with.
 struct Codecs {
-    PrCompressCodec* compress = prCompressBuiltinCreate();
-    PrImageCodec* image = prImageBuiltinCreate(compress);
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* image = prImageCodecSetCreateDefault(compress);
 
     ~Codecs() {
-        prImageCodecDestroy(image);
-        prCompressCodecDestroy(compress);
+        prImageCodecSetDestroy(image);
+        prCompressCodecSetDestroy(compress);
     }
 };
 
@@ -146,11 +146,11 @@ String solid(uint32_t width, uint32_t height, uint32_t channels, uint8_t red, ui
 
 String zlib(PrStringView bytes) {
     PrByteView input = prStringBytes(bytes);
-    size_t bound = prCompressCodecEncodeBound(codecs().compress, PrCompressFormat_Zlib, bytes.size);
+    size_t bound = prCompressCodecSetEncodeBound(codecs().compress, PrCompressFormat_Zlib, bytes.size);
     Array<uint8_t> out(bound);
     size_t written = 0;
-    REQUIRE(prCompressCodecEncode(codecs().compress, PrCompressFormat_Zlib, PrCompressLevel_Default, input, out.data(),
-        &written) == PrStatus_Ok);
+    REQUIRE(prCompressCodecSetEncode(codecs().compress, PrCompressFormat_Zlib, PrCompressLevel_Default, input,
+        out.data(), &written) == PrStatus_Ok);
     return String(PrStringView(reinterpret_cast<const char*>(out.data()), written));
 }
 
@@ -165,9 +165,9 @@ String png(uint32_t width, uint32_t height, uint8_t red, uint8_t green, uint8_t 
     }
     PrPixelView pixels{prStringBytes(rgba).data, size_t(width) * 4, {width, height}};
     size_t size = 0;
-    prImageCodecEncode(codecs().image, "image/png", pixels, nullptr, 0, &size);
+    prImageCodecSetEncode(codecs().image, "image/png", pixels, nullptr, 0, &size);
     Array<uint8_t> out(size);
-    REQUIRE(prImageCodecEncode(codecs().image, "image/png", pixels, out.data(), size, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(codecs().image, "image/png", pixels, out.data(), size, &size) == PrStatus_Ok);
     return String(PrStringView(reinterpret_cast<const char*>(out.data()), size));
 }
 

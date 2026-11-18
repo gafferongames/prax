@@ -1969,7 +1969,7 @@ PrCssFontFace* prCssFontFaceCreate(PrStringView family, PrStringView source,
 PrCssFontFace* prCssFontFaceCreateFromData(PrDomDocument* PR_NULLABLE document, PrStringView family, PrByteView data,
         const PrStringView* PR_NULLABLE descriptors) {
     static constexpr uint8_t kNone = 0;
-    PrCompressCodec* compress = document != nullptr && document->host != nullptr ? document->host->compress : nullptr;
+    const PrCompressCodecSet* compress = document != nullptr && document->host != nullptr ? document->host->compress : nullptr;
     return cssFontFaceCreate(family, PrStringView{}, PrByteView{data.data != nullptr ? data.data : &kNone, data.size},
         compress, descriptors);
 }

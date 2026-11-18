@@ -179,8 +179,8 @@ struct Browser {
     PrFontSystem* PR_NULLABLE system = nullptr;
     PrTextShaper* PR_NULLABLE shaper = nullptr;
     PrTextFont* PR_NULLABLE font = nullptr;
-    PrCompressCodec* PR_NULLABLE compress = nullptr;
-    PrImageCodec* PR_NULLABLE images = nullptr;
+    PrCompressCodecSet* PR_NULLABLE compress = nullptr;
+    PrImageCodecSet* PR_NULLABLE images = nullptr;
     PrMediaCodec* PR_NULLABLE media = nullptr;
     PrAudioOutput* PR_NULLABLE audioOutput = nullptr;
     PrAudioMixer* PR_NULLABLE mixer = nullptr;

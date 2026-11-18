@@ -36,8 +36,8 @@ struct ParsedDocument {
 };
 
 struct SvgDecoder : PrDrawGlyphDecoder {
-    PrImageCodec* PR_NULLABLE imageCodec;
-    PrCompressCodec* PR_NULLABLE compressCodec;
+    const PrImageCodecSet* PR_NULLABLE imageCodec;
+    const PrCompressCodecSet* PR_NULLABLE compressCodec;
     RawArray<ParsedDocument> documents;
     uint64_t clock;
     RawArray<uint8_t> inflated;
@@ -57,7 +57,7 @@ PrStringView documentText(SvgDecoder& d, PrByteView bytes) {
         d.inflated.clear();
         d.inflated.reserve(uint32_t(capacity));
         PrCompressRead read{};
-        PrStatus status = prCompressCodecDecode(d.compressCodec, PrCompressFormat_Gzip, bytes, d.inflated.data,
+        PrStatus status = prCompressCodecSetDecode(d.compressCodec, PrCompressFormat_Gzip, bytes, d.inflated.data,
             capacity, &read);
         if (status != PrStatus_Ok)
             return PrStringView{};
@@ -206,8 +206,8 @@ bool decode(PrDrawGlyphDecoder* decoder, const PrFont* font, uint16_t glyph, flo
 
 using namespace pr_impl;
 
-PrDrawGlyphDecoder* prSvgGlyphDecoderCreate(PrImageCodec* PR_NULLABLE imageCodec,
-        PrCompressCodec* PR_NULLABLE compressCodec) {
+PrDrawGlyphDecoder* prSvgGlyphDecoderCreate(const PrImageCodecSet* PR_NULLABLE imageCodec,
+        const PrCompressCodecSet* PR_NULLABLE compressCodec) {
     SvgDecoder* decoder = allocZeroed<SvgDecoder>();
     decoder->destroyFn = destroyDecoder;
     decoder->decodeFn = decode;

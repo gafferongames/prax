@@ -100,6 +100,9 @@ def targets(root):
     found = {}
     every = list(commands(root))
     libraries = {arguments[0][0] for _, command, arguments, _ in every if command == "pr_library" and arguments}
+    # A module's selector (pr_select) is an engine library named <module>_select.
+    libraries |= {arguments[0][0] + "_select" for _, command, arguments, _ in every
+                  if command == "pr_select" and arguments}
 
     def name_of(value):
         """Returns the target that `value`, a CMake name, names: a library of the engine by its module's name, as
@@ -170,6 +173,30 @@ def targets(root):
                     created.include.append(include)
             else:
                 create(name, "library", path, line, sources, directory, True)
+        elif command in ("pr_select", "pr_backend", "pr_backend_shared"):
+            # A selector is a separate library that links its module and lib/backend. A backend, and a unit of sources
+            # that backends share, add their sources and headers to the module's library.
+            keywords = ("INCLUDE", "SOURCES", "LINK", "SHARED", "REQUIRES", "WHEN")
+            parts = {}
+            current = None
+            for value, value_line in (rest if command == "pr_select" else rest[1:]):
+                if value in keywords:
+                    current = value
+                    parts.setdefault(current, [])
+                elif current is not None:
+                    parts[current].append((value, value_line))
+            if command == "pr_select":
+                created = create(name + "_select", "library", path, line, parts.get("SOURCES", []), directory, True)
+                linked = [("prax::" + name, line), ("prax::backend", line), ("prax::core_cpp", line)]
+                link("prax::" + name + "_select", linked + parts.get("LINK", []), path, "PUBLIC")
+            else:
+                created = module(name)
+                created.sources += [source for source in (relative(value, directory)
+                                                          for value, _ in parts.get("SOURCES", [])) if source]
+            for value, _ in parts.get("INCLUDE", []):
+                include = relative(value + "/", directory)
+                if include:
+                    created.include.append(include)
         elif command == "pr_headers" and len(rest) >= 2:
             include = relative(rest[1][0] + "/", directory)
             if include:

@@ -22,8 +22,10 @@ if ((APPLE OR WIN32) AND PR_JS)
         PR_TEX_TESTS_DIR="${PROJECT_SOURCE_DIR}/lib/tex/tests"
         PR_THIRD_PARTY_DIR="${PROJECT_SOURCE_DIR}/third_party"
         PR_VIEWER_CACHE_DIR="${PROJECT_BINARY_DIR}/viewer-cache")
-    target_link_libraries(viewer_documents PUBLIC prax::draw draw_compare draw_renderers suite_render prax::text
-                                                  prax::image prax::app prax::compress prax::lottie prax::font
+    target_link_libraries(viewer_documents PUBLIC prax::compress_select prax::image_select prax::draw_select prax::draw
+                                                  draw_compare draw_renderers suite_render
+                                                  prax::text
+                                                  prax::app prax::lottie prax::font
                                                   page_host
                                            PRIVATE prax::core_cpp prax::gpu prax::json prax::html prax::css
                                                    prax::layout rlottie::rlottie pr_warnings)
@@ -34,8 +36,12 @@ if ((APPLE OR WIN32) AND PR_JS)
     # The viewer: the documents, rendered by each renderer, beside its controls in Studio Kit.
     add_executable(viewer viewer.cpp ui.cpp)
     pr_font_bundle_resources(viewer Complete)
-    target_link_libraries(viewer PRIVATE viewer_documents prax::app prax::webview prax::draw prax::font
-                                         prax::font_bundle prax::geom prax::gpu prax::compress prax::image prax::layout
+    target_link_libraries(viewer PRIVATE prax::compress_select prax::image_select prax::gpu_select viewer_documents
+                                         prax::app prax::webview prax::draw
+                                         prax::draw_select
+                                         prax::app_select
+                                         prax::font
+                                         prax::font_bundle prax::geom prax::gpu prax::layout
                                          prax::studio_kit prax::text prax::ui prax::core_cpp pr_warnings)
 
     # The tests of the viewer's own logic.

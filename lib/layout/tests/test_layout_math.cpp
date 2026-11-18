@@ -2,7 +2,7 @@
 // whose values are known, and checked against the positions that TeXbook Appendix G and the OpenType MATH table give.
 // Spaces (mspace) of known sizes stand in for content, so that every position follows from the constants alone.
 
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/float.h"
 #include "pr/font_math.h"
 #include "pr/layout_query.h"
@@ -41,9 +41,9 @@ struct MathFixture {
             status = prFontCreate(openFile(path), 0, nullptr, &font);
         } else {
             Array<uint8_t> bytes = readFile(format("{}/math/{}.woff", PR_FONTS_DIR, wpt));
-            PrCompressCodec* codec = prCompressBuiltinCreate();
+            PrCompressCodecSet* codec = prCompressCodecSetCreateDefault();
             status = prFontCreateWoff(bytes, 0, nullptr, codec, &font);
-            prCompressCodecDestroy(codec);
+            prCompressCodecSetDestroy(codec);
         }
         REQUIRE(status == PrStatus_Ok);
         PrFontFaceDescriptor descriptor = prFontFaceDescriptorDefault();

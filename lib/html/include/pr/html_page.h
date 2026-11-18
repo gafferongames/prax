@@ -182,7 +182,7 @@ typedef struct PrHtmlHost {
     // The codec that decodes the images that the documents show, which must outlive the page. If null, no image is
     // decoded: an image still has the natural size that its header records, and draws nothing. If null, an iframe's
     // page uses its parent's codec. The codec also encodes the bitmaps of canvases (prHtmlCanvasElementToDataUrl).
-    PrImageCodec* PR_NULLABLE images;
+    const PrImageCodecSet* PR_NULLABLE images;
 
     // The codec that reads the media resources of video and audio elements, and decodes the frames of their video,
     // which must outlive the page. If null, no media resource plays. If null, an iframe's page uses its parent's codec.
@@ -192,14 +192,14 @@ typedef struct PrHtmlHost {
     // play without sound, on the clock. If null, an iframe's page uses its parent's mixer.
     PrAudioMixer* PR_NULLABLE mixer;
 
-    // The device that the renderer presenting the documents renders on, or null if that renderer renders in memory. It
-    // must outlive the page. The page keeps content that the renderer draws into on that device, such as the bitmaps of
-    // canvases. If null, an iframe's page uses its parent's device.
-    PrGpuDevice* PR_NULLABLE device;
+    // The renderer that presents the documents. Content that the page draws into, such as canvas bitmaps, lives on the
+    // renderer's device, and the page draws into it with this renderer. If the renderer is null, an iframe's page uses
+    // its parent's renderer, and any other page has no such content. The renderer must outlive the page.
+    PrDrawRenderer* PR_NULLABLE renderer;
 
     // The codec that decompresses fonts that the documents load in compressed form, such as WOFF files. It must outlive
     // the page. If null, such fonts are not loaded. If null, an iframe's page uses its parent's codec.
-    PrCompressCodec* PR_NULLABLE compress;
+    const PrCompressCodecSet* PR_NULLABLE compress;
 
     // The providers that the documents' local storage and session storage are kept in (PrHtmlStorageProvider), which
     // must outlive the page. If null, an iframe's page uses its parent's provider of that kind, and any other

@@ -1,5 +1,8 @@
 #include "pr/array.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_brotli.h"
+#include "pr/compress_deflate.h"
+#include "pr/compress_lzfse.h"
+#include "pr/compress_select.h"
 #include "pr/string.h"
 #include "pr/string_ops.h"
 
@@ -57,12 +60,18 @@ String expected() {
     return text;
 }
 
+// The set of every codec, which the tests share and never free.
+const PrCompressCodecSet* codecs() {
+    static PrCompressCodecSet* set = prCompressCodecSetCreateDefault();
+    return set;
+}
+
 // Decodes a whole stream at once into room for `capacity` bytes.
 PrStatus decode(PrCompressFormat format, const uint8_t* bytes, size_t size, String* out,
         size_t capacity = 4096, PrCompressRead* read = nullptr) {
     Array<uint8_t> output(capacity);
     PrCompressRead local{};
-    PrStatus status = prCompressCodecDecode(prCompressBuiltinCreate(), format, PrByteView{bytes, size}, output.data(),
+    PrStatus status = prCompressCodecSetDecode(codecs(), format, PrByteView{bytes, size}, output.data(),
         output.count(), read != nullptr ? read : &local);
     const PrCompressRead& r = read != nullptr ? *read : local;
     out->assign(PrStringView{reinterpret_cast<const char*>(output.data()), r.written});
@@ -103,22 +112,62 @@ TEST_CASE("each format decodes whole") {
     CHECK(decode(PrCompressFormat_Lzfse, kZlib, sizeof(kZlib), &text) == PrStatus_InvalidData);
 }
 
-TEST_CASE("the built-in codec decodes every format and encodes the Deflate ones") {
-    PrCompressCodec* codec = prCompressBuiltinCreate();
+TEST_CASE("the set of every codec decodes every format and encodes the Deflate ones") {
     for (PrCompressFormat format = PrCompressFormat_Deflate; format <= PrCompressFormat_Lzfse; ++format) {
         CAPTURE(format);
-        CHECK(prCompressCodecDecodes(codec, format));
-        CHECK((prCompressCodecEncodeBound(codec, format, 100) != 0) == (format < PrCompressFormat_Brotli));
+        CHECK(prCompressCodecSetDecodes(codecs(), format));
+        CHECK(prCompressCodecSetEncodes(codecs(), format) == (format < PrCompressFormat_Brotli));
+        CHECK((prCompressCodecSetEncodeBound(codecs(), format, 100) != 0) == (format < PrCompressFormat_Brotli));
     }
     uint8_t out[16];
     size_t written = 0;
-    CHECK(prCompressCodecEncode(codec, PrCompressFormat_Lzfse, PrCompressLevel_Default, PrByteView{}, out, &written) ==
-        PrStatus_NotSupported);
+    CHECK(prCompressCodecSetEncode(codecs(), PrCompressFormat_Lzfse, PrCompressLevel_Default, PrByteView{}, out,
+        &written) == PrStatus_NotSupported);
+}
+
+TEST_CASE("a set reads only the formats of its codecs") {
+    PrCompressCodec* members[] = {prCompressDeflateCreate(), prCompressLzfseCreate()};
+    PrCompressCodecSet* set = prCompressCodecSetCreate(members, 2);
+    CHECK(prCompressCodecSetDecodes(set, PrCompressFormat_Zlib));
+    CHECK(prCompressCodecSetDecodes(set, PrCompressFormat_Lzfse));
+    CHECK_FALSE(prCompressCodecSetDecodes(set, PrCompressFormat_Brotli));
+    PrCompressDecoder* decoder = nullptr;
+    CHECK(prCompressDecoderCreate(set, PrCompressFormat_Brotli, &decoder) == PrStatus_NotSupported);
+    CHECK(decoder == nullptr);
+    uint8_t out[16];
+    PrCompressRead read{};
+    CHECK(prCompressCodecSetDecode(set, PrCompressFormat_Brotli, PrByteView{kBrotli, sizeof(kBrotli)}, out,
+        sizeof(out), &read) == PrStatus_NotSupported);
+    prCompressCodecSetDestroy(set);
+    PrCompressCodecSet* empty = prCompressCodecSetCreate(nullptr, 0);
+    CHECK_FALSE(prCompressCodecSetDecodes(empty, PrCompressFormat_Deflate));
+    CHECK_FALSE(prCompressCodecSetEncodes(empty, PrCompressFormat_Deflate));
+    CHECK(prCompressCodecSetEncodeBound(empty, PrCompressFormat_Deflate, 100) == 0);
+    prCompressCodecSetDestroy(empty);
+}
+
+TEST_CASE("a set decodes with its first codec that decodes a format, and encodes with its first that encodes it") {
+    // Brotli decodes only, so the set encodes Deflate with the Deflate codec, which comes after it.
+    PrCompressCodec* members[] = {prCompressBrotliCreate(), prCompressDeflateCreate()};
+    PrCompressCodecSet* set = prCompressCodecSetCreate(members, 2);
+    CHECK(prCompressCodecSetEncodes(set, PrCompressFormat_Gzip));
+    const String text = expected();
+    Array<uint8_t> encoded(prCompressCodecSetEncodeBound(set, PrCompressFormat_Gzip, text.count()));
+    size_t written = 0;
+    REQUIRE(prCompressCodecSetEncode(set, PrCompressFormat_Gzip, PrCompressLevel_Default,
+        PrByteView{reinterpret_cast<const uint8_t*>(text.data()), text.count()}, encoded.data(), &written) ==
+        PrStatus_Ok);
+    Array<uint8_t> decoded(text.count());
+    PrCompressRead read{};
+    CHECK(prCompressCodecSetDecode(set, PrCompressFormat_Gzip, PrByteView{encoded.data(), written}, decoded.data(),
+        decoded.count(), &read) == PrStatus_Ok);
+    CHECK(read.written == text.count());
+    prCompressCodecSetDestroy(set);
 }
 
 TEST_CASE("a stream decodes a byte of input at a time into little room") {
     PrCompressDecoder* decoder = nullptr;
-    REQUIRE(prCompressDecoderCreate(prCompressBuiltinCreate(), PrCompressFormat_Zlib, &decoder) == PrStatus_Ok);
+    REQUIRE(prCompressDecoderCreate(codecs(), PrCompressFormat_Zlib, &decoder) == PrStatus_Ok);
     String text;
     uint8_t room[7];
     size_t at = 0;

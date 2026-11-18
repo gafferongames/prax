@@ -4,6 +4,7 @@
 
 #include "pr/css_presentation.h"
 #include "pr/css_view.h"
+#include "pr/draw_select.h"
 #include "pr/html.h"
 #include "pr/html_page.h"
 #include "pr/layout_query.h"
@@ -142,7 +143,7 @@ std::string htmlBrowserUrl(const fs::path& path, const std::string& query) {
 
 std::shared_ptr<HtmlSource> loadHtml(const fs::path& path, const std::string& query, const fs::path& settings,
         const fs::path& capture, bool scripts, page_host::Media media, PrTextShaper* shaper, PrFontHinting hinting,
-        PrFontHinter* PR_NULLABLE hinter, PrGpuDevice* PR_NULLABLE device) {
+        PrFontHinter* PR_NULLABLE hinter, PrDrawRenderer* PR_NULLABLE renderer) {
     std::string wpt = wptUrlOf(path, query);
     std::string thirdParty = thirdPartyUrlOf(path, query);
     std::string location = path.string();
@@ -158,7 +159,7 @@ std::shared_ptr<HtmlSource> loadHtml(const fs::path& path, const std::string& qu
             fs::path(kThirdParty).parent_path().string());
     html->host.setHinting(hinting, hinter);
     html->host.setPageGap(kPageGap);
-    html->host.setDevice(device);
+    html->host.setRenderer(renderer);
     if (!wpt.empty() && !reachWpt(html->host))
         return nullptr;
     if (!thirdParty.empty() && !html->host.useNetwork())

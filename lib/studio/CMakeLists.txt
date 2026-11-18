@@ -52,7 +52,8 @@ if (PR_DEVELOP)
         kit/tests/test_kit_menu.cpp
         kit/tests/test_kit_title_bar.cpp
     )
-    target_link_libraries(studio_kit_tests PRIVATE kit_fixture prax::path prax::app prax::text_edit prax::text prax::draw
+    target_link_libraries(studio_kit_tests PRIVATE kit_fixture prax::path prax::app prax::text_edit prax::text
+                                                   prax::draw
                                                    prax::layout prax::ui prax::ui_cpp prax::color)
 endif()
 
@@ -131,7 +132,8 @@ if (PR_DEVELOP AND (PR_PROCESS_POSIX OR PR_PROCESS_WINDOWS))
         terminal/tests/test_terminal.cpp
         terminal/tests/test_terminal_c.c
     )
-    target_link_libraries(studio_terminal_tests PRIVATE kit_fixture prax::app prax::draw prax::layout prax::text prax::ui
+    target_link_libraries(studio_terminal_tests PRIVATE kit_fixture prax::app prax::draw prax::layout prax::text
+                                                        prax::ui
                                                 prax::process prax::url prax::vterm prax::studio_kit)
 endif()
 
@@ -144,7 +146,8 @@ pr_library(studio_app INCLUDE app/include
 )
 target_link_libraries(pr_studio_app PUBLIC prax::app prax::color prax::draw prax::font prax::gpu
                                            prax::layout prax::studio_kit prax::task prax::text prax::ui
-                                    PRIVATE prax::core_cpp prax::compress prax::image)
+                                    PRIVATE prax::core_cpp prax::app_select prax::compress prax::draw_select prax::gpu_select
+                                            prax::image)
 
 if (PR_DEVELOP)
     pr_module_tests(studio_app

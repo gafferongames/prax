@@ -62,13 +62,16 @@
 // costs.
 
 #include "pr/app.h"
+#include "pr/app_select.h"
 #include "pr/assert.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/draw.h"
 #include "pr/draw_display.h"
 #include "pr/draw_fragment.h"
 #include "pr/draw_list.h"
-#include "pr/image_builtin.h"
+#include "pr/draw_select.h"
+#include "pr/gpu_select.h"
+#include "pr/image_select.h"
 #include "pr/vec.h"
 #include "pr/webview.h"
 
@@ -159,14 +162,14 @@ std::vector<uint8_t> readSlot(const Slot& slot) {
 // Writes straight RGBA pixels as a PNG.
 bool writeRgbaPng(const std::string& path, const std::vector<uint8_t>& rgba, uint32_t width, uint32_t height) {
     const PrPixelView pixels{rgba.data(), size_t(width) * 4, {width, height}};
-    PrCompressCodec* compressCodec = prCompressBuiltinCreate();
-    PrImageCodec* imageCodec = prImageBuiltinCreate(compressCodec);
+    PrCompressCodecSet* compressCodec = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* imageCodec = prImageCodecSetCreateDefault(compressCodec);
     size_t size = 0;
-    prImageCodecEncode(imageCodec, "image/png", pixels, nullptr, 0, &size);
+    prImageCodecSetEncode(imageCodec, "image/png", pixels, nullptr, 0, &size);
     std::vector<uint8_t> png(size);
-    prImageCodecEncode(imageCodec, "image/png", pixels, png.data(), png.size(), &size);
-    prImageCodecDestroy(imageCodec);
-    prCompressCodecDestroy(compressCodec);
+    prImageCodecSetEncode(imageCodec, "image/png", pixels, png.data(), png.size(), &size);
+    prImageCodecSetDestroy(imageCodec);
+    prCompressCodecSetDestroy(compressCodec);
     FILE* file = std::fopen(path.c_str(), "wb");
     if (file == nullptr)
         return false;
@@ -223,8 +226,7 @@ int renderAll(const char* directory, const Collection& documents, const char* wh
         uint32_t height = uint32_t(std::lround(size.y * pixelRatio));
         // Each renderer configuration renders a load of its own, presented where its renderer renders.
         auto recordFor = [&](uint32_t config) {
-            PrGpuDevice* presenter = prDrawRendererDevice(configs[config].renderer);
-            std::shared_ptr<Loaded> loaded = load(document.source, text, media, presenter);
+            std::shared_ptr<Loaded> loaded = load(document.source, text, media, configs[config].renderer);
             record(list, *loaded, size.x, size.y, pixelRatio, time);
             return loaded;
         };
@@ -274,7 +276,7 @@ int renderAll(const char* directory, const Collection& documents, const char* wh
             if (listed.printed.path.empty())
                 continue;
             Reference printed = listed;
-            PrStringView extension = prDrawWriterBackendName(listed.printed.format);
+            PrStringView extension = prBackendName(prDrawWriterSelectInterface(), listed.printed.format);
             printed.printed.path = stem + fileNameOf(listed.name) + "." + std::string(extension.data, extension.size);
             bool ok = print(printed);
             std::printf("%s %s\n", ok ? "wrote" : "FAILED", printed.printed.path.string().c_str());
@@ -950,8 +952,10 @@ std::shared_ptr<Loaded> paneDocument(Viewer& v, Opened& document, uint32_t index
     const Document& listed = allCollections()[v.openCollection].documents()[v.openDocument];
     page_host::Media media = paneMedia(choice, listed.source);
     if (pane.loaded == nullptr || pane.text != choice.text || pane.config != choice.config || pane.media != media) {
-        PrGpuDevice* device = prDrawRendererDevice(v.configs[choice.config].renderer);
-        pane = PaneLoad{choice.text, choice.config, media, load(listed.source, choice.text, media, device)};
+        pane = PaneLoad{
+            choice.text, choice.config, media,
+            load(listed.source, choice.text, media, v.configs[choice.config].renderer),
+        };
         // A load opens at the top of the document, and the other pane follows it there.
         v.choices.scroll = PrVec2{0, 0};
     }

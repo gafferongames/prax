@@ -11,7 +11,7 @@ pr_library(lottie INCLUDE include
     src/lottie_text.cpp
 )
 target_link_libraries(pr_lottie PUBLIC prax::draw prax::text prax::compress prax::font prax::image
-                                PRIVATE prax::core_cpp prax::path prax::geom prax::unicode prax::json prax::color
+                                PRIVATE prax::core_cpp prax::zip prax::path prax::geom prax::unicode prax::json prax::color
                                         prax::locale)
 if (PR_JS)
     target_sources(pr_lottie PRIVATE src/lottie_expression.cpp)
@@ -26,7 +26,7 @@ if (PR_DEVELOP)
         tests/test_lottie_archive.cpp
         tests/test_lottie_c.c
     )
-    target_link_libraries(lottie_tests PRIVATE prax::image prax::compress prax::text prax::draw
+    target_link_libraries(lottie_tests PRIVATE prax::compress_select prax::image_select prax::text prax::draw
                                                prax::font prax::path)
     target_compile_definitions(lottie_tests PRIVATE PR_FONTS_DIR="${PR_TEST_FONTS_DIR}")
     if (PR_JS)

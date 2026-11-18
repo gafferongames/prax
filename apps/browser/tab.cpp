@@ -80,7 +80,7 @@ PrHtmlHost pageHost(Tab& tab) {
     host.images = b.images;
     host.media = b.media;
     host.mixer = b.mixer;
-    host.device = b.device;
+    host.renderer = b.renderer;
     host.compress = b.compress;
     host.localStorage = b.localStorage;
     host.sessionStorage = b.sessionStorage;

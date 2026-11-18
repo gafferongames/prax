@@ -37,7 +37,7 @@ struct ImageCache;
 
 // Creates a cache that decodes on `pool` with `codec`, which must outlive it, and calls `wake` from the pool's threads
 // when a decode lands. Freeing waits for the decodes in flight.
-ImageCache* imageCacheCreate(PrTaskPool* pool, PrImageCodec* codec, Function<void()> wake);
+ImageCache* imageCacheCreate(PrTaskPool* pool, PrImageCodecSet* codec, Function<void()> wake);
 void imageCacheDestroy(ImageCache* PR_NULLABLE cache);
 
 // Returns the image of the file at `path` at `scale`, or null while it decodes or if it cannot be decoded. The first
@@ -55,7 +55,7 @@ void imageCacheForget(ImageCache* cache, PrStringView path);
 bool imageCachePump(ImageCache* cache);
 
 // Returns an image decoded from `bytes`, which the caller releases, or null if the codec cannot read them.
-const PrDrawImage* PR_NULLABLE imageDecode(PrImageCodec* codec, const void* bytes, size_t size);
+const PrDrawImage* PR_NULLABLE imageDecode(PrImageCodecSet* codec, const void* bytes, size_t size);
 
 // Returns a copy of `image` halved until it fits `maxEdge`, which the caller releases, or a new reference to `image` if
 // it already fits or is not in 8 bits.

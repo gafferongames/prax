@@ -8,6 +8,7 @@
 // the frame when told `window.prSetFrame(frame)`. The answer is the status.
 
 #include "pr/app.h"
+#include "pr/app_select.h"
 #include "pr/assert.h"
 #include "pr/vec.h"
 #include "pr/webview.h"

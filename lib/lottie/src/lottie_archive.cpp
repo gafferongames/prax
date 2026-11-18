@@ -5,11 +5,11 @@
 #include "pr/lottie_archive.h"
 
 #include "pr/alloc.h"
-#include "pr/compress_zip.h"
 #include "pr/json.h"
 #include "pr/lottie.h"
 #include "pr/raw_array.h"
 #include "pr/string_ops.h"
+#include "pr/zip.h"
 
 namespace pr_impl {
 
@@ -23,15 +23,15 @@ struct ArchiveAnimation {
 };
 
 struct LottieArchive {
-    PrCompressZip* zip;
+    PrZip* zip;
     RawArray<char> text;
     RawArray<ArchiveAnimation> animations;
 };
 
 // Returns the entry that holds the animation `id`. The entry is in animations/, or in a/ from the second version of the
 // format on.
-uint32_t animationEntry(const PrCompressZip* zip, PrStringView id) {
-    uint32_t count = prCompressZipEntryCount(zip);
+uint32_t animationEntry(const PrZip* zip, PrStringView id) {
+    uint32_t count = prZipEntryCount(zip);
     const char* const folders[] = {"animations/", "a/"};
     for (const char* folder : folders) {
         PrStringView folderView = folder;
@@ -39,7 +39,7 @@ uint32_t animationEntry(const PrCompressZip* zip, PrStringView id) {
         name.append(folder, uint32_t(folderView.size));
         name.append(id.data, uint32_t(id.size));
         name.append(".json", 5);
-        uint32_t entry = prCompressZipFind(zip, PrStringView{name.data, name.count});
+        uint32_t entry = prZipFind(zip, PrStringView{name.data, name.count});
         name.reset();
         if (entry < count)
             return entry;
@@ -55,15 +55,15 @@ void addAnimation(LottieArchive& a, PrStringView id, uint32_t entry) {
 
 // Reads the manifest's animations, or every JSON file in an animation folder if the manifest lists none.
 void readAnimations(LottieArchive& a) {
-    const PrCompressZip* zip = a.zip;
-    uint32_t count = prCompressZipEntryCount(zip);
-    uint32_t manifest = prCompressZipFind(zip, "manifest.json");
+    const PrZip* zip = a.zip;
+    uint32_t count = prZipEntryCount(zip);
+    uint32_t manifest = prZipFind(zip, "manifest.json");
     if (manifest < count) {
-        PrCompressZipEntry entry = prCompressZipEntry(zip, manifest);
+        PrZipEntry entry = prZipEntry(zip, manifest);
         RawArray<char> bytes;
         bytes.reserve(uint32_t(entry.size) + 1);
         PrJson* doc = prJsonCreate();
-        if (prCompressZipRead(zip, manifest, reinterpret_cast<uint8_t*>(bytes.data), size_t(entry.size)) ==
+        if (prZipRead(zip, manifest, reinterpret_cast<uint8_t*>(bytes.data), size_t(entry.size)) ==
                 PrStatus_Ok && prJsonParse(doc, PrStringView{bytes.data, size_t(entry.size)}, nullptr)) {
             uint32_t list = prJsonMember(doc, 0, "animations");
             for (uint32_t i = prJsonFirst(doc, list); i != kPrJsonMissing; i = prJsonAfter(doc, list, i)) {
@@ -79,7 +79,7 @@ void readAnimations(LottieArchive& a) {
     if (a.animations.count > 0)
         return;
     for (uint32_t i = 0; i < count; ++i) {
-        PrStringView name = prCompressZipEntry(zip, i).name;
+        PrStringView name = prZipEntry(zip, i).name;
         const PrStringView folders[] = {"animations/", "a/"};
         for (PrStringView folder : folders) {
             if (!prStringStartsWith(name, folder) || !prStringEndsWith(name, ".json"))
@@ -94,7 +94,7 @@ void readAnimations(LottieArchive& a) {
 // Files that an animation in the archive names. They are read from the archive and kept until the animation has been
 // read.
 struct ArchiveFiles {
-    const PrCompressZip* zip;
+    const PrZip* zip;
     RawArray<uint8_t*> read;
 };
 
@@ -103,12 +103,12 @@ bool loadEntry(void* PR_NULLABLE context, PrStringView path, PrByteView* out) {
     // Asset folders are named relative to the archive's root, as in "/images/".
     while (path.size > 0 && path.data[0] == '/')
         path = prStringFrom(path, 1);
-    uint32_t index = prCompressZipFind(files->zip, path);
-    if (index >= prCompressZipEntryCount(files->zip))
+    uint32_t index = prZipFind(files->zip, path);
+    if (index >= prZipEntryCount(files->zip))
         return false;
-    PrCompressZipEntry entry = prCompressZipEntry(files->zip, index);
+    PrZipEntry entry = prZipEntry(files->zip, index);
     uint8_t* bytes = static_cast<uint8_t*>(prMemoryAlloc(size_t(entry.size) + 1));
-    if (prCompressZipRead(files->zip, index, bytes, size_t(entry.size)) != PrStatus_Ok) {
+    if (prZipRead(files->zip, index, bytes, size_t(entry.size)) != PrStatus_Ok) {
         prMemoryFree(bytes);
         return false;
     }
@@ -126,16 +126,16 @@ using namespace pr_impl;
 // C opaque types
 struct PrLottieArchive : LottieArchive {};
 
-PrLottieArchive* prLottieArchiveCreate(PrCompressCodec* codec) {
+PrLottieArchive* prLottieArchiveCreate(const PrCompressCodecSet* codec) {
     PrLottieArchive* a = allocZeroed<PrLottieArchive>();
-    a->zip = prCompressZipCreate(codec);
+    a->zip = prZipCreate(codec);
     return a;
 }
 
 void prLottieArchiveDestroy(PrLottieArchive* PR_NULLABLE archive) {
     if (archive == nullptr)
         return;
-    prCompressZipDestroy(archive->zip);
+    prZipDestroy(archive->zip);
     archive->text.reset();
     archive->animations.reset();
     prMemoryFree(archive);
@@ -143,14 +143,14 @@ void prLottieArchiveDestroy(PrLottieArchive* PR_NULLABLE archive) {
 
 PrStatus prLottieArchiveOpen(PrLottieArchive* archive, PrByteView bytes) {
     prLottieArchiveClose(archive);
-    PrStatus status = prCompressZipOpen(archive->zip, bytes);
+    PrStatus status = prZipOpen(archive->zip, bytes);
     if (status == PrStatus_Ok)
         readAnimations(*archive);
     return status;
 }
 
 void prLottieArchiveClose(PrLottieArchive* archive) {
-    prCompressZipClose(archive->zip);
+    prZipClose(archive->zip);
     archive->text.count = 0;
     archive->animations.count = 0;
 }
@@ -171,7 +171,7 @@ PrStatus prLottieAnimationCreateFromArchive(const PrLottieArchive* archive, uint
     ArchiveFiles files{archive->zip, {}};
     PrByteView json{};
     PrStatus status = PrStatus_InvalidData;
-    PrCompressZipEntry zipped = prCompressZipEntry(archive->zip, entry);
+    PrZipEntry zipped = prZipEntry(archive->zip, entry);
     if (loadEntry(&files, zipped.name, &json)) {
         PrLottieOptions own = options != nullptr ? *options : PrLottieOptions{};
         own.load = loadEntry;

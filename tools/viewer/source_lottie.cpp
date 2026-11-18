@@ -2,9 +2,9 @@
 
 #include "tools/viewer/source_lottie.h"
 
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/font_set.h"
-#include "pr/image_builtin.h"
+#include "pr/image_select.h"
 #include "pr/lottie.h"
 
 #include "tools/suite/suite_render.h"
@@ -76,8 +76,8 @@ std::shared_ptr<LottieSource> loadLottie(const fs::path& path, const fs::path& s
         PrFontHinting hinting, PrFontHinter* PR_NULLABLE hinter) {
     std::string json = readFile(path);
     Beside beside{path.parent_path(), {}};
-    PrCompressCodec* compressCodec = prCompressBuiltinCreate();
-    PrImageCodec* imageCodec = prImageBuiltinCreate(compressCodec);
+    PrCompressCodecSet* compressCodec = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* imageCodec = prImageCodecSetCreateDefault(compressCodec);
     PrLottieOptions options{};
     options.codec = imageCodec;
     options.load = loadBeside;
@@ -92,8 +92,8 @@ std::shared_ptr<LottieSource> loadLottie(const fs::path& path, const fs::path& s
     options.fonts = fonts;
     options.shaper = shaper;
     prLottieAnimationCreate(json, &options, &lottie->animation);
-    prImageCodecDestroy(imageCodec);
-    prCompressCodecDestroy(compressCodec);
+    prImageCodecSetDestroy(imageCodec);
+    prCompressCodecSetDestroy(compressCodec);
     return lottie->animation != nullptr ? lottie : nullptr;
 }
 

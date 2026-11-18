@@ -18,6 +18,7 @@
 #include "pr/app_user_preferences.h"
 #include "pr/audio_mixer.h"
 #include "pr/draw_list.h"
+#include "pr/draw_select.h"
 #include "pr/draw_structure.h"
 #include "pr/draw_writer.h"
 #include "pr/font.h"
@@ -114,9 +115,10 @@ public:
     // hinter must outlive the host.
     void setHinting(PrFontHinting hinting, PrFontHinter* PR_NULLABLE hinter);
 
-    // Presents the pages loaded afterward with a renderer on `device`, or with a renderer in memory if `device` is
-    // null, as the host does until this is called (PrHtmlHost::device). The device must outlive the pages.
-    void setDevice(PrGpuDevice* PR_NULLABLE device);
+    // Sets the renderer for pages loaded after the call (PrHtmlHost::renderer). Content that the pages draw into, such
+    // as canvas bitmaps, lives on the renderer's device. Until this is called, the renderer is null and pages have no
+    // such content. The renderer must outlive the pages.
+    void setRenderer(PrDrawRenderer* PR_NULLABLE renderer);
 
     // Sets the gap between printed pages, in CSS pixels, as a paint for print media stacks them down the viewport
     // (prHtmlViewSetPaged). The gap is zero until this is called.

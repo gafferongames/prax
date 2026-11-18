@@ -1,46 +1,65 @@
-# Images: the interface, and the backend that the build turns on.
+# Images: the interface, its sets of codecs, the conversions between pixel formats, and the codecs that adapt the image
+# format libraries, one backend for each. A program carries only the codecs that it creates, and so only their format
+# libraries.
 pr_library(image INCLUDE include
     src/convert.cpp
     src/image.cpp
-    src/image_png.cpp
     src/image_process.cpp
 )
 target_link_libraries(pr_image PUBLIC prax::core prax::color prax::compress PRIVATE prax::core_cpp)
 
+# What the codecs share: an image's input in memory, the meaning of color code points, and Exif metadata.
+target_sources(pr_image PRIVATE
+    backends/shared/src/image_shared.cpp
+    backends/shared/src/metadata.cpp
+)
+
+# Prax's own codecs, one for each format, which the build includes together.
+pr_backend(image builtin INCLUDE backends/png/include SOURCES
+    backends/emjc/src/image_emjc.cpp
+    backends/gif/src/image_gif.cpp
+    backends/ico/src/image_ico.cpp
+    backends/jpeg/src/image_jpeg.cpp
+    backends/png/src/image_png.cpp
+    backends/tiff/src/image_tiff.cpp
+)
 if (PR_IMAGE_BUILTIN)
-    target_sources(pr_image PRIVATE
-        backends/builtin/src/image_builtin.cpp
-        backends/builtin/src/emjc.cpp
-        backends/builtin/src/gif.cpp
-        backends/builtin/src/ico.cpp
-        backends/builtin/src/jpeg.cpp
-        backends/builtin/src/metadata.cpp
-        backends/builtin/src/png.cpp
-        backends/builtin/src/tiff.cpp
-    )
-    pr_headers(pr_image PUBLIC backends/builtin/include)
-    target_compile_definitions(pr_image PRIVATE PR_IMAGE_HAS_BUILTIN)
+    pr_headers(pr_image PUBLIC backends/emjc/include)
+    pr_headers(pr_image PUBLIC backends/gif/include)
+    pr_headers(pr_image PUBLIC backends/ico/include)
+    pr_headers(pr_image PUBLIC backends/jpeg/include)
+    pr_headers(pr_image PUBLIC backends/tiff/include)
+    target_link_libraries(pr_image PRIVATE prax::emjc prax::gif prax::ico prax::jpeg prax::png prax::tiff)
 endif()
+
+# The codec of Apple's ImageIO, which a program chooses over Prax's own for a format.
+pr_backend(image imageio INCLUDE backends/imageio/include SOURCES backends/imageio/src/image_imageio.cpp)
+if (PR_IMAGE_IMAGEIO)
+    target_link_libraries(pr_image PRIVATE "-framework ImageIO" "-framework CoreGraphics" "-framework CoreFoundation")
+endif()
+
+# The selector: the choice of the backend of each format, and a set of every format.
+pr_select(image INCLUDE select/include SOURCES select/src/image_select.cpp LINK prax::compress)
 
 if (PR_DEVELOP)
     pr_module_tests(image
         tests/test_convert.cpp
         tests/test_image.cpp
-        tests/test_image_png.cpp
         tests/test_image_process.cpp
         tests/test_image_c.c
+        backends/shared/tests/test_image_codecs.cpp
+        backends/shared/tests/test_image_codecs_c.c
+        backends/emjc/tests/test_image_emjc.cpp
+        backends/gif/tests/test_image_gif.cpp
+        backends/ico/tests/test_image_ico.cpp
+        backends/jpeg/tests/test_image_jpeg.cpp
+        backends/png/tests/test_image_png.cpp
+        backends/tiff/tests/test_image_tiff.cpp
     )
-    target_link_libraries(image_tests PRIVATE prax::color prax::compress)
-    if (PR_IMAGE_BUILTIN)
-        target_sources(image_tests PRIVATE
-            backends/builtin/tests/test_image_builtin.cpp
-            backends/builtin/tests/test_image_builtin_c.c
-            backends/builtin/tests/test_emjc.cpp
-            backends/builtin/tests/test_gif.cpp
-            backends/builtin/tests/test_ico.cpp
-            backends/builtin/tests/test_jpeg.cpp
-            backends/builtin/tests/test_tiff.cpp
-            backends/builtin/tests/test_png.cpp
-        )
+    target_link_libraries(image_tests PRIVATE harness_codecs prax::color prax::compress)
+    if (PR_IMAGE_IMAGEIO)
+        target_sources(image_tests PRIVATE backends/imageio/tests/test_image_imageio.cpp)
+        target_link_libraries(image_tests PRIVATE prax::compress_select prax::image_select "-framework ImageIO"
+                                                  "-framework CoreGraphics" "-framework CoreFoundation")
     endif()
 endif()

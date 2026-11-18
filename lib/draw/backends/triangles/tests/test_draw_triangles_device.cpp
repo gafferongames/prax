@@ -5,6 +5,7 @@
 #include "pr/float.h"
 #include "pr/font.h"
 #include "pr/gpu.h"
+#include "pr/gpu_select.h"
 #include "pr/min_max.h"
 #include "pr/string.h"
 #include "pr/vec.h"

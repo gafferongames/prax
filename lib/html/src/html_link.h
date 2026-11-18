@@ -28,7 +28,7 @@ void htmlLinkAttributeChanged(PrDomElement* element, PrStringView name);
 // tree order whose rel holds icon and whose href parses. A link whose type is one that `codec` cannot decode names no
 // icon, as the user agent may skip it. A null `codec` skips none. Returns the null string if no link names an icon. The
 // caller releases the string with prRawStringReset.
-PrRawString htmlLinkIconUrl(const PrDomDocument* document, PrImageCodec* PR_NULLABLE codec);
+PrRawString htmlLinkIconUrl(const PrDomDocument* document, const PrImageCodecSet* PR_NULLABLE codec);
 
 } // namespace pr_impl
 

@@ -147,7 +147,7 @@ void pageOpen(Features& f, PrStudioWindow* window, PrLayoutNode parent) {
     for (const String& argument : f.launchArguments)
         line(kit, launch, format("argument {}", argument));
     note(kit, launch, "The arguments that started the program. The web takes them from the page's query, as in "
-        "?--renderer=cpu or ?arg=--renderer&arg=cpu.");
+        "?--single-window or ?arg=--single-window.");
 
     PrLayoutNode s = section(kit, parent, "OPEN REQUESTS");
     line(kit, s, format("requests: {}", f.opens));

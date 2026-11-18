@@ -1,6 +1,6 @@
 #include "pr/app_backend.h"
 #include "pr/checksum.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/css_presentation.h"
 #include "pr/css_view.h"
 #include "pr/draw_cpu.h"
@@ -12,7 +12,7 @@
 #include "pr/html_page.h"
 #include "pr/html_structure.h"
 #include "pr/html_view.h"
-#include "pr/image_builtin.h"
+#include "pr/image_select.h"
 #include "pr/layout_compositor.h"
 #include "pr/layout_page.h"
 #include "pr/layout_style.h"
@@ -116,7 +116,7 @@ struct Viewed {
     // If `images` is given, the host decodes images. If `resource` is given, the host answers every fetch with it,
     // including the fetches of frames. The host answers at once, or when answer() is called if `holds` is set. The page
     // loads at `url`.
-    explicit Viewed(PrStringView html, PrImageCodec* PR_NULLABLE images = nullptr,
+    explicit Viewed(PrStringView html, PrImageCodecSet* PR_NULLABLE images = nullptr,
             const Array<uint8_t>* PR_NULLABLE resource = nullptr, bool holds = false,
             const char* url = "about:blank") : resource(resource) {
         String path = format("{}/Tinos-Regular.ttf", PR_FONTS_DIR);
@@ -1692,8 +1692,8 @@ TEST_CASE("links restyle once the host says that what it knows of visited links 
 }
 
 TEST_CASE("an img is a replaced box, sized by its image and drawing it, as the host decodes it") {
-    PrCompressCodec* compress = prCompressBuiltinCreate();
-    PrImageCodec* images = prImageBuiltinCreate(compress);
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = prImageCodecSetCreateDefault(compress);
     // A 4 by 2 red PNG.
     Array<uint8_t> red(4 * 2 * 4);
     for (uint32_t i = 0; i < red.count(); i += 4) {
@@ -1702,9 +1702,9 @@ TEST_CASE("an img is a replaced box, sized by its image and drawing it, as the h
     }
     PrPixelView pixels{red.data(), 16, {4, 2}};
     size_t size = 0;
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
     Array<uint8_t> png(size);
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
     {
         Viewed page("<style>body { margin: 0 } img { display: block }</style><img id=i src=http://test/red.png>"
             "<img id=w src=http://test/red.png style='width: 40px'>", images, &png);
@@ -1742,19 +1742,19 @@ TEST_CASE("an img is a replaced box, sized by its image and drawing it, as the h
         CHECK(prCssElementGetBoundingClientRect(page.byId("i")).width == 4.0);
         CHECK(verified(prHtmlPagePresentation(page.page)));
     }
-    prImageCodecDestroy(images);
-    prCompressCodecDestroy(compress);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
 }
 
 TEST_CASE("an img's content takes the cap of its dynamic-range-limit and its image-rendering, as they change") {
-    PrCompressCodec* compress = prCompressBuiltinCreate();
-    PrImageCodec* images = prImageBuiltinCreate(compress);
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = prImageCodecSetCreateDefault(compress);
     Array<uint8_t> red(4 * 2 * 4, 255);
     PrPixelView pixels{red.data(), 16, {4, 2}};
     size_t size = 0;
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
     Array<uint8_t> png(size);
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
     {
         Viewed page("<img id=i src=http://test/red.png style='dynamic-range-limit: standard'>", images, &png);
         PrDomAgent* agent = prHtmlPageAgent(page.page);
@@ -1787,13 +1787,13 @@ TEST_CASE("an img's content takes the cap of its dynamic-range-limit and its ima
         PrLayoutContent content = prLayoutNodeContent(prCssPresentationTree(presentation), node);
         CHECK(content.rendering == PrLayoutImageRendering_Pixelated);
     }
-    prImageCodecDestroy(images);
-    prCompressCodecDestroy(compress);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
 }
 
 TEST_CASE("an img is sized and drawn as its image's orientation displays it, unless image-orientation is none") {
-    PrCompressCodec* compress = prCompressBuiltinCreate();
-    PrImageCodec* images = prImageBuiltinCreate(compress);
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = prImageCodecSetCreateDefault(compress);
     // Four by two pixels: a red column on the left, and blue elsewhere.
     Array<uint8_t> stored(4 * 2 * 4);
     for (uint32_t i = 0; i < 8; ++i) {
@@ -1804,9 +1804,9 @@ TEST_CASE("an img is sized and drawn as its image's orientation displays it, unl
     }
     PrPixelView pixels{stored.data(), 16, {4, 2}};
     size_t size = 0;
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
     Array<uint8_t> png(size);
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
     // A quarter turn clockwise displays it two by four, with the red row on top.
     Array<uint8_t> turned = withOrientation(png, 6);
     {
@@ -1844,19 +1844,19 @@ TEST_CASE("an img is sized and drawn as its image's orientation displays it, unl
         prDomElementSetAttribute(page.byId("i"), "style", "");
         CHECK(content().image == oriented.image);
     }
-    prImageCodecDestroy(images);
-    prCompressCodecDestroy(compress);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
 }
 
 TEST_CASE("an img selects the source that matches, decodes and suits the display, and divides its size by its density") {
-    PrCompressCodec* compress = prCompressBuiltinCreate();
-    PrImageCodec* images = prImageBuiltinCreate(compress);
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = prImageCodecSetCreateDefault(compress);
     Array<uint8_t> stored(4 * 2 * 4, 255);
     PrPixelView pixels{stored.data(), 16, {4, 2}};
     size_t size = 0;
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
     Array<uint8_t> png(size);
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
     {
         // A picture's source of a type that the codec does not decode is passed over for the next.
         Viewed page("<picture><source type=image/avif srcset=http://test/a.avif>"
@@ -1901,19 +1901,19 @@ TEST_CASE("an img selects the source that matches, decodes and suits the display
         CHECK(current("p") == "http://test/fallback.png");
         CHECK(prHtmlImageElementNaturalWidth(image("p")) == 4);
     }
-    prImageCodecDestroy(images);
-    prCompressCodecDestroy(compress);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
 }
 
 TEST_CASE("a frame navigated to an image holds a media document whose img shows the image in its orientation") {
-    PrCompressCodec* compress = prCompressBuiltinCreate();
-    PrImageCodec* images = prImageBuiltinCreate(compress);
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = prImageCodecSetCreateDefault(compress);
     Array<uint8_t> stored(4 * 2 * 4, 255);
     PrPixelView pixels{stored.data(), 16, {4, 2}};
     size_t size = 0;
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
     Array<uint8_t> png(size);
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
     Array<uint8_t> turned = withOrientation(png, 6);
     {
         // image-orientation does not inherit into the frame's document.
@@ -1936,19 +1936,19 @@ TEST_CASE("a frame navigated to an image holds a media document whose img shows 
         CHECK(prHtmlImageElementNaturalWidth(image) == 2);
         CHECK(prHtmlImageElementNaturalHeight(image) == 4);
     }
-    prImageCodecDestroy(images);
-    prCompressCodecDestroy(compress);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
 }
 
 TEST_CASE("an object of an image type is replaced by its image, and shows its fallback content without one") {
-    PrCompressCodec* compress = prCompressBuiltinCreate();
-    PrImageCodec* images = prImageBuiltinCreate(compress);
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = prImageCodecSetCreateDefault(compress);
     Array<uint8_t> red(4 * 2 * 4, 255);
     PrPixelView pixels{red.data(), 16, {4, 2}};
     size_t size = 0;
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
     Array<uint8_t> png(size);
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
     {
         Viewed page("<object id=o data=http://test/red.png><span id=f>fallback</span></object>", images, &png);
         PrDomAgent* agent = prHtmlPageAgent(page.page);
@@ -1978,8 +1978,8 @@ TEST_CASE("an object of an image type is replaced by its image, and shows its fa
         CHECK(kind() == PrLayoutNodeKind_Replaced);
         CHECK(prCssPresentationLayoutNode(presentation, prDomElementAsNode(page.byId("f"))) == kPrLayoutNodeNone);
     }
-    prImageCodecDestroy(images);
-    prCompressCodecDestroy(compress);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
 }
 
 TEST_CASE("an svg element in HTML is a replaced box that draws its content, again when its box is resized") {
@@ -2140,8 +2140,8 @@ TEST_CASE("a change outside every svg element builds no node of their SVG trees"
 }
 
 TEST_CASE("an SVG image element draws the image that it names once the image has loaded") {
-    PrCompressCodec* compress = prCompressBuiltinCreate();
-    PrImageCodec* images = prImageBuiltinCreate(compress);
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = prImageCodecSetCreateDefault(compress);
     // A 4 by 2 red PNG.
     Array<uint8_t> red(4 * 2 * 4);
     for (uint32_t i = 0; i < red.count(); i += 4) {
@@ -2150,9 +2150,9 @@ TEST_CASE("an SVG image element draws the image that it names once the image has
     }
     PrPixelView pixels{red.data(), 16, {4, 2}};
     size_t size = 0;
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
     Array<uint8_t> png(size);
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
     {
         Viewed page("<style>body { margin: 0 } svg { display: block }</style><svg width=40 height=40>"
             "<image id=i href=http://test/red.png width=40 height=40 /></svg>", images, &png, true);
@@ -2179,8 +2179,8 @@ TEST_CASE("an SVG image element draws the image that it names once the image has
         CHECK(rgbAt(page.paint(), 20, 5) == 0xff0000);
         CHECK(page.fetcher.waiting() == 0);
     }
-    prImageCodecDestroy(images);
-    prCompressCodecDestroy(compress);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
 }
 
 TEST_CASE("an imported sheet applies in the layer that it names, unless its supports() condition fails") {
@@ -2941,14 +2941,14 @@ TEST_CASE("an instance in a use element's shadow tree is hit, its events retarge
 }
 
 TEST_CASE("an SVG image element fires load or error once what its href names has loaded, whether or not it renders") {
-    PrCompressCodec* compress = prCompressBuiltinCreate();
-    PrImageCodec* images = prImageBuiltinCreate(compress);
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = prImageCodecSetCreateDefault(compress);
     Array<uint8_t> red(4 * 4, 255);
     PrPixelView pixels{red.data(), 8, {2, 2}};
     size_t size = 0;
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, nullptr, 0, &size) == PrStatus_Ok);
     Array<uint8_t> png(size);
-    REQUIRE(prImageCodecEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
+    REQUIRE(prImageCodecSetEncode(images, "image/png", pixels, png.data(), size, &size) == PrStatus_Ok);
     {
         Viewed page("<svg width=40 height=40><image id=found href=http://test/red.png width=40 height=40 />"
             "<image id=missing href=http://test/missing.png display=none /></svg>", images, &png, true);
@@ -2983,8 +2983,8 @@ TEST_CASE("an SVG image element fires load or error once what its href names has
         page.fetcher.settle(agent);
         CHECK(missing.types == Array<String>({"error", "load"}));
     }
-    prImageCodecDestroy(images);
-    prCompressCodecDestroy(compress);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
 }
 
 TEST_CASE("pointer-events: none lets the pointer through a box to what lies beneath, and a descendant may take it") {

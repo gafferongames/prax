@@ -2,6 +2,7 @@
 
 #include "tools/viewer/documents.h"
 
+#include "pr/draw_select.h"
 #include "pr/font_hinter.h"
 #include "pr/hash.h"
 
@@ -237,7 +238,8 @@ bool print(const Reference& reference) {
     return true;
 }
 
-std::shared_ptr<Loaded> load(const Source& source, TextBackends text, page_host::Media media, PrGpuDevice* PR_NULLABLE device) {
+std::shared_ptr<Loaded> load(const Source& source, TextBackends text, page_host::Media media,
+        PrDrawRenderer* PR_NULLABLE renderer) {
     std::shared_ptr<Loaded> loaded = std::make_shared<Loaded>();
     loaded->source = source;
     loaded->shaper.reset(prTextShaperCreate(text.shaper));
@@ -245,7 +247,7 @@ std::shared_ptr<Loaded> load(const Source& source, TextBackends text, page_host:
     switch (source.type) {
         case SourceType_Page:
             loaded->html = loadHtml(source.path, source.query, source.settings, source.capture, source.scripts, media,
-                textShaper, text.hinting, hinterOf(text.hinting), device);
+                textShaper, text.hinting, hinterOf(text.hinting), renderer);
             break;
         case SourceType_Lottie:
             loaded->lottie = loadLottie(source.path, source.settings, textShaper, text.hinting, hinterOf(text.hinting));

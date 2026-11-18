@@ -5,6 +5,7 @@
 #include "pr/alloc.h"
 #include "pr/float.h"
 #include "pr/float16.h"
+#include "pr/gpu_memory.h"
 #include "pr/mem.h"
 #include "pr/memory.h"
 
@@ -91,7 +92,7 @@ PrGpuDevice* PR_NULLABLE drawMemoryDevice(PrGpuDevice* PR_NULLABLE device, bool*
     *owned = device == nullptr;
     // A memory device created without a pool is ready on return.
     if (device == nullptr)
-        device = prGpuDeviceCreate(PrGpuBackend_Memory, nullptr);
+        device = prGpuMemoryCreate(nullptr);
     if (device == nullptr)
         return nullptr;
     if (!prGpuDeviceHasNative(device, PrGpuNativeKind_Pixels))

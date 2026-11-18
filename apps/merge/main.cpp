@@ -27,9 +27,11 @@
 #include "pr/command.h"
 #include "pr/command_keymap.h"
 #include "pr/command_kit.h"
+#include "pr/compress_select.h"
 #include "pr/count_of.h"
 #include "pr/file.h"
 #include "pr/font_bundle.h"
+#include "pr/image_select.h"
 #include "pr/kit_menu.h"
 #include "pr/kit_text.h"
 #include "pr/layout_query.h"
@@ -322,8 +324,13 @@ int main(int argc, char** argv) {
         .trace = m.invocation.trace ? trace : nullptr,
         .context = &m,
     };
-    PrStudioAppDesc app{.fonts = fonts, .window = &desc};
+    // The program decodes every format that Prax has.
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = compress != nullptr ? prImageCodecSetCreateDefault(compress) : nullptr;
+    PrStudioAppDesc app{.fonts = fonts, .compress = compress, .images = images, .window = &desc};
     PrStatus status = prStudioAppRun(&app);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
     prFontSetDestroy(fonts);
     prFontSystemDestroy(system);
     if (status == PrStatus_NotSupported)

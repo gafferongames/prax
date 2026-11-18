@@ -4,7 +4,8 @@ pr_library(fetch INCLUDE include
     src/fetch_blob.cpp
     src/fetch_load.cpp
 )
-target_link_libraries(pr_fetch PUBLIC prax::net prax::http prax::compress prax::storage PRIVATE prax::core_cpp prax::mime)
+target_link_libraries(pr_fetch PUBLIC prax::net prax::http prax::compress prax::storage PRIVATE prax::core_cpp
+                                      prax::mime)
 
 if (PR_FETCH_BUILTIN)
     target_sources(pr_fetch PRIVATE
@@ -35,7 +36,7 @@ endif()
 # Its tests run over the platform's sockets (lib/net).
 if (PR_DEVELOP AND PR_NET_SOCKETS)
     pr_net_tests(fetch_tests tests/test_fetch.cpp tests/test_fetch_c.c)
-    target_link_libraries(fetch_tests PRIVATE prax::fetch prax::http prax::compress prax::storage
+    target_link_libraries(fetch_tests PRIVATE prax::compress_select prax::fetch prax::http prax::storage
                                               prax::task)
     if (PR_FETCH_INTERCEPT)
         target_sources(fetch_tests PRIVATE backends/intercept/tests/test_fetch_intercept.cpp)

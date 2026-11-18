@@ -3,8 +3,10 @@
 #include "pr/array.h"
 #include "pr/blob_ref.h"
 #include "pr/compress.h"
+#include "pr/compress_select.h"
 #include "pr/file.h"
 #include "pr/image.h"
+#include "pr/image_select.h"
 #include "pr/random.h"
 #include "pr/string.h"
 
@@ -33,8 +35,8 @@ struct Fixture {
 
     Fixture() {
         dir = format("{}/alchemy_state_{}", PrStringView(testFolder()), prRandomSeed());
-        state.compress = prCompressCodecCreate(PrCompressCodecBackend_Default);
-        state.codec = prImageCodecCreate(PrImageCodecBackend_Default, state.compress);
+        state.compress = prCompressCodecSetCreateDefault();
+        state.codec = prImageCodecSetCreateDefault(state.compress);
         galleryOpen(state.gallery, dir);
     }
 
@@ -44,8 +46,8 @@ struct Fixture {
         closeImport(state);
         // The gallery's directory holds only its images, which are removed above.
         prFileRemove(dir);
-        prImageCodecDestroy(state.codec);
-        prCompressCodecDestroy(state.compress);
+        prImageCodecSetDestroy(state.codec);
+        prCompressCodecSetDestroy(state.compress);
     }
 
     // Saves a 2 by 1 image that carries `record`, which the gallery selects.

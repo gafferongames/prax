@@ -5,18 +5,21 @@ if (PR_JS)
     add_library(page_host STATIC page_host.cpp)
     target_include_directories(page_host PUBLIC ${PROJECT_SOURCE_DIR})
     pr_font_bundle_resources(page_host Standard14 Complete)
-    target_link_libraries(page_host PUBLIC prax::app prax::audio prax::draw prax::layout prax::media
+    target_link_libraries(page_host PUBLIC prax::compress_select prax::image_select prax::draw_select prax::app
+                                           prax::audio prax::draw prax::layout prax::media
                                     PRIVATE prax::core_quickjs_cpp prax::html_quickjs
                                             prax::svg_quickjs prax::mathml_quickjs prax::url_quickjs
                                             prax::xhr_quickjs
-                                            prax::charset_quickjs harness prax::font_bundle prax::image
-                                            prax::compress prax::css prax::fetch prax::font
+                                            prax::charset_quickjs harness prax::font_bundle
+                                            prax::css prax::fetch prax::font
                                             prax::html prax::tls prax::url prax::json
                                             pr_warnings)
     target_link_libraries(page_host PRIVATE prax::http prax::storage prax::net prax::task)
 
     add_executable(pr_shell shell.cpp)
-    target_link_libraries(pr_shell PRIVATE harness_png harness_streams page_host prax::audio prax::draw
+    target_link_libraries(pr_shell PRIVATE prax::gpu_select harness_png harness_streams page_host prax::draw_select
+                                           prax::audio
+                                           prax::draw
                                             prax::layout prax::media prax::text prax::font prax::compress
                                             prax::image
                                            draw_compare harness pr_warnings)
@@ -24,6 +27,7 @@ if (PR_JS)
     # The fragment renderer on the platform's device, which pr_shell renders with when asked.
     add_library(device_render STATIC device_render.cpp)
     target_include_directories(device_render PUBLIC ${PROJECT_SOURCE_DIR})
-    target_link_libraries(device_render PUBLIC prax::draw PRIVATE prax::gpu pr_warnings)
+    target_link_libraries(device_render PUBLIC prax::gpu_select prax::draw prax::draw_select PRIVATE prax::gpu
+                                               pr_warnings)
     target_link_libraries(pr_shell PRIVATE device_render)
 endif()

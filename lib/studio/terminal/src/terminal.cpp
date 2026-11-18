@@ -226,8 +226,6 @@ struct Terminal {
     // Images that the program shows (pr/vterm.h): the codecs that decode them, the drawing images made from them, the
     // placements that the drawing shows, and a count of drawings. A drawing frees the drawing images that it does not
     // show.
-    PrCompressCodec* PR_NULLABLE compressCodec;
-    PrImageCodec* PR_NULLABLE imageCodec;
     RawArray<TerminalImage> images;
     RawArray<PrVtermPlacement> placements;
     uint32_t drawings;
@@ -2385,16 +2383,13 @@ PrTerminal* prTerminalCreate(const PrTerminalDesc* desc) {
 
     uint32_t scrollback = desc->scrollback;
     // The program runs on this machine, so it may send images by file name.
-    terminal->compressCodec = prCompressCodecCreate(PrCompressCodecBackend_Default);
-    if (terminal->compressCodec != nullptr)
-        terminal->imageCodec = prImageCodecCreate(PrImageCodecBackend_Default, terminal->compressCodec);
     PrVtermDesc vtermDesc{
         .extent = {80, 24},
         .scrollback = scrollback,
         .imageBytes = kPrVtermImageBytesDefault,
         .imageFlags = PrVtermImageFlag_Files,
-        .compressCodec = terminal->compressCodec,
-        .imageCodec = terminal->imageCodec,
+        .compressCodec = desc->compress,
+        .imageCodec = desc->images,
     };
     terminal->vterm = prVtermCreate(&vtermDesc);
     prVtermSetCellPixelExtent(terminal->vterm, cellPixels(terminal));
@@ -2452,8 +2447,6 @@ void prTerminalDestroy(PrTerminal* PR_NULLABLE terminal) {
     terminal->images.reset();
     terminal->placements.reset();
     prVtermDestroy(terminal->vterm);
-    prImageCodecDestroy(terminal->imageCodec);
-    prCompressCodecDestroy(terminal->compressCodec);
     for (PrTextFont* font : terminal->drawer.fonts)
         prTextFontRelease(font);
     prTextGridDestroy(terminal->drawer.grid);

@@ -7,15 +7,18 @@
 #include "pr/array.h"
 #include "pr/callback.h"
 #include "pr/compress.h"
+#include "pr/compress_select.h"
 #include "pr/count_of.h"
 #include "pr/draw_commands.h"
 #include "pr/draw_glyph.h"
 #include "pr/draw_list.h"
 #include "pr/draw_renderer.h"
+#include "pr/draw_select.h"
 #include "pr/font_bundle.h"
 #include "pr/font_set.h"
 #include "pr/function.h"
 #include "pr/image.h"
+#include "pr/image_select.h"
 #include "pr/kit.h"
 #include "pr/kit_panel.h"
 #include "pr/layout_frame.h"
@@ -74,8 +77,8 @@ struct KitFixture {
     PrKit* kit;
 
     // The decoder for glyphs that are images, as a Studio window's renderer has, and the codecs that it uses.
-    PrCompressCodec* compress = prCompressCodecCreate(PrCompressCodecBackend_Default);
-    PrImageCodec* images = prImageCodecCreate(PrImageCodecBackend_Default, compress);
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = prImageCodecSetCreateDefault(compress);
     PrDrawGlyphDecoder* glyphs = prDrawGlyphBitmapCreate(images);
 
     PrLayoutNode root = kPrLayoutNodeNone;            // a panel that fills the viewport and holds the build's widgets
@@ -108,8 +111,8 @@ struct KitFixture {
         prTextShaperDestroy(shaper);
         prFontSetDestroy(fonts);
         prDrawGlyphDecoderDestroy(glyphs);
-        prImageCodecDestroy(images);
-        prCompressCodecDestroy(compress);
+        prImageCodecSetDestroy(images);
+        prCompressCodecSetDestroy(compress);
     }
 
     // Runs a frame `delta` seconds after the previous one, in a viewport of 800 by 600 px. A frame that gives a key

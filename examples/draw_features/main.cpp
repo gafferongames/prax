@@ -10,13 +10,16 @@
 // `draw_features [word]` opens on the first drawing whose name contains the word.
 
 #include "pr/app.h"
+#include "pr/app_select.h"
 #include "pr/assert.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/draw_display.h"
 #include "pr/draw_list.h"
 #include "pr/draw_renderer.h"
+#include "pr/draw_select.h"
 #include "pr/gpu.h"
-#include "pr/image_builtin.h"
+#include "pr/gpu_select.h"
+#include "pr/image_select.h"
 #include "pr/print.h"
 #include "pr/status.h"
 #include "pr/string.h"
@@ -54,8 +57,8 @@ struct Window {
     PrDrawFrame* frame = nullptr;
 
     // The codecs and the decoder of the glyphs that are pictures, which outlive every renderer made on a device.
-    PrCompressCodec* compressCodec = nullptr;
-    PrImageCodec* imageCodec = nullptr;
+    PrCompressCodecSet* compressCodec = nullptr;
+    PrImageCodecSet* imageCodec = nullptr;
     PrDrawGlyphDecoder* glyphDecoder = nullptr;
 
     // Where the swap chain holds more than 8-bit sRGB: the texture of half floats that the list renders into, and the
@@ -269,8 +272,8 @@ int main(int argc, char** argv) {
     static Window w;
     // The device is created on the pool while the drawings load and the window opens.
     w.pool = prTaskPoolCreate(PrTaskPoolBackend_Default, 1);
-    w.compressCodec = prCompressBuiltinCreate();
-    w.imageCodec = prImageBuiltinCreate(w.compressCodec);
+    w.compressCodec = prCompressCodecSetCreateDefault();
+    w.imageCodec = prImageCodecSetCreateDefault(w.compressCodec);
     w.glyphDecoder = prSvgGlyphDecoderCreate(w.imageCodec, w.compressCodec);
     requestDevice(w);
     w.drawings.append(allFeatures().span());
@@ -290,8 +293,8 @@ int main(int argc, char** argv) {
 
     prTaskPoolDestroy(w.pool);
     prDrawGlyphDecoderDestroy(w.glyphDecoder);
-    prImageCodecDestroy(w.imageCodec);
-    prCompressCodecDestroy(w.compressCodec);
+    prImageCodecSetDestroy(w.imageCodec);
+    prCompressCodecSetDestroy(w.compressCodec);
     prDrawListRelease(w.list);
     releaseDrawings();
     prTextShaperDestroy(w.shaper);

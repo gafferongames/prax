@@ -8,9 +8,9 @@
 
 #include "pr/assert.h"
 #include "pr/compress.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/image.h"
-#include "pr/image_builtin.h"
+#include "pr/image_select.h"
 #include "pr/raw_array.h"
 #include "pr/text_buffer.h"
 
@@ -54,8 +54,8 @@ void appendLiteral(PrTextBuffer* out, const char* text) {
 
 int main(int argc, char** argv) {
     prCrashHandler();
-    PrCompressCodec* compressCodec = prCompressBuiltinCreate();
-    PrImageCodec* imageCodec = prImageBuiltinCreate(compressCodec);
+    PrCompressCodecSet* compressCodec = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* imageCodec = prImageCodecSetCreateDefault(compressCodec);
     PrImageDecoder* decoder = prImageDecoderCreate(imageCodec);
     PrTextBuffer file{};
     RawArray<uint8_t> pixels;
@@ -102,7 +102,7 @@ int main(int argc, char** argv) {
             inflated.reserve(uint32_t(size * 2 + info->extent.y * 2 + 64));
             auto inflate = [&] {
                 PrCompressRead read{};
-                return prCompressCodecDecode(compressCodec, PrCompressFormat_Zlib,
+                return prCompressCodecSetDecode(compressCodec, PrCompressFormat_Zlib,
                     PrByteView{stream.data, stream.count}, inflated.data, inflated.capacity, &read);
             };
             if (inflate() == PrStatus_Ok) {
@@ -137,7 +137,7 @@ int main(int argc, char** argv) {
     stream.reset();
     inflated.reset();
     prImageDecoderDestroy(decoder);
-    prImageCodecDestroy(imageCodec);
-    prCompressCodecDestroy(compressCodec);
+    prImageCodecSetDestroy(imageCodec);
+    prCompressCodecSetDestroy(compressCodec);
     return status;
 }

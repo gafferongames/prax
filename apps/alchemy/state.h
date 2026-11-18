@@ -242,8 +242,8 @@ struct AppState {
     // The services, which main() owns.
     ComfyClient* client = nullptr;
     ImageCache* images = nullptr;
-    PrImageCodec* codec = nullptr;
-    PrCompressCodec* compress = nullptr;
+    PrImageCodecSet* codec = nullptr;
+    PrCompressCodecSet* compress = nullptr;
     PrTaskPool* pool = nullptr;
 
     // The server.

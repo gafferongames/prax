@@ -233,8 +233,8 @@ struct CanvasContext {
     PrGpuDevice* PR_NULLABLE device;
     bool pixelsCurrent;
 
-    // The context's own renderer on `device`, which draws the segments into the bitmap when its pixels are read or
-    // written. It is made on first use. The frame that it prepares holds the list that it drew until the next draw.
+    // The renderer that presents the context, on `device`, which draws the segments into the bitmap when its pixels are
+    // read or written. The frame that it prepares holds the list that it drew until the next draw.
     PrDrawRenderer* PR_NULLABLE renderer;
     PrDrawFrame* PR_NULLABLE frame;
     PrDrawList* PR_NULLABLE drawnList;
@@ -606,8 +606,7 @@ void flush(CanvasContext* c) {
     dropDrawn(c);
     if (c->segments.count == 0 || c->bitmap == nullptr)
         return;
-    if (c->renderer == nullptr &&
-            prDrawRendererCreate(PrDrawRendererBackend_Default, c->device, nullptr, &c->renderer) != PrStatus_Ok)
+    if (c->renderer == nullptr)
         return;
     CanvasShown* shown = show(c, PrDrawSampling_Nearest);
     PrDrawList* list = prDrawListCreate();
@@ -1354,7 +1353,8 @@ PrCanvas* prCanvasCreate(const PrCanvasDesc* desc) {
     c->format = bytes ? PrPixelFormat_Rgba8 : PrPixelFormat_RgbaF16;
     c->originClean = true;
     c->pending = prDrawListCreate();
-    c->device = desc->device;
+    c->renderer = desc->renderer;
+    c->device = desc->renderer != nullptr ? prDrawRendererDevice(desc->renderer) : nullptr;
     c->textSourceFn = desc->textSource;
     c->textSourceContext = desc->textSourceContext;
     PrCssFont* font = nullptr;
@@ -1381,7 +1381,6 @@ void prCanvasDestroy(PrCanvas* PR_NULLABLE canvas) {
     if (canvas->scratch.id != 0)
         prGpuTextureDestroy(canvas->device, canvas->scratch);
     prDrawListRelease(canvas->drawnList);
-    prDrawRendererDestroy(canvas->renderer);
     prMemoryFree(canvas->pixels);
     bitmapRelease(canvas->bitmap);
     stateReset(&canvas->state);

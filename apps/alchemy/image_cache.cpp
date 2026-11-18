@@ -22,7 +22,7 @@ struct ScaleCache {
 // A cache of decoded images for each scale, whose loads decode on the pool.
 struct ImageCache {
     PrTaskPool* pool;
-    PrImageCodec* codec;
+    PrImageCodecSet* codec;
     Function<void()> wake;
     ScaleCache scales[2];               // by ImageScale
 };
@@ -75,7 +75,7 @@ void wakeOwner(void* PR_NULLABLE context) {
 
 } // namespace
 
-ImageCache* imageCacheCreate(PrTaskPool* pool, PrImageCodec* codec, Function<void()> wake) {
+ImageCache* imageCacheCreate(PrTaskPool* pool, PrImageCodecSet* codec, Function<void()> wake) {
     ImageCache* images = new ImageCache();
     images->pool = pool;
     images->codec = codec;
@@ -125,7 +125,7 @@ bool imageCachePump(ImageCache* cache) {
     return landed;
 }
 
-const PrDrawImage* PR_NULLABLE imageDecode(PrImageCodec* codec, const void* bytes, size_t size) {
+const PrDrawImage* PR_NULLABLE imageDecode(PrImageCodecSet* codec, const void* bytes, size_t size) {
     const PrDrawImage* image = nullptr;
     PrByteView view{static_cast<const uint8_t*>(bytes), size};
     if (prDrawImageCreateFromBytes(codec, view, &image, nullptr) != PrStatus_Ok)

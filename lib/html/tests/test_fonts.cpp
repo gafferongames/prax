@@ -3,7 +3,7 @@
 // css-font-loading-3 - https://drafts.csswg.org/css-font-loading-3/
 
 #include "pr/base64.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/css_presentation.h"
 #include "pr/file.h"
 #include "pr/font_set.h"
@@ -94,7 +94,7 @@ PrDomEventListener recorder(Heard* heard) {
 struct Served {
     PrFontSet* fonts = prFontSetCreate(nullptr);
     PrTextShaper* shaper = prTextHarfBuzzCreate();
-    PrCompressCodec* compress = prCompressBuiltinCreate();
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
     PrTextFont* defaultFont = nullptr;
     Array<String> fetched;      // the files fetched, in order
     bool hold = false;          // if true, fetches wait until release() answers them
@@ -129,7 +129,7 @@ struct Served {
         release();
         gServedNet = nullptr;
         prTextFontRelease(defaultFont);
-        prCompressCodecDestroy(compress);
+        prCompressCodecSetDestroy(compress);
         prTextShaperDestroy(shaper);
         prFontSetDestroy(fonts);
     }

@@ -2,7 +2,7 @@
 
 # What decoding each image costs with the built-in decoders, which ./dev.sh bench image-decode runs.
 pr_harness(image_bench prax::image image_bench.cpp)
-target_link_libraries(image_bench PRIVATE prax::compress prax::image)
+target_link_libraries(image_bench PRIVATE prax::compress_select prax::image_select prax::compress prax::image)
 
 # What converting numbers to text and back costs in lib/core and in the standard library's <charconv>, which
 # ./dev.sh bench numbers runs.
@@ -12,7 +12,7 @@ pr_harness(number_bench prax::core_cpp number_bench.cpp)
 # libcompression, which ./dev.sh bench compress runs.
 pr_harness(compress_bench prax::compress compress_bench.cpp)
 if (APPLE)
-    target_link_libraries(compress_bench PRIVATE compression)
+    target_link_libraries(compress_bench PRIVATE prax::compress_select compression)
 endif()
 
 # What formatting costs with pr/format.h's format strings and with the standard library's <format>, which ./dev.sh
@@ -31,7 +31,8 @@ target_compile_definitions(text_edit_bench PRIVATE PR_FONTS_DIR="${PROJECT_SOURC
 
 # What a windowed view costs at each size of document, which ./dev.sh bench text-view runs.
 pr_harness(text_view_bench prax::text_view text_view_bench.cpp)
-target_link_libraries(text_view_bench PRIVATE prax::draw prax::font prax::gpu prax::syntax prax::layout prax::text)
+target_link_libraries(text_view_bench PRIVATE prax::draw_select prax::gpu_select prax::draw prax::font prax::gpu
+                                              prax::syntax prax::layout prax::text)
 target_compile_definitions(text_view_bench PRIVATE PR_FONTS_DIR="${PROJECT_SOURCE_DIR}/third_party/fonts")
 
 # The vterm benchmark (./dev.sh bench vterm), which writes the same program output to lib/vterm and to libvterm.
@@ -141,7 +142,8 @@ if (PR_JS)
         editor_bench/hud.cpp
     )
     target_include_directories(editor_bench PRIVATE ${PROJECT_SOURCE_DIR})
-    target_link_libraries(editor_bench PRIVATE prax::studio_kit prax::studio_icons prax::app harness harness_png prax::text
+    target_link_libraries(editor_bench PRIVATE prax::gpu_select prax::studio_kit prax::studio_icons prax::app harness
+                                               harness_png prax::text
                                                prax::font_bundle
                                                prax::draw prax::gpu prax::layout prax::ui
                                                prax::ui_cpp prax::font prax::color prax::core_cpp
@@ -150,9 +152,10 @@ if (PR_JS)
 
     # What a long document costs to load, scroll, hover, navigate and resize. ./dev.sh bench long-doc runs it.
     add_executable(doc_bench doc_bench.cpp)
-    target_link_libraries(doc_bench PRIVATE prax::html prax::text prax::draw prax::gpu harness
-                                            prax::font_bundle prax::font prax::image
-                                            prax::compress prax::css prax::layout
+    target_link_libraries(doc_bench PRIVATE prax::compress_select prax::image_select prax::gpu_select prax::html
+                                            prax::text prax::draw prax::gpu harness
+                                            prax::font_bundle prax::font
+                                            prax::css prax::layout
                                             prax::fetch prax::net prax::task pr_warnings)
     pr_font_bundle_resources(doc_bench Complete)
 endif()
@@ -161,6 +164,8 @@ endif()
 # ./dev.sh bench draw runs it.
 if ((APPLE OR WIN32) AND PR_EXAMPLES)
     add_executable(draw_bench draw_bench.cpp)
-    target_link_libraries(draw_bench PRIVATE draw_features_drawings draw_renderers harness prax::app prax::compress
-                                             prax::draw prax::gpu prax::image pr_warnings)
+    target_link_libraries(draw_bench PRIVATE prax::compress_select prax::image_select prax::gpu_select
+                                             draw_features_drawings draw_renderers harness prax::app
+
+                                             prax::draw prax::gpu pr_warnings)
 endif()

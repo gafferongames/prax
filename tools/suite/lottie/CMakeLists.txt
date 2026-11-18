@@ -3,7 +3,7 @@
 if (PR_WEBVIEW_WEBKIT)
     # The Lottie references that players in the system's browser draw, which tools/suite/reftest.py drives.
     pr_harness(lottie_reference prax::app lottie_reference.cpp)
-    target_link_libraries(lottie_reference PRIVATE harness_png prax::app prax::webview)
+    target_link_libraries(lottie_reference PRIVATE harness_png prax::app prax::app_select prax::webview)
 endif()
 
 if (APPLE OR WIN32)

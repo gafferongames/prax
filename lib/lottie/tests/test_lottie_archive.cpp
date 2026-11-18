@@ -1,6 +1,6 @@
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/draw_commands.h"
-#include "pr/image_builtin.h"
+#include "pr/image_select.h"
 #include "pr/lottie.h"
 #include "pr/lottie_archive.h"
 #include "pr/string_ops.h"
@@ -60,8 +60,8 @@ constexpr uint8_t kArchive[] = {
 using namespace pr_impl;
 
 TEST_CASE("a dotLottie archive's animation reads, with the images it names from the archive") {
-    PrCompressCodec* compressCodec = prCompressBuiltinCreate();
-    PrImageCodec* imageCodec = prImageBuiltinCreate(compressCodec);
+    PrCompressCodecSet* compressCodec = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* imageCodec = prImageCodecSetCreateDefault(compressCodec);
     PrLottieArchive* archive = prLottieArchiveCreate(compressCodec);
     REQUIRE(prLottieArchiveOpen(archive, kArchive) == PrStatus_Ok);
     REQUIRE(prLottieArchiveAnimationCount(archive) == 1);
@@ -81,17 +81,17 @@ TEST_CASE("a dotLottie archive's animation reads, with the images it names from 
     prDrawListRelease(list);
     prLottieAnimationDestroy(animation);
     prLottieArchiveDestroy(archive);
-    prImageCodecDestroy(imageCodec);
-    prCompressCodecDestroy(compressCodec);
+    prImageCodecSetDestroy(imageCodec);
+    prCompressCodecSetDestroy(compressCodec);
 }
 
 TEST_CASE("bytes that are not an archive are refused") {
-    PrCompressCodec* compressCodec = prCompressBuiltinCreate();
+    PrCompressCodecSet* compressCodec = prCompressCodecSetCreateDefault();
     PrLottieArchive* archive = prLottieArchiveCreate(compressCodec);
     REQUIRE(prLottieArchiveOpen(archive, kArchive) == PrStatus_Ok);
     const uint8_t junk[] = {0x7b, 0x7d};
     CHECK(prLottieArchiveOpen(archive, junk) == PrStatus_InvalidData);
     CHECK(prLottieArchiveAnimationCount(archive) == 0);
     prLottieArchiveDestroy(archive);
-    prCompressCodecDestroy(compressCodec);
+    prCompressCodecSetDestroy(compressCodec);
 }

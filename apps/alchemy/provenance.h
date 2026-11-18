@@ -2,7 +2,7 @@
 //
 // The record is a chain. Every run appends its own operation to whatever the image it worked from already carried, so a
 // generate, an outpaint and an upscale read back as three operations, in the order that they ran. The record is JSON in
-// a text chunk of the PNG (pr/image_png.h), under kProvenanceKeyword.
+// a text chunk of the PNG (pr/png_text.h), under kProvenanceKeyword.
 //
 // A record that a newer build wrote may name a mode that this one does not run, and members that it does not read. So
 // `mode` keeps the text it was written as, and unknown members are dropped rather than refused.
@@ -74,7 +74,7 @@ bool provenanceParse(PrStringView text, ProvenanceRecord* out);
 
 // Reads the record that the PNG file `png` carries into `out`, without decoding its pixels. `compress` reads a
 // compressed chunk, and may be null. Returns false if the file carries no record.
-bool provenanceRead(PrByteView png, PrCompressCodec* PR_NULLABLE compress, ProvenanceRecord* out);
+bool provenanceRead(PrByteView png, PrCompressCodecSet* PR_NULLABLE compress, ProvenanceRecord* out);
 
 // Returns the PNG file `png` with `record` in place of any record that it carried, or the empty string if `png` is not
 // a PNG file.

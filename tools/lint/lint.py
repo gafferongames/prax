@@ -48,6 +48,7 @@ SIGNATURE = re.compile(
 # The commands that fix the problems that a check finds, if a tool can fix them. The report names each with the files.
 REWRAP = "./dev.sh rewrap"
 LAYOUT = "./dev.sh layout"
+INCLUDES = "./dev.sh includes"
 SUITE_FIX = "./dev.sh prax fix"
 
 
@@ -672,6 +673,7 @@ WRAPPERS = {
                                                      "TargetConditionals.h"},
     "lib/audio/backends/windows/src/audio_windows.cpp": {"audioclient.h", "avrt.h", "mmdeviceapi.h", "mmreg.h",
                                                          "objbase.h", "windows.h"},
+    "lib/compress/backends/apple/src/compress_apple.cpp": {"compression.h"},
     "lib/core/backends/apple/src/core_apple_resource.mm": {"Foundation/Foundation.h"},
     "lib/core/backends/apple/src/core_apple_time.cpp": {"mach/mach_time.h"},
     "lib/core/backends/libc/src/core_libc.cpp": {"malloc.h", "malloc/malloc.h", "stdlib.h"},
@@ -710,6 +712,10 @@ WRAPPERS = {
                                                         "vulkan/vulkan_win32.h", "windows.h"},
     "lib/gpu/backends/webgpu/src/gpu_webgpu.cpp": {"emscripten/emscripten.h"},
     "lib/gpu/src/gpu.cpp": {"stdlib.h"},
+    "lib/image/backends/imageio/src/image_imageio.cpp": {"CoreFoundation/CoreFoundation.h",
+        "CoreGraphics/CoreGraphics.h", "ImageIO/ImageIO.h"},
+    "lib/image/backends/imageio/tests/test_image_imageio.cpp": {"CoreFoundation/CoreFoundation.h",
+        "CoreGraphics/CoreGraphics.h", "ImageIO/ImageIO.h"},
     "lib/media/backends/windows/src/media_windows.cpp": {"mfapi.h", "mferror.h", "mfidl.h", "mfreadwrite.h",
                                                          "objbase.h", "shlwapi.h", "windows.h"},
     "lib/net/backends/sockets/src/net_sockets_platform_posix.cpp": {"errno.h", "fcntl.h", "netdb.h", "netinet/in.h",
@@ -2391,21 +2397,21 @@ def check_include_order(report, path, text):
         section, next_section = sections[a], sections[b]
         if len(spanned) > 1:
             report.add(path, next_number, "include-order",
-                       "more than one blank line before %s" % next_name)
+                       "more than one blank line before %s" % next_name, fix=INCLUDES)
         elif spanned and next_section <= section:
             report.add(path, next_number, "include-order", "%s belongs with %s"
-                       % (next_name, INCLUDE_SECTIONS[section]))
+                       % (next_name, INCLUDE_SECTIONS[section]), fix=INCLUDES)
         elif not spanned and next_section != section:
             report.add(path, next_number, "include-order", "%s needs a blank line between %s and %s"
-                       % (next_name, INCLUDE_SECTIONS[section], INCLUDE_SECTIONS[next_section]))
+                       % (next_name, INCLUDE_SECTIONS[section], INCLUDE_SECTIONS[next_section]), fix=INCLUDES)
         elif not spanned and section == 0:
             if own.index(next_name) < own.index(name):
                 report.add(path, next_number, "include-order",
-                           "%s belongs before %s" % (next_name, name))
+                           "%s belongs before %s" % (next_name, name), fix=INCLUDES)
         elif not spanned and include_sort_key(next_name, next_bracket) <= include_sort_key(
                 name, bracket):
             report.add(path, next_number, "include-order",
-                       "%s is out of order after %s" % (next_name, name))
+                       "%s is out of order after %s" % (next_name, name), fix=INCLUDES)
 
 
 def include_sort_key(name, bracket):
@@ -2711,14 +2717,23 @@ def backend_headers():
     return found
 
 
+# The backend headers that a library may include, by the library's directory. Such a library needs that particular
+# backend, so it calls the backend's own constructor instead of taking the object from its program. lib/draw's CPU
+# renderer draws on a memory device.
+BACKEND_HEADERS_NEEDED = {
+    "lib/draw/": ("gpu_memory.h",),
+}
+
+
 def check_backend_headers(report, path, text, headers):
     """A library uses another module's interface, never one of its backends, so that a program chooses the backend at
-    run time or brings its own (README.md). Only the interface's own module includes a backend's header. A test is a
-    host, which chooses its backends."""
+    run time or brings its own (README.md). Only the interface's own module includes a backend's header. The exceptions
+    are in BACKEND_HEADERS_NEEDED. A test is a host, so it chooses its own backends."""
     relative = os.path.relpath(path, ROOT).replace(os.sep, "/")
+    needed = next((names for module, names in BACKEND_HEADERS_NEEDED.items() if relative.startswith(module)), ())
     for match in re.finditer(r'^#include "pr/([^"]+)"', text, re.M):
         interface = headers.get(match.group(1))
-        if interface is not None and not relative.startswith(interface):
+        if interface is not None and not relative.startswith(interface) and match.group(1) not in needed:
             report.add(path, line_of(text, match.start()), "backend-header",
                        "pr/%s is a backend of %s; use its interface" % (match.group(1), interface[:-1]))
 
@@ -2791,9 +2806,10 @@ VOCABULARY = ("lib/core", "lib/geom", "lib/locale")
 
 
 def tag_module(path):
-    """Returns the module that owns the names of a public header: its own, or its interface's for a backend."""
+    """Returns the module that owns the names in a public header. The names of a backend or a selector belong to the
+    module of its interface."""
     module = os.path.relpath(public_module(path), ROOT).replace(os.sep, "/")
-    return re.split(r"/(?:backends|comparisons)/", module)[0]
+    return re.split(r"/(?:backends|comparisons)/", module)[0].removesuffix("/select")
 
 
 def module_tags(module):

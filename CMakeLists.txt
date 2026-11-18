@@ -77,9 +77,8 @@ endif()
 # Optional parts of libraries. A program that does not need a part can leave out its tables. If a part is left out, a
 # request for it reports NotSupported or finds no charset. A development build tests every part, so it needs them all.
 option(PR_CHARSET_LEGACY "Decode and encode the Encoding Standard's legacy single-byte and multi-byte charsets" ON)
-option(PR_COMPRESS_BROTLI "Decode Brotli in lib/compress's built-in codec" ON)
-if (PR_DEVELOP AND NOT (PR_CHARSET_LEGACY AND PR_COMPRESS_BROTLI))
-    message(FATAL_ERROR "PR_DEVELOP tests every charset and Brotli, so it needs PR_CHARSET_LEGACY and PR_COMPRESS_BROTLI")
+if (PR_DEVELOP AND NOT PR_CHARSET_LEGACY)
+    message(FATAL_ERROR "PR_DEVELOP tests every charset, so it needs PR_CHARSET_LEGACY")
 endif()
 
 # The platform's build configuration (docs/platform.md).
@@ -149,6 +148,13 @@ if (MSVC)
     add_link_options(/STACK:8388608)
 endif()
 
+# A library that adapts a platform facility, such as lib/compress's codec of Apple's Compression library, links the
+# facility's system library for every program that links the library. A program that does not use the facility then
+# loads none of it.
+if (APPLE)
+    add_link_options(LINKER:-dead_strip_dylibs)
+endif()
+
 # Emscripten's programs get 8 MB of stack, as the platforms' main threads do, and a heap that grows. WebAssembly's
 # 128-bit SIMD, which every browser that runs WebAssembly well has, lets loops vectorize.
 if (EMSCRIPTEN)
@@ -177,6 +183,7 @@ endif()
 
 include(GNUInstallDirs)
 include(cmake/build.cmake)
+include(cmake/backends.cmake)
 include(cmake/resources.cmake)
 include(cmake/dependencies.cmake)
 
@@ -212,7 +219,8 @@ pr_backend_option(PR_APP_WEB "lib/app's web backend" "${EMSCRIPTEN}" "${EMSCRIPT
 pr_backend_option(PR_AUDIO_APPLE "lib/audio's Core Audio backend" "${APPLE}" "${APPLE}")
 pr_backend_option(PR_AUDIO_WINDOWS "lib/audio's WASAPI backend" "${WIN32}" "${WIN32}")
 pr_backend_option(PR_AUDIO_MEMORY "lib/audio's memory backend" ON ON)
-pr_backend_option(PR_COMPRESS_BUILTIN "lib/compress's built-in backend" ON ON)
+pr_backend_option(PR_COMPRESS_BUILTIN "lib/compress's codecs of Prax's format libraries" ON ON)
+pr_backend_option(PR_COMPRESS_APPLE "lib/compress's codec of Apple's Compression library" "${APPLE}" "${APPLE}")
 pr_backend_option(PR_DRAW_CPU "lib/draw's CPU renderer" ON ON)
 pr_backend_option(PR_DRAW_CANVAS "lib/draw's Canvas 2D renderer" "${EMSCRIPTEN}" "${EMSCRIPTEN}")
 pr_backend_option(PR_DRAW_TRIANGLES "lib/draw's triangles renderer" ON ON)
@@ -230,10 +238,11 @@ pr_backend_option(PR_GPU_D3D12 "lib/gpu's Direct3D 12 backend" "${WIN32}" "${WIN
 pr_backend_option(PR_GPU_D3D11 "lib/gpu's Direct3D 11 backend" "${WIN32}" "${WIN32}")
 pr_backend_option(PR_GPU_VULKAN "lib/gpu's Vulkan backend" "${PR_LINUX}" "${PR_DESKTOP}")
 pr_backend_option(PR_GPU_MEMORY "lib/gpu's memory backend" ON ON)
+pr_backend_option(PR_IMAGE_BUILTIN "lib/image's codecs of Prax's format libraries" ON ON)
+pr_backend_option(PR_IMAGE_IMAGEIO "lib/image's codec of Apple's ImageIO" "${APPLE}" "${APPLE}")
 pr_backend_option(PR_GPU_CANVAS2D "lib/gpu's Canvas 2D backend" "${EMSCRIPTEN}" "${EMSCRIPTEN}")
 pr_backend_option(PR_GPU_WEBGPU "lib/gpu's WebGPU backend" "${EMSCRIPTEN}" "${EMSCRIPTEN}")
 pr_backend_option(PR_HTTP_BUILTIN "lib/http's built-in backend" ON ON)
-pr_backend_option(PR_IMAGE_BUILTIN "lib/image's built-in backend" ON ON)
 pr_backend_option(PR_MEDIA_APPLE "lib/media's AVFoundation backend" "${APPLE}" "${APPLE}")
 pr_backend_option(PR_MEDIA_WINDOWS "lib/media's Media Foundation backend" "${WIN32}" "${WIN32}")
 pr_backend_option(PR_MEDIA_BUILTIN "lib/media's built-in backend" ON ON)

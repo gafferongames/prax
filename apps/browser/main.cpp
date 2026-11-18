@@ -20,13 +20,17 @@
 // page's box and the chrome's list over the window, in one pass.
 
 #include "pr/app.h"
+#include "pr/app_select.h"
 #include "pr/assert.h"
 #include "pr/callback.h"
 #include "pr/charset_quickjs.h"
+#include "pr/compress_select.h"
 #include "pr/count_of.h"
 #include "pr/draw_list.h"
 #include "pr/fetch_intercept.h"
 #include "pr/file.h"
+#include "pr/gpu_select.h"
+#include "pr/image_select.h"
 #include "pr/kit_theme.h"
 #include "pr/layout_tree.h"
 #include "pr/mathml_quickjs.h"
@@ -108,8 +112,8 @@ void openShared(Browser& b) {
     b.shaper = prTextShaperCreate(PrTextShaperBackend_Default);
     PrTextFontDesc font{.set = b.fonts, .style = prFontStyleDefault()};
     b.font = prTextFontCreate(&font);
-    b.compress = prCompressCodecCreate(PrCompressCodecBackend_Default);
-    b.images = prImageCodecCreate(PrImageCodecBackend_Default, b.compress);
+    b.compress = prCompressCodecSetCreateDefault();
+    b.images = prImageCodecSetCreateDefault(b.compress);
     b.media = prMediaCodecCreate(PrMediaCodecBackend_Default);
     // Without an output device, pages play without sound.
     b.audioOutput = prAudioOutputCreate(PrAudioOutputBackend_Default, PrAudioFormat{48000, 2});
@@ -181,11 +185,11 @@ void closeShared(Browser& b) {
     prHtmlStorageProviderDestroy(b.sessionStorage);
     prTaskPoolDestroy(b.workers);
     prTaskPoolDestroy(b.io);
-    prImageCodecDestroy(b.images);
+    prImageCodecSetDestroy(b.images);
     prMediaCodecDestroy(b.media);
     prAudioMixerDestroy(b.mixer);
     prAudioOutputDestroy(b.audioOutput);
-    prCompressCodecDestroy(b.compress);
+    prCompressCodecSetDestroy(b.compress);
     prTextFontRelease(b.font);
     prTextShaperDestroy(b.shaper);
 }

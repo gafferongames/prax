@@ -161,7 +161,7 @@ PrStatus prDrawImageCreate(const PrDrawImageDesc* desc, const PrDrawImage* PR_NU
     return PrStatus_Ok;
 }
 
-PrStatus prDrawImageCreateFromBytes(PrImageCodec* codec, PrByteView bytes,
+PrStatus prDrawImageCreateFromBytes(const PrImageCodecSet* codec, PrByteView bytes,
         const PrDrawImage* PR_NULLABLE* PR_NONNULL out, PrImageOrientation* PR_NULLABLE orientation) {
     *out = nullptr;
     PrImageSource source{};

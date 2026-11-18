@@ -116,33 +116,10 @@ typedef struct PrDrawStats {
     uint64_t uploadBytes;       // bytes copied to the device: the frame's data and texels
 } PrDrawStats;
 
-// The library's renderer backends, which the build turns on (README.md), and Default. Default is the backend that the
-// environment variable PR_DRAW_RENDERER names (prDrawRendererBackendFromName), if the build has it. Otherwise it is the
-// first of the fragment renderer, the triangles renderer, the Canvas 2D renderer and the CPU renderer that the device
-// runs. The fragment and triangles renderers run on a device that runs their shaders. The Canvas 2D renderer runs on a
-// device whose textures are a web page's canvases, and the CPU renderer runs on a memory device.
-enum {
-    PrDrawRendererBackend_Default,
-    PrDrawRendererBackend_Cpu,
-    PrDrawRendererBackend_Canvas,
-    PrDrawRendererBackend_Triangles,
-    PrDrawRendererBackend_Fragment,
-    PrDrawRendererBackend_Count,
-};
-typedef uint8_t PrDrawRendererBackend;
+// A backend's own constructor creates a renderer (pr/draw_cpu.h, pr/draw_fragment.h, pr/draw_triangles.h,
+// pr/draw_canvas.h). A program can also create one through the selector (pr/draw_select.h).
 
-// Returns the backend that `name` names, as prDrawRendererBackendName spells it, ignoring case, or Count if it names
-// none.
-PrDrawRendererBackend prDrawRendererBackendFromName(PrStringView name);
-
-// Returns the name of a backend in lowercase, as a command line spells it.
-PrStringView prDrawRendererBackendName(PrDrawRendererBackend backend);
-
-// Returns true if the build has the backend. The build has Default if it has any backend.
-bool prDrawRendererBackendIsBuilt(PrDrawRendererBackend backend);
-
-// How prDrawRendererCreate creates a renderer: what every backend takes. The rest of a backend's own options keep their
-// defaults.
+// Options that every renderer backend takes. A backend's other options keep their defaults.
 typedef struct PrDrawRendererOptions {
     PrDrawGlyphDecoder* PR_NULLABLE glyphDecoder;   // draws the glyphs that are pictures; without it, they draw nothing
 } PrDrawRendererOptions;
@@ -150,15 +127,11 @@ typedef struct PrDrawRendererOptions {
 // Returns options with no glyph decoder.
 PrDrawRendererOptions prDrawRendererOptionsDefault(void);
 
-// Creates a renderer by the backend on `device`. Null options mean the defaults. Given no device, the CPU renderer
-// creates a memory device of its own (pr/draw_cpu.h), and the other backends report NotSupported. Returns NotSupported
-// if the build does not have the backend or the device does not run it, and Lost if the device is lost. On failure,
-// `*out` is null.
-PrStatus prDrawRendererCreate(PrDrawRendererBackend backend, PrGpuDevice* PR_NULLABLE device,
-    const PrDrawRendererOptions* PR_NULLABLE options, PrDrawRenderer* PR_NULLABLE* PR_NONNULL out);
-
 // Frees the renderer. Its frames must be destroyed first.
 void prDrawRendererDestroy(PrDrawRenderer* PR_NULLABLE renderer);
+
+// Returns the name of the renderer's backend in lowercase, such as "fragment".
+PrStringView prDrawRendererName(const PrDrawRenderer* renderer);
 
 // Returns the device that the renderer renders on.
 PrGpuDevice* prDrawRendererDevice(const PrDrawRenderer* renderer);
