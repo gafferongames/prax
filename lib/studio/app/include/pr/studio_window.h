@@ -32,6 +32,7 @@
 #include "pr/draw_list.h"
 #include "pr/font_set.h"
 #include "pr/gpu.h"
+#include "pr/gpu_graph.h"
 #include "pr/kit.h"
 #include "pr/kit_theme.h"
 #include "pr/kit_title_bar.h"
@@ -166,13 +167,65 @@ PrStatus prStudioWindowCreate(PrStudioApp* app, const PrStudioWindowDesc* desc, 
 // returns.
 void prStudioWindowDestroy(PrStudioWindow* PR_NULLABLE window);
 
+// A GPU view of a window: content that the application renders on the window's device, such as a 3D view, which the
+// tree shows in an embed slot (prKitEmbed). It renders into the frame's render graph as the frame's scene plays, which
+// is after the round's layout, at the slot's size in target pixels in that layout, so a view follows a resize in the
+// frame that lays it out. The pass that draws the tree draws the texture that it rendered over the slot. A view renders
+// in a frame only if it was invalidated or its size changed, and otherwise the frame draws the texture that it rendered
+// last, so a view that holds still costs no render. A portal's window draws no GPU view.
+typedef struct PrStudioWindowGpuView PrStudioWindowGpuView;
+
+// What a GPU view renders with: the device that renders the window, the frame's graph, which records the view's passes
+// before the pass that draws the tree, and the slot's laid-out size in target pixels.
+typedef struct PrStudioWindowRender {
+    PrGpuDevice* device;
+    PrGpuGraph* graph;
+    PrUVec2 extent;
+} PrStudioWindowRender;
+
+// What a GPU view rendered: a texture of the frame's graph, and how its alpha relates to its color. The window draws
+// the texture that it resolves to as a host's texture (PrTexture).
+typedef struct PrStudioWindowGpuOutput {
+    PrGpuGraphTexture texture;
+    PrTextureAlpha alpha;
+} PrStudioWindowGpuOutput;
+
+// Adds the passes that render a GPU view to the frame's graph. Returns the texture that they render into, a texture of
+// the application's that it imports into the graph, which the window holds a reference to and draws until the view
+// renders again: the pass that draws the tree reads it in the accesses of shader reads, which the graph leaves it in.
+// Its texels hold lib/draw's colors: extended sRGB, encoded. Returns no texture to show nothing.
+typedef PrStudioWindowGpuOutput (*PrStudioWindowGpuRenderFn)(void* PR_NULLABLE context, const PrStudioWindowRender* render);
+
+// Frees what a GPU view made on the window's device, which is lost and not yet freed. The view renders on the next
+// device in the first frame that draws it there.
+typedef void (*PrStudioWindowGpuLostFn)(void* PR_NULLABLE context, PrGpuDevice* device);
+
+// The functions that render a GPU view and free what it made on a lost device, and their context, which outlives the
+// view. A null `lost` means that the view keeps nothing on the device past a render.
+typedef struct PrStudioWindowGpuViewDesc {
+    PrStudioWindowGpuRenderFn render;
+    PrStudioWindowGpuLostFn PR_NULLABLE lost;
+    void* PR_NULLABLE context;
+} PrStudioWindowGpuViewDesc;
+
+// Creates a GPU view of the window, which renders in the next frame that draws it, or frees one.
+PrStudioWindowGpuView* prStudioWindowGpuViewCreate(PrStudioWindow* window, const PrStudioWindowGpuViewDesc* desc);
+void prStudioWindowGpuViewDestroy(PrStudioWindowGpuView* PR_NULLABLE view);
+
+// Returns the embed slot that shows the view (prKitEmbed).
+uint64_t prStudioWindowGpuViewEmbed(const PrStudioWindowGpuView* view);
+
+// Renders the view again in the next frame that draws it, as the application asks when what the view shows changes, and
+// asks for a frame.
+void prStudioWindowGpuViewInvalidate(PrStudioWindowGpuView* view);
+
 // Called on the GPU device's thread with the pixels of the window's frame that a capture took: 8-bit RGBA, encoded sRGB
 // with premultiplied alpha, clamped to [0, 1]. The pixels are valid only during the call. They are empty if the frame
 // could not be read.
 typedef void (*PrStudioWindowCaptureFn)(void* PR_NULLABLE context, PrPixelView rgba);
 
-// Captures the next frame that the window renders, as the GPU renders it: a frame that is laid out when the call comes,
-// or else the next. The frame renders into a texture of the swap chain's own and is not shown
+// Captures the next frame that the window renders, as the GPU renders it, its GPU views included: a frame that is laid
+// out when the call comes, or else the next. The frame renders into a texture of the swap chain's own and is not shown
 // (prGpuSwapChainRequestCapture), and the window draws another frame after it. The frame comes whether or not the
 // display shows the window, as while the display sleeps. A second request before the frame replaces the first.
 void prStudioWindowCapture(PrStudioWindow* window, PrStudioWindowCaptureFn capture, void* PR_NULLABLE context);

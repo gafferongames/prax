@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Compares lib/webp's decoder with libwebp's over libwebp's test data.
+"""Compares lib/webp's decoder with libwebp's over libwebp's test data and the WebP images of Khronos's glTF
+sample assets.
 
-The corpus is the `libwebp_test_data` checkout, whose files are the conformance vectors of VP8 and images of the
-container's and the lossless format's features. The webp_compare harness decodes each file with both decoders
-(tools/suite/webp/webp_compare.cpp): every frame as Rgba8, as libwebp's WebPDecodeRGBA and its animation decoder give
-them, and a still lossy image's planes.
+The corpora are the `libwebp_test_data` checkout, whose files are the conformance vectors of VP8 and images of the
+container's and the lossless format's features, and every .webp file under the `gltf_sample_assets` checkout's Models.
+The webp_compare harness decodes each file with both decoders (tools/suite/webp/webp_compare.cpp): every frame as
+Rgba8, as libwebp's WebPDecodeRGBA and its animation decoder give them, and a still lossy image's planes.
 
 A case is one file, and its key is its path under its corpus's part, as libwebp-test-data/test.webp. It passes if the
 two decoders agree that it decodes or that it does not, and if lib/webp's frames, durations and play count are
@@ -26,7 +27,8 @@ from tools.suite import corpus
 BATCH = 16
 
 # The parts of the suite: the name of each, and its corpus under third_party.
-PARTS = (("libwebp-test-data", os.path.join("libwebp-test-data")),)
+PARTS = (("libwebp-test-data", os.path.join("libwebp-test-data")),
+         ("glTF-Sample-Assets", os.path.join("glTF-Sample-Assets", "Models")))
 
 
 def cases():
@@ -82,7 +84,7 @@ def main():
     suite = corpus.Data("webp")
     parts = cases()
     if not any(files for _, files in parts):
-        sys.exit("WebP corpora missing; run ./dev.sh fetch libwebp_test_data")
+        sys.exit("WebP corpora missing; run ./dev.sh fetch libwebp_test_data gltf_sample_assets")
     keys = [key for _, files in parts for key, _ in files]
     chosen = [(part, [(key, path) for key, path in files if suite.runs(key, args.match)]) for part, files in parts]
     if not any(files for _, files in chosen):

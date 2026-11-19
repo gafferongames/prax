@@ -69,6 +69,10 @@ struct ViewInbox {
 struct HtmlView {
     PrHtmlPage* page;
 
+    // What the scroll of the last event that prHtmlViewEvent routed asked of the containers around the view, which no
+    // container of its documents took (prHtmlViewOverscrolled).
+    PrHtmlViewOverscroll overscroll;
+
     // A paged view's box of a page before its @page rules apply, the space between its pages, and the page boxes that
     // the rules give its document, which the tree's layout reads (prHtmlViewSetPaged).
     bool paged;
@@ -620,6 +624,7 @@ void scrollFrom(HtmlView* v, PrDomElement* element, PrVec2 delta) {
         PrLayoutNode node = prCssPresentationLayoutNode(presentation, prDomElementAsNode(at));
         rest = prCssPresentationScrollFrom(presentation, node, rest);
     }
+    v->overscroll = PrHtmlViewOverscroll{.amount = prLayoutVecToPx(rest), .unit = PrHtmlViewOverscrollUnit_Pixels};
 }
 
 // Returns the bit in MouseEvent's buttons for a button numbered as in MouseEvent's button. The two numberings swap the
@@ -966,6 +971,12 @@ void scrollByKey(HtmlView* v, PrDomElement* element, const PrAppEvent* event) {
         }));
         return;
     }
+    // No container of the documents can move the key's way, so the scroll is the host's.
+    v->overscroll = PrHtmlViewOverscroll{.amount = direction, .unit = PrHtmlViewOverscrollUnit_Pages};
+    if (way == KeyScroll_Line)
+        v->overscroll = PrHtmlViewOverscroll{.amount = direction * kScrollKeyLine};
+    else if (way == KeyScroll_End)
+        v->overscroll.unit = PrHtmlViewOverscrollUnit_End;
 }
 
 // How a clipboard event is fired: it bubbles, can be canceled and crosses shadow roots.
@@ -1948,6 +1959,7 @@ PrAppOutput prHtmlViewOutput(const PrHtmlView* view) {
 }
 
 PrHtmlViewEventResult prHtmlViewEvent(PrHtmlView* view, const PrAppEvent* event, PrHtmlViewEventFlags flags) {
+    view->overscroll = PrHtmlViewOverscroll{};
     switch (event->kind) {
         case PrAppEventKind_KeyDown:
             return keyDown(view, event);
@@ -2029,6 +2041,10 @@ PrHtmlViewEventResult prHtmlViewEvent(PrHtmlView* view, const PrAppEvent* event,
         default:
             return PrHtmlViewEventResult_Ignored;
     }
+}
+
+PrHtmlViewOverscroll prHtmlViewOverscrolled(const PrHtmlView* view) {
+    return view->overscroll;
 }
 
 void prHtmlViewPostEvent(PrHtmlView* view, const PrAppEvent* event) {

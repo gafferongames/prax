@@ -10,8 +10,11 @@
 #include "pr/string_ops.h"
 
 #include "html/tests/support/html_test_fetch.h"
+#include "tools/harness/harness_textures.h"
 
 #include "tools/harness/test.h"
+
+using namespace harness;
 
 namespace pr_impl {
 

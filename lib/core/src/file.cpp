@@ -190,6 +190,10 @@ void prFilePathAppend(PrTextBuffer* path, PrStringView part) {
     prTextBufferAppend(path, part);
 }
 
+size_t prFilePathRootSize(PrStringView path) {
+    return rootLength(path);
+}
+
 bool prFilePathIsAbsolute(PrStringView path) {
     size_t root = rootLength(path);
 #if defined(_WIN32)

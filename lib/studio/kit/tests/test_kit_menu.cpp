@@ -13,9 +13,25 @@ namespace pr_impl {
 
 namespace {
 
+// True where a click with Control is the platform's secondary click, as on macOS.
+#if defined(__APPLE__)
+constexpr bool kControlClickIsContext = true;
+#else
+constexpr bool kControlClickIsContext = false;
+#endif
+
 void secondaryClick(KitFixture& f, PrVec2 at) {
     f.push(PrAppEvent{.kind = PrAppEventKind_PointerDown, .pointer = {.position = at, .button = 1}});
     f.push(PrAppEvent{.kind = PrAppEventKind_PointerUp, .pointer = {.position = at, .button = 1}});
+}
+
+// Returns the number of children of `node`, which grows by the overlay when something floats over the root.
+uint32_t childCount(KitFixture& f, PrLayoutNode node) {
+    uint32_t count = 0;
+    for (PrLayoutNode child = prLayoutNodeFirstChild(f.tree, node); child != kPrLayoutNodeNone;
+            child = prLayoutNodeNextSibling(f.tree, child))
+        ++count;
+    return count;
 }
 
 bool inside(PrRect outer, PrRect inner) {
@@ -479,6 +495,36 @@ TEST_CASE("Escape and a press outside close a context menu") {
     CHECK(menu == kPrLayoutNodeNone);
 }
 
+TEST_CASE("the menu key opens the context menu of the focused host at its bottom left, as Control's click does on macOS") {
+    KitFixture f;
+    PrLayoutNode host = kPrLayoutNodeNone;
+    PrLayoutNode menu = kPrLayoutNodeNone;
+    f.build = [&](PrLayoutNode root) {
+        PrKitBoxStyle box{.place = {.width = prKitPx(200), .height = prKitPx(100), .flex = PrKitFlex_Fixed}};
+        host = prKitBox(f.kit, root, {}, box);
+        prUiAddFlags(f.ui, host, PrUiFlag_Focusable);
+        menu = prKitContextMenu(f.kit, host, {}, {});
+        if (menu != kPrLayoutNodeNone)
+            prKitMenuItem(f.kit, menu, {.text = "Copy Path"}, {});
+    };
+    f.frame();
+    prUiSetFocus(f.ui, host);
+    f.frame();
+    f.key(PrAppKey_ContextMenu);
+    f.frame();
+    f.frame();
+    REQUIRE(menu != kPrLayoutNodeNone);
+    CHECK(f.bounds(menu).top >= f.bounds(host).bottom);
+    f.key(PrAppKey_Escape);
+    f.frame();
+    CHECK(menu == kPrLayoutNodeNone);
+
+    f.click(f.center(host), PrAppModifierFlag_Control);
+    f.frame();
+    f.frame();
+    CHECK((menu != kPrLayoutNodeNone) == kControlClickIsContext);
+}
+
 TEST_CASE("a tooltip shows once the pointer has rested on its anchor for the delay") {
     KitFixture f;
     PrLayoutNode anchor = kPrLayoutNodeNone;
@@ -499,11 +545,37 @@ TEST_CASE("a tooltip shows once the pointer has rested on its anchor for the del
     CHECK(tip == kPrLayoutNodeNone);
     f.frame(0.4);
     REQUIRE(tip != kPrLayoutNodeNone);
+    // The frame that first shows the tooltip places it by its anchor, never at the origin.
+    CHECK(f.bounds(tip).top > f.bounds(anchor).bottom);
     f.frame();
     CHECK(f.bounds(tip).top > f.bounds(anchor).bottom);
     f.move(PrVec2{700, 500});
     f.frame();
     CHECK(tip == kPrLayoutNodeNone);
+}
+
+TEST_CASE("a label that clips its text shows the whole text in a tooltip, and one whose text fits shows none") {
+    KitFixture f;
+    PrLayoutNode labels[2] = {};
+    f.build = [&](PrLayoutNode root) {
+        PrKitTextStyle clip{.wrap = PrKitWrap_Clip};
+        PrKitBoxStyle narrow{.place = {.width = prKitPx(60), .flex = PrKitFlex_Fixed}};
+        labels[0] = prKitLabel(f.kit, prKitBox(f.kit, root, {}, narrow), {.text = "a label far wider than its box"}, clip);
+        labels[1] = prKitLabel(f.kit, prKitBox(f.kit, root, {}, narrow), {.text = "fits"}, clip);
+    };
+    f.frame();
+    uint32_t bare = childCount(f, f.root);
+    f.move(f.center(labels[1]));
+    f.frame(0.1);
+    f.frame(0.6);
+    f.frame();
+    CHECK(childCount(f, f.root) == bare);
+    f.move(f.center(labels[0]));
+    f.frame(0.1);
+    f.frame(0.6);
+    f.frame();
+    CHECK(childCount(f, f.root) == bare + 1);
+    CHECK(kitVerified(f.tree));
 }
 
 TEST_CASE("a modal holds focus in its content: Tab cycles its buttons") {

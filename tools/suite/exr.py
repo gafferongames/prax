@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Compares lib/exr's decoder with OpenEXR's core library over the OpenEXR project's test images, and
-files that OpenEXR's encoder writes in every compression.
+"""Compares lib/exr's decoder with OpenEXR's core library over the OpenEXR project's test images, the
+StandardShaderBall's textures, and files that OpenEXR's encoder writes in every compression.
 
 The corpora are the `openexr_images` checkout, whose files are images of each layout, channel type and compression of
-the file format, and damaged files of its fuzzing, and the recompressed part: some of the checkout's images written
-again by OpenEXR's encoder in scan lines and in tiles, in each of its compressions, under the build's directory. The
-exr_compare harness decodes each file with both decoders (tools/suite/exr/exr_compare.cpp): every channel of every
-level of every part, in the form that it is stored in.
+the file format, and damaged files of its fuzzing, the OpenEXR textures of the `usd_assets` checkout, and the
+recompressed part: some of the checkout's images written again by OpenEXR's encoder in scan lines and in tiles, in
+each of its compressions, under the build's directory. The exr_compare harness decodes each file with both decoders
+(tools/suite/exr/exr_compare.cpp): every channel of every level of every part, in the form that it is stored in.
 
 A case is one file, and its key is its path under its corpus's part, as openexr-images/ScanLines/Desk.exr, or for the
 recompressed part the source's name, the compression and the layout, as recompressed/Desk.piz.tiles.exr. It passes if
@@ -27,7 +27,8 @@ import sys
 from tools.suite import corpus
 
 # The parts of the suite drawn from checkouts: the name of each, and its corpus under third_party.
-PARTS = (("openexr-images", "openexr-images"),)
+PARTS = (("openexr-images", "openexr-images"),
+         ("StandardShaderBall", os.path.join("usd-assets", "full_assets", "StandardShaderBall")))
 
 # The images of the checkout that the recompressed part writes again, the compressions, by the names that the harness
 # reads, and the layouts.
@@ -105,7 +106,7 @@ def main():
     suite = corpus.Data("exr")
     parts = cases(args.binary)
     if not any(files for _, files in parts[:-1]):
-        sys.exit("OpenEXR corpora missing; run ./dev.sh fetch openexr_images")
+        sys.exit("OpenEXR corpora missing; run ./dev.sh fetch openexr_images usd_assets")
     keys = [key for _, files in parts for key, _ in files]
     chosen = [(part, [(key, path) for key, path in files if suite.runs(key, args.match)]) for part, files in parts]
     if not any(files for _, files in chosen):

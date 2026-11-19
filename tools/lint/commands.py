@@ -32,7 +32,7 @@ USAGE = {
 
 
 # The checkouts that lint reads: the references to specifications are checked against the specifications themselves.
-SOURCES = ("webref", "commonmark", "cmark_gfm")
+SOURCES = ("webref", "commonmark", "cmark_gfm", "gltf_spec", "usd_spec")
 
 
 def sources():

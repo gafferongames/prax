@@ -136,6 +136,7 @@ struct CpuTexture {
     PrRect region;              // List: the area of its space that the texture holds
     bool fromList;              // true if it holds what a list draws instead of an image's texels
     bool ready;                 // List: true if it was rendered in this render. Pixels: true once converted
+    uint8_t borrowed;           // how many of its first levels are the caller's texels, read in place and not owned
     uint64_t lastUsed;          // the render that last used the texture
     RawArray<CpuTextureLevel> levels;
 };
@@ -147,13 +148,15 @@ struct CpuTextureCache {
     uint64_t render;
 };
 
-// Returns the image's texture, which is created on first use. An image in half floats keeps them.
-CpuTexture* cpuTextureFromImage(CpuTextureCache& cache, const PrDrawImage* image);
+// Returns true if the backend samples pixels of `format` and `alpha` in rows of `stride` bytes as they are.
+bool cpuSamplesInPlace(PrPixelView pixels, PrPixelFormat format, PrTextureAlpha alpha);
 
-// Returns a texture of the pixels of a texture of the caller's, cached under `key`, which must differ from every
-// image's id. The pixels are converted once per render, because what the texture holds may change between renders.
-CpuTexture* cpuTextureFromPixels(CpuTextureCache& cache, uint64_t key, PrPixelView pixels, PrPixelFormat format,
-    PrDrawAlpha alpha);
+// Returns a texture of the pixels of a texture of the caller's, cached under `key` for one render, since what the
+// texture holds may change between renders. `levels` are its mip levels from the first, which the caller gives past the
+// first only for pixels that the backend samples in place (cpuSamplesInPlace). Those are read in place, and any others
+// are converted once per render.
+CpuTexture* cpuTextureFromPixels(CpuTextureCache& cache, uint64_t key, const PrPixelView* levels, uint32_t levelCount,
+    PrPixelFormat format, PrTextureAlpha alpha);
 
 // Returns a list's texture of an area of its space at a size, in `format`. The caller renders the texture unless it is
 // ready.

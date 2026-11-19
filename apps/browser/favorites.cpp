@@ -55,7 +55,7 @@ Array<Favorite> favoritesDefault() {
 
 bool favoritesParse(PrStringView text, Array<Favorite>* out) {
     PrJson* json = prJsonCreate();
-    bool parsed = prJsonParse(json, text, nullptr) && prJsonValueCount(json) != 0 &&
+    bool parsed = prJsonParse(json, text, 0, nullptr) && prJsonValueCount(json) != 0 &&
         prJsonKind(json, 0) == PrJsonKind_Array;
     Array<Favorite> favorites;
     for (PrJsonValueIndex item = parsed ? prJsonFirst(json, 0) : kPrJsonMissing; item != kPrJsonMissing;

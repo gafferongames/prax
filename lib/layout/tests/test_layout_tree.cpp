@@ -1,5 +1,4 @@
 #include "pr/draw_cpu.h"
-#include "pr/draw_image.h"
 #include "pr/draw_list.h"
 #include "pr/draw_renderer.h"
 #include "pr/layout_animation.h"
@@ -14,6 +13,7 @@
 #include "pr/path_data.h"
 #include "pr/string_ops.h"
 #include "pr/text_harfbuzz.h"
+#include "pr/texture.h"
 #include "pr/thread.h"
 
 #include "layout/src/layout_tree.h"
@@ -1456,9 +1456,8 @@ TEST_CASE("an image's content covers its natural size, which object-fit and obje
     Fixture f;
     // An image of a red texel beside a blue one, in a natural size twice as wide as it is tall.
     const uint8_t texels[8] = {255, 0, 0, 255, 0, 0, 255, 255};
-    PrDrawImageDesc desc{PrPixelView{texels, 8, {2, 1}}, PrPixelFormat_Rgba8, PrDrawAlpha_Straight, PrColorSpace_Srgb};
-    const PrDrawImage* image = nullptr;
-    REQUIRE(prDrawImageCreate(&desc, &image) == PrStatus_Ok);
+    const PrTextureSource* image =
+        prTextureSourceCreateCopy(PrPixelView{texels, 8, {2, 1}}, PrPixelFormat_Rgba8, PrTextureAlpha_Straight);
     PrLayoutNode root = f.element(kPrLayoutNodeNone, block());
     PrLayoutBoxStyle box = block();
     box.width = prLayoutLengthPx(40);
@@ -1475,7 +1474,7 @@ TEST_CASE("an image's content covers its natural size, which object-fit and obje
     content.image = image;
     prLayoutNodeSetContent(f.tree, left, &content);
     prLayoutNodeSetContent(f.tree, right, &content);
-    prDrawImageRelease(image);
+    prTextureSourceRelease(image);
     CHECK(prLayoutNodeContent(f.tree, left).image == image);
     f.layout(px(40, 80));
     Array<uint8_t> pixels = render(f.tree, 40, 80);
@@ -1814,9 +1813,8 @@ TEST_CASE("the root's background layers cover the canvas, placed by the root's b
 TEST_CASE("an image background repeats its texels at its natural size") {
     Fixture f;
     const uint8_t texels[8] = {255, 0, 0, 255, 0, 0, 255, 255};
-    PrDrawImageDesc desc{PrPixelView{texels, 8, {2, 1}}, PrPixelFormat_Rgba8, PrDrawAlpha_Straight, PrColorSpace_Srgb};
-    const PrDrawImage* image = nullptr;
-    REQUIRE(prDrawImageCreate(&desc, &image) == PrStatus_Ok);
+    const PrTextureSource* image =
+        prTextureSourceCreateCopy(PrPixelView{texels, 8, {2, 1}}, PrPixelFormat_Rgba8, PrTextureAlpha_Straight);
     PrLayoutBackgroundLayer layer = prLayoutBackgroundLayerDefault();
     layer.kind = PrLayoutImageKind_Image;
     layer.image = image;
@@ -1825,7 +1823,7 @@ TEST_CASE("an image background repeats its texels at its natural size") {
     layer.repeatY = PrLayoutBackgroundRepeat_NoRepeat;
     PrLayoutNode root = f.element(kPrLayoutNodeNone, block());
     backgroundBox(f, root, 40, 20, &layer, 1);
-    prDrawImageRelease(image);
+    prTextureSourceRelease(image);
     f.layout(px(40, 40));
     Array<uint8_t> pixels = render(f.tree, 40, 40);
     CHECK(pixel(pixels, 40, 5, 5) == "255 0 0 255");
@@ -2379,6 +2377,48 @@ TEST_CASE("a box with inline-size containment shrink-wraps to its contained size
     float size = prTextFontStyle(font).size;
     CHECK(width(twenty) - width(one) == doctest::Approx(19 * metrics.averageAdvance * size).epsilon(0.01));
     CHECK(width(authored) == doctest::Approx(70));
+}
+
+TEST_CASE("a box with size containment in its block axis is as tall as its contained size, not its content") {
+    Fixture f;
+    PrLayoutNode root = f.element(kPrLayoutNodeNone, block());
+    auto contained = [&](float intrinsic, float height, float padding) {
+        PrLayoutBoxStyle box = block();
+        box.containBlock = 1;
+        box.containIntrinsicHeight = intrinsic >= 0 ? prLayoutLengthPx(intrinsic) : prLayoutLengthNone();
+        if (height >= 0)
+            box.height = prLayoutLengthPx(height);
+        box.padding[PrRectSide_Top] = prLayoutLengthPx(padding);
+        PrLayoutNode node = f.element(root, box);
+        f.element(node, block(100));
+        return node;
+    };
+    PrLayoutNode none = contained(-1, -1, 0);
+    PrLayoutNode sized = contained(30, -1, 0);
+    PrLayoutNode padded = contained(-1, -1, 5);
+    PrLayoutNode authored = contained(30, 70, 0);
+    // A flex item's size from its content is the contained size too.
+    PrLayoutBoxStyle column = block();
+    column.display = PrLayoutDisplay_Flex;
+    PrLayoutFlexStyle flex = prLayoutFlexStyleDefault();
+    flex.direction = PrLayoutFlexDirection_Column;
+    PrLayoutStyle record = prLayoutStyleDefault();
+    record.groups[PrLayoutGroup_Box] = prLayoutBoxStyleIntern(f.tree, &column);
+    record.groups[PrLayoutGroup_Flex] = prLayoutFlexStyleIntern(f.tree, &flex);
+    PrLayoutNode container = prLayoutNodeCreateElement(f.tree, root, prLayoutStyleIntern(f.tree, &record));
+    PrLayoutBoxStyle itemBox = block();
+    itemBox.containBlock = 1;
+    PrLayoutNode item = f.element(container, itemBox);
+    f.element(item, block(100));
+    f.layout(px(200, 1000));
+    auto height = [&](PrLayoutNode node) { return f.bounds(node).bottom - f.bounds(node).top; };
+    CHECK(height(none) == doctest::Approx(0));
+    CHECK(height(sized) == doctest::Approx(30));
+    CHECK(height(padded) == doctest::Approx(5));
+    CHECK(height(authored) == doctest::Approx(70));
+    CHECK(height(item) == doctest::Approx(0));
+    // The content is laid out as it is, and overflows the box.
+    CHECK(height(prLayoutNodeFirstChild(f.tree, none)) == doctest::Approx(100));
 }
 
 TEST_CASE("text runs on either side of an inline box meet it") {

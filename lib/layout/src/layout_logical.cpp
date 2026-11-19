@@ -22,6 +22,7 @@ LayoutLogicalBox layoutLogicalBox(const PrLayoutBoxStyle& box, LayoutMode mode) 
     logical.minBlockSize = horizontal ? box.minHeight : box.minWidth;
     logical.maxInlineSize = horizontal ? box.maxWidth : box.maxHeight;
     logical.maxBlockSize = horizontal ? box.maxHeight : box.maxWidth;
+    logical.containIntrinsicBlockSize = horizontal ? box.containIntrinsicHeight : box.containIntrinsicWidth;
     for (LayoutSide side = 0; side < LayoutSide_Count; ++side) {
         PrRectSide physical = layoutPhysicalSide(mode, side);
         logical.margin[side] = box.margin[physical];

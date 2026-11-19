@@ -23,6 +23,25 @@ bool nearPoint(PrVec2 a, PrVec2 b) {
     return near(a.x, b.x) && near(a.y, b.y);
 }
 
+bool nearPoint3(PrVec3 a, PrVec3 b) {
+    return near(a.x, b.x) && near(a.y, b.y) && near(a.z, b.z);
+}
+
+// A point of a viewer's space in clip space: x, y and the depth after the division by w, and w.
+struct Projected {
+    float x;
+    float y;
+    float depth;
+    float w;
+};
+
+Projected project(const PrMatrix4& matrix, PrVec3 p) {
+    float out[4];
+    for (uint32_t row = 0; row < 4; ++row)
+        out[row] = matrix.m[row][0] * p.x + matrix.m[row][1] * p.y + matrix.m[row][2] * p.z + matrix.m[row][3];
+    return {out[0] / out[3], out[1] / out[3], out[2] / out[3], out[3]};
+}
+
 bool nearRect(PrRect a, PrRect b) {
     return near(a.left, b.left) && near(a.top, b.top) && near(a.right, b.right) && near(a.bottom, b.bottom);
 }
@@ -303,6 +322,157 @@ TEST_CASE("4x4 transforms concatenate, invert and map the plane with perspective
     CHECK(!prMatrix4MapPoint(&seen, PrVec2{0, 200}, &out));
     PrMatrix4 flatZ = prMatrix4Scale(PrVec3{1, 1, 0});
     CHECK(!prMatrix4Invert(&flatZ, &inverse));
+}
+
+TEST_CASE("a box of space grows to hold a point or another box") {
+    PrBox3 box{{0, 0, 0}, {1, 2, 3}};
+    PrBox3 grown = prBox3Include(box, PrVec3{-1, 1, 5});
+    CHECK(grown.min == PrVec3{-1, 0, 0});
+    CHECK(grown.max == PrVec3{1, 2, 5});
+    grown = prBox3Include(box, PrVec3{0.5f, 1, 1});
+    CHECK(grown.min == box.min);
+    CHECK(grown.max == box.max);
+    PrBox3 both = prBox3Union(box, PrBox3{{-2, 1, 1}, {0.5f, 4, 2}});
+    CHECK(both.min == PrVec3{-2, 0, 0});
+    CHECK(both.max == PrVec3{1, 4, 3});
+}
+
+TEST_CASE("a viewer looks along its negative z axis, with the world's y up") {
+    PrMatrix4 view = prMatrix4LookAt(PrVec3{0, 0, 5}, PrVec3{0, 0, 0});
+    PrAffine3 toView = prAffine3FromMatrix4(&view);
+    CHECK(prAffine3MapPoint(&toView, PrVec3{0, 0, 0}) == PrVec3{0, 0, -5});
+    CHECK(prAffine3MapPoint(&toView, PrVec3{1, 0, 0}) == PrVec3{1, 0, -5});
+    CHECK(prAffine3MapPoint(&toView, PrVec3{0, 1, 0}) == PrVec3{0, 1, -5});
+    CHECK(prAffine3MapPoint(&toView, PrVec3{0, 0, 5}) == PrVec3{0, 0, 0});
+    for (uint32_t column = 0; column < 4; ++column)
+        CHECK(view.m[3][column] == (column == 3 ? 1.0f : 0.0f));
+
+    // From the side, the viewer's right is the world's -z, and the target is ahead by its distance.
+    view = prMatrix4LookAt(PrVec3{4, 0, 0}, PrVec3{1, 0, 0});
+    toView = prAffine3FromMatrix4(&view);
+    CHECK(nearPoint3(prAffine3MapPoint(&toView, PrVec3{1, 0, 0}), PrVec3{0, 0, -3}));
+    CHECK(nearPoint3(prAffine3MapPoint(&toView, PrVec3{1, 2, -1}), PrVec3{1, 2, -3}));
+
+    // A viewer that looks along the world's y axis takes the world's x axis as up.
+    view = prMatrix4LookAt(PrVec3{0, 3, 0}, PrVec3{0, 0, 0});
+    toView = prAffine3FromMatrix4(&view);
+    CHECK(nearPoint3(prAffine3MapPoint(&toView, PrVec3{0, 0, 0}), PrVec3{0, 0, -3}));
+    CHECK(nearPoint3(prAffine3MapPoint(&toView, PrVec3{1, 0, 0}), PrVec3{0, 1, -3}));
+    PrVec3 right = prAffine3MapPoint(&toView, PrVec3{0, 0, 1});
+    CHECK(prF32Abs(right.x) == 1);
+    CHECK(right.y == 0);
+}
+
+TEST_CASE("a perspective projection has reversed depth and no far plane") {
+    float fov = kPrF32Pi / 2;
+    PrMatrix4 p = prMatrix4PerspectiveProjection(fov, 2, 0.5f);
+    // The near plane has a depth of 1, and its top right corner is the corner of clip space.
+    Projected corner = project(p, PrVec3{1, 0.5f, -0.5f});
+    CHECK(near(corner.x, 1));
+    CHECK(near(corner.y, 1));
+    CHECK(near(corner.depth, 1));
+    CHECK(corner.w == 0.5f);
+    // Depth falls with distance and never reaches 0.
+    Projected far = project(p, PrVec3{0, 0, -5});
+    CHECK(near(far.depth, 0.1f));
+    CHECK(far.w == 5);
+    Projected farther = project(p, PrVec3{0, 0, -1e6f});
+    CHECK(farther.depth > 0);
+    CHECK(farther.depth < far.depth);
+    // What is behind the viewer has a w that is not above zero.
+    CHECK(project(p, PrVec3{0, 0, 1}).w < 0);
+}
+
+TEST_CASE("an orthographic projection has reversed depth, or forward depth with its distances exchanged") {
+    PrMatrix4 p = prMatrix4OrthographicProjection(PrVec2{4, 2}, 1, 11);
+    Projected nearCorner = project(p, PrVec3{4, 2, -1});
+    CHECK(nearCorner.x == 1);
+    CHECK(nearCorner.y == 1);
+    CHECK(near(nearCorner.depth, 1));
+    CHECK(nearCorner.w == 1);
+    Projected farCorner = project(p, PrVec3{-4, -2, -11});
+    CHECK(farCorner.x == -1);
+    CHECK(farCorner.y == -1);
+    CHECK(near(farCorner.depth, 0));
+    CHECK(near(project(p, PrVec3{0, 0, -6}).depth, 0.5f));
+
+    PrMatrix4 forward = prMatrix4OrthographicProjection(PrVec2{4, 2}, 11, 1);
+    CHECK(near(project(forward, PrVec3{0, 0, -1}).depth, 0));
+    CHECK(near(project(forward, PrVec3{0, 0, -11}).depth, 1));
+    CHECK(near(project(forward, PrVec3{0, 0, -3.5f}).depth, 0.25f));
+    CHECK(project(forward, PrVec3{4, 2, -1}).x == 1);
+}
+
+TEST_CASE("an affine transform of space is the top rows of a matrix, and maps points") {
+    PrAffine3 identity = prAffine3Identity();
+    CHECK(prAffine3MapPoint(&identity, PrVec3{1, -2, 3}) == PrVec3{1, -2, 3});
+    PrMatrix4 same = prMatrix4FromAffine3(&identity);
+    for (uint32_t row = 0; row < 4; ++row) {
+        for (uint32_t column = 0; column < 4; ++column)
+            CHECK(same.m[row][column] == (row == column ? 1.0f : 0.0f));
+    }
+
+    PrMatrix4 turn = prMatrix4Rotate(PrVec3{0, 0, 1}, kPrF32Pi / 2);
+    PrMatrix4 move = prMatrix4Translate(PrVec3{10, 20, 30});
+    PrMatrix4 both = prMatrix4Concat(&turn, &move);
+    PrAffine3 transform = prAffine3FromMatrix4(&both);
+    for (uint32_t row = 0; row < 3; ++row) {
+        for (uint32_t column = 0; column < 4; ++column)
+            CHECK(transform.m[row][column] == both.m[row][column]);
+    }
+    CHECK(nearPoint3(prAffine3MapPoint(&transform, PrVec3{1, 0, 2}), PrVec3{10, 21, 32}));
+    PrMatrix4 back = prMatrix4FromAffine3(&transform);
+    for (uint32_t row = 0; row < 4; ++row) {
+        for (uint32_t column = 0; column < 4; ++column)
+            CHECK(back.m[row][column] == both.m[row][column]);
+    }
+    // The last row of a matrix is not part of the transform.
+    PrMatrix4 eye = prMatrix4Perspective(100);
+    PrAffine3 dropped = prAffine3FromMatrix4(&eye);
+    back = prMatrix4FromAffine3(&dropped);
+    CHECK(back.m[3][2] == 0);
+    CHECK(back.m[3][3] == 1);
+}
+
+TEST_CASE("the largest scale of an affine transform of space is its greatest stretch in any direction") {
+    PrAffine3 identity = prAffine3Identity();
+    CHECK(prAffine3MaxScale(&identity) == 1);
+    PrMatrix4 scale = prMatrix4Scale(PrVec3{2, -5, 3});
+    PrAffine3 scaled = prAffine3FromMatrix4(&scale);
+    CHECK(prAffine3MaxScale(&scaled) == 5);
+    // A rotation and a translation change no length.
+    PrMatrix4 turn = prMatrix4Rotate(PrVec3{1, 2, 3}, 0.7f);
+    PrMatrix4 move = prMatrix4Translate(PrVec3{100, -200, 300});
+    PrMatrix4 turned = prMatrix4Concat(&scale, &turn);
+    turned = prMatrix4Concat(&turned, &move);
+    PrAffine3 all = prAffine3FromMatrix4(&turned);
+    CHECK(prF32Abs(prAffine3MaxScale(&all) - 5) < 1e-4f);
+    // A shear stretches the diagonal by more than either axis: the largest singular value of [[1, 1], [0, 1]].
+    PrAffine3 shear = prAffine3Identity();
+    shear.m[0][1] = 1;
+    CHECK(prF32Abs(prAffine3MaxScale(&shear) - 1.618034f) < 1e-4f);
+    // No direction is stretched by more than the factor.
+    PrAffine3 linear = shear;
+    linear.m[2][0] = 0.5f;
+    linear.m[1][2] = -2;
+    float factor = prAffine3MaxScale(&linear);
+    PrVec3 origin = prAffine3MapPoint(&linear, PrVec3{0, 0, 0});
+    float greatest = 0;
+    for (int32_t x = -3; x <= 3; ++x) {
+        for (int32_t y = -3; y <= 3; ++y) {
+            for (int32_t z = -3; z <= 3; ++z) {
+                PrVec3 direction{float(x), float(y), float(z)};
+                if (x == 0 && y == 0 && z == 0)
+                    continue;
+                float stretch = prVec3Length(prAffine3MapPoint(&linear, direction) - origin) / prVec3Length(direction);
+                CHECK(stretch <= factor * 1.0001f);
+                greatest = prF32Max(greatest, stretch);
+            }
+        }
+    }
+    CHECK(greatest > factor * 0.9f);
+    PrAffine3 collapsed{};
+    CHECK(prAffine3MaxScale(&collapsed) == 0);
 }
 
 TEST_CASE("4x4 transforms in doubles concatenate, invert, round to floats and tell which side of the plane shows") {

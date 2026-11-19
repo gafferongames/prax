@@ -25,6 +25,7 @@
 #include "pr/layout_page.h"
 #include "pr/media.h"
 #include "pr/task.h"
+#include "pr/texture_cache.h"
 #include "pr/vec.h"
 
 #include <filesystem>
@@ -119,6 +120,10 @@ public:
     // as canvas bitmaps, lives on the renderer's device. Until this is called, the renderer is null and pages have no
     // such content. The renderer must outlive the pages.
     void setRenderer(PrDrawRenderer* PR_NULLABLE renderer);
+
+    // Realizes the images of the pages loaded afterward in `textures`, a cache on the device that presents them, which
+    // must outlive the pages (PrHtmlHost::textures). Without it, images draw nothing.
+    void setTextures(PrTextureCache* PR_NULLABLE textures);
 
     // Sets the gap between printed pages, in CSS pixels, as a paint for print media stacks them down the viewport
     // (prHtmlViewSetPaged). The gap is zero until this is called.

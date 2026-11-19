@@ -12,7 +12,6 @@
 #include "pr/process.h"
 #include "pr/string.h"
 #include "pr/string_ops.h"
-#include "pr/syntax_treesitter_json.h"
 #include "pr/text_editor.h"
 #include "pr/text_font.h"
 #include "pr/thread.h"
@@ -20,6 +19,7 @@
 #include "pr/ui.h"
 #if defined(TEXT_EDITOR_TESTS_HAVE_TREESITTER)
 #include "pr/syntax_treesitter_c.h"
+#include "pr/syntax_treesitter_json.h"
 #endif
 
 #include "studio/text_editor/src/text_editor_diff.h"
@@ -342,7 +342,7 @@ TEST_CASE("text editor: a comparison aligns its sides, tints what changed, and s
     e.run("diff.nextChange");
     CHECK(e.caret().line == 4);
 
-    prTextEditorShow(e.editor, after);
+    prTextEditorShow(e.editor, after, true);
     CHECK(prTextEditorShownDiff(e.editor) == nullptr);
     prTextEditorDiffDestroy(diff);
 }

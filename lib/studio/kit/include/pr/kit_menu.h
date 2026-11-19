@@ -187,9 +187,10 @@ typedef struct PrKitContextMenu {
 } PrKitContextMenu;
 
 // Creates the context menu of `host`, which is a node that the current round created, and returns its menu. Returns
-// none while the menu is closed. The host takes presses in the round. A secondary click opens the menu at the pointer
-// if the click is on the host itself, or on a part of it that takes no presses. Escape, a press outside the menu, or
-// the activation of an item closes the menu.
+// none while the menu is closed. The host takes presses in the round. A secondary click, or on macOS a click with
+// Control, opens the menu at the pointer if the click is on the host itself, or on a part of it that takes no presses.
+// The menu key, or Shift F10, opens it at the host's bottom left while focus is within the host. Escape, a press
+// outside the menu, or the activation of an item closes the menu.
 PrLayoutNode prKitContextMenu(PrKit* kit, PrLayoutNode host, PrKitContextMenu menu, PrKitMenuStyle style);
 
 // ---------------------------------------------------------------------------------------------------------------------

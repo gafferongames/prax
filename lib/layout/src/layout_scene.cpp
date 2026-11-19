@@ -730,7 +730,7 @@ void canvasLayers(LayoutTree* tree, const LayoutFragment* root, PrLayoutRect bor
         prDrawListPushGroup(list, &group);
         prDrawListRect(list, boxes.area, {.color = decoration.background, .edges = PrDrawEdges_Snapped});
         for (uint32_t i = layers.count; i-- > 0;)
-            layoutBackgroundPaintLayer(&tree->styles->compounds, layers.layers[i], boxes, list);
+            layoutBackgroundPaintLayer(tree->textures, &tree->styles->compounds, layers.layers[i], boxes, list);
         prDrawListPopGroup(list);
         prDrawListFreeze(list);
         runs.push(LayoutSceneCanvasRun{list, false});
@@ -748,8 +748,8 @@ void canvasLayers(LayoutTree* tree, const LayoutFragment* root, PrLayoutRect bor
             runs.push(LayoutSceneCanvasRun{prDrawListCreate(), fixed});
             open = false;
         }
-        bool drew =
-            layoutBackgroundPaintLayer(&tree->styles->compounds, layer, fixed ? fixedBoxes : boxes, runs.last().list);
+        bool drew = layoutBackgroundPaintLayer(tree->textures, &tree->styles->compounds, layer, fixed ? fixedBoxes : boxes,
+            runs.last().list);
         if (!drew && !open) {
             prDrawListRelease(runs.last().list);
             runs.pop();
@@ -841,6 +841,12 @@ bool layoutSceneIsCurrent(const LayoutTree* tree) {
 }
 
 const PrLayoutScene* layoutScene(LayoutTree* tree) {
+    // A paint that drew nothing of an image that had not arrived, or of textures that the cache has since dropped for a
+    // new device, records everything again.
+    LayoutTextures& textures = *tree->textures;
+    if (textures.pending ||
+            (textures.cache != nullptr && prTextureCacheGeneration(textures.cache) != textures.generation))
+        layoutTreeForgetTextures(tree);
     if (layoutSceneIsCurrent(tree)) {
         tree->paintedFor = 0;
         layoutPaintReused(tree, tree->scene->layers.count);

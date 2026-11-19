@@ -23,6 +23,7 @@
 #include "pr/resource.h"
 #include "pr/status.h"
 #include "pr/task.h"
+#include "pr/texture_cache.h"
 
 namespace {
 
@@ -33,6 +34,7 @@ struct Window {
     PrApp* app = nullptr;
     PrAppWindow* window = nullptr;
     PrTaskPool* pool = nullptr;
+    PrTextureCache* PR_NULLABLE textures = nullptr;  // on `device`
     PrGpuDevice* device = nullptr;
     PrGpuSwapChain* swapChain = nullptr;
     PrDrawRenderer* renderer = nullptr;
@@ -59,6 +61,8 @@ void closeDevice(Window& w) {
     w.frameSerial = 0;
     prDrawFrameDestroy(w.frame);
     prDrawRendererDestroy(w.renderer);
+    prTextureCacheDestroy(w.textures);
+    w.textures = nullptr;
     prGpuSwapChainDestroy(w.swapChain);
     prGpuDeviceDestroy(w.device);
     w.frame = nullptr;
@@ -96,9 +100,15 @@ bool openDevice(Window& w) {
         return true;
     PrSurface surface{};
     PrGpuSwapChainDesc desc{.intent = PrGpuSwapChainIntent_Hdr};
+    // The window's images realize on its pool, in a cache on its device.
+    PrTextureCacheDesc textures = prTextureCacheDescDefault(w.device);
+    textures.tasks = w.pool;
+    textures.values = PrTextureCacheValues_Encoded;
+    w.textures = prTextureCacheCreate(&textures);
+    PrDrawRendererOptions rendererOptions = prDrawRendererOptionsDefault();
     if (prAppWindowSurface(w.window, &surface) != PrStatus_Ok ||
             prGpuSwapChainCreate(w.device, &surface, &desc, &w.swapChain) != PrStatus_Ok ||
-            prDrawRendererCreate(PrDrawRendererBackend_Default, w.device, nullptr, &w.renderer) != PrStatus_Ok) {
+            prDrawRendererCreate(PrDrawRendererBackend_Default, w.device, &rendererOptions, &w.renderer) != PrStatus_Ok) {
         printError("video: the device cannot render to the window\n");
         closeDevice(w);
         return false;
@@ -144,8 +154,8 @@ void record(Window& w, float width, float height, double seconds) {
 
     PrDrawShadow shadow{.shape = shape, .offset = PrVec2{0, 10}, .sigma = 16};
     prDrawListDropShadow(list, &shadow, {.color = PrColor{0, 0, 0, 0.6f}});
-    PrDrawSource source = prDrawSourceTexture(prDrawGpuTexture(w.texture), extent,
-        PrRect{0, 0, float(extent.x), float(extent.y)}, PrDrawAlpha_Opaque);
+    PrDrawSource source = prDrawSourceTexture(PrTexture{.texture = w.texture, .alpha = PrTextureAlpha_None}, extent,
+        PrRect{0, 0, float(extent.x), float(extent.y)});
     PrDrawBrush brush = prDrawBrushImage(source, area, PrDrawSampling_Linear);
     prDrawListCornerRect(list, shape, {.brush = &brush});
 
@@ -176,6 +186,7 @@ void render(Window& w, PrUVec2 extent) {
     }
     PrDrawTarget target{.extent = extent, .format = format, .commands = commands};
     prDrawFramePrepare(w.frame, w.list, &target);
+    prTextureCacheTrim(w.textures);
     PrGpuSubresources all{};
     prGpuCommandsTextureBarrier(commands, frame.color, all, PrGpuAccessFlag_Discard, PrGpuAccessFlag_ColorAttachment);
     PrGpuPassDesc pass = prGpuPassDescColor(frame.color, PrGpuLoad_Clear, PrColor{0, 0, 0, 1});

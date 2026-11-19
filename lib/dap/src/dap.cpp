@@ -186,7 +186,7 @@ void sendBreakpoints(DapClient* client, uint32_t index) {
 
 // Sends a launch or attach with arguments that a host gave, parsed.
 bool sendStart(DapClient* client, PrStringView command, PrStringView arguments) {
-    if (!prJsonParse(client->arguments, arguments, nullptr) || prJsonKind(client->arguments, 0) != PrJsonKind_Object)
+    if (!prJsonParse(client->arguments, arguments, 0, nullptr) || prJsonKind(client->arguments, 0) != PrJsonKind_Object)
         return false;
     beginRequest(client, command, PendingKind_Start, nullptr, nullptr);
     prJsonWriterValue(client->writer, client->arguments, 0);
@@ -196,7 +196,7 @@ bool sendStart(DapClient* client, PrStringView command, PrStringView arguments) 
 
 bool start(DapClient* client, PrStringView command, PrStringView arguments) {
     if (client->state == PrDapClientState_Initializing) {
-        if (!prJsonParse(client->arguments, arguments, nullptr) ||
+        if (!prJsonParse(client->arguments, arguments, 0, nullptr) ||
                 prJsonKind(client->arguments, 0) != PrJsonKind_Object)
             return false;
         prRawStringReplace(&client->startCommand, command);
@@ -329,7 +329,7 @@ void refuseRequest(DapClient* client, const PrJson* json) {
 
 void handleMessage(DapClient* client, PrStringView body) {
     PrJson* json = client->json;
-    if (!prJsonParse(json, body, nullptr) || prJsonKind(json, 0) != PrJsonKind_Object) {
+    if (!prJsonParse(json, body, 0, nullptr) || prJsonKind(json, 0) != PrJsonKind_Object) {
         fail(client);
         return;
     }
@@ -541,7 +541,7 @@ PrDapRequest prDapClientRequest(PrDapClient* client, PrStringView command, PrStr
         PrDapResponseFn PR_NULLABLE fn, void* PR_NULLABLE context) {
     if (!isLive(client))
         return kPrDapRequestNone;
-    if (arguments.data != nullptr && !prJsonParse(client->arguments, arguments, nullptr))
+    if (arguments.data != nullptr && !prJsonParse(client->arguments, arguments, 0, nullptr))
         return kPrDapRequestNone;
     PrDapRequest request = beginRequest(client, command, PendingKind_User, fn, context);
     if (arguments.data != nullptr) {

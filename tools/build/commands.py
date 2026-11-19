@@ -56,16 +56,17 @@ USAGE = {
                  [args...]
     build an example under examples, and only what it needs, and run it with the arguments. A configuration builds it in
     that configuration's build instead of the default build. wasm, ios and PLATFORM-sim accept debug and no other
-    configuration. `wasm` builds it for the web, serves the checkout, and opens its page in the system's browser, with
-    the arguments and the PR_ environment variables in the page's query, until interrupted. --screenshot instead
-    captures the page in headless Chrome after it has run for S seconds (4 by default), and prints what the page logged.
-    The page is 960x720 CSS pixels, unless --viewport gives its size and its pixels per CSS pixel: 960x640@2 matches a
-    native window of 960x640 on a display of two pixels per CSS pixel. PLATFORM-sim, as ios-sim, builds its bundle for
-    the platform's simulator, installs it on a simulator device of the platform, chosen as ./dev.sh test chooses it, and
-    launches it there, streaming its output until it exits or is interrupted. `ios` does the same on a connected iPhone
-    or iPad, the one that PR_IOS_DEVICE names or else the first, after signing the bundle with a provisioning profile of
-    the developer's team that lists the device. --screenshot instead captures the device's screen after S seconds and
-    terminates the example""",
+    configuration. On the host, it first fetches the corpus that the example browses, if it has one: ./dev.sh example
+    model_viewer third_party/glTF-Sample-Assets/Models browses Khronos's sample assets. `wasm` builds it for the web,
+    serves the checkout, and opens its page in the system's browser, with the arguments and the PR_ environment
+    variables in the page's query, until interrupted. --screenshot instead captures the page in headless Chrome after it
+    has run for S seconds (4 by default), and prints what the page logged. The page is 960x720 CSS pixels, unless
+    --viewport gives its size and its pixels per CSS pixel: 960x640@2 matches a native window of 960x640 on a display of
+    two pixels per CSS pixel. PLATFORM-sim, as ios-sim, builds its bundle for the platform's simulator, installs it on a
+    simulator device of the platform, chosen as ./dev.sh test chooses it, and launches it there, streaming its output
+    until it exits or is interrupted. `ios` does the same on a connected iPhone or iPad, the one that PR_IOS_DEVICE
+    names or else the first, after signing the bundle with a provisioning profile of the developer's team that lists the
+    device. --screenshot instead captures the device's screen after S seconds and terminates the example""",
     "app": """./dev.sh app [debug|release|asan|tsan] [ios|PLATFORM-sim] <name> [args...]
 ./dev.sh app [debug] ios|PLATFORM-sim <name> --screenshot <png> [--seconds S] [args...]
     build an app under apps, and only what it needs, in the configuration named, as ./dev.sh example does, and run it
@@ -362,6 +363,8 @@ def run_application(folder, usage, argv, modes):
     if name in builds.EXAMPLE_CHECKOUTS:
         checkouts.fetch(*builds.EXAMPLE_CHECKOUTS[name])
     if platform is None:
+        if name in builds.EXAMPLE_HOST_CHECKOUTS:
+            checkouts.fetch(*builds.EXAMPLE_HOST_CHECKOUTS[name])
         chosen = builds.build(mode, targets=[name])
         dev.run([dev.executable(chosen.directory, name), *args])
         return None

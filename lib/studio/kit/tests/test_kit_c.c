@@ -5,6 +5,7 @@
 #include "pr/kit_collection.h"
 #include "pr/kit_data.h"
 #include "pr/kit_dock.h"
+#include "pr/kit_history.h"
 #include "pr/kit_icon.h"
 #include "pr/kit_input.h"
 #include "pr/kit_menu.h"

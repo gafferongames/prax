@@ -14,12 +14,12 @@
 
 #include "pr/audio_mixer.h"
 #include "pr/dom.h"
-#include "pr/draw_image.h"
 #include "pr/html.h"
 #include "pr/html_media_source.h"
 #include "pr/media.h"
 #include "pr/raw_array.h"
 #include "pr/string_view.h"
+#include "pr/texture.h"
 
 #include "dom/src/dom_event.h"
 #include "html/src/html_window.h"
@@ -44,7 +44,7 @@ struct HtmlMedia {
     HtmlTrackList videoTracks;
     PrRawString currentSrc;               // html/#dom-media-currentsrc
     PrRawString errorMessage;             // html/#dom-mediaerror-message
-    RawArray<PrHtmlPlayPromise> promises; // html/#list-of-pending-play-promises
+    RawArray<PrHtmlPromise> promises;     // html/#list-of-pending-play-promises
     RawArray<double> played;              // html/#dom-media-played: each range's start and end, in order
     double position;                      // html/#official-playback-position, in seconds, at `since`
     double since;                         // the value of prTimeMonotonicMilliseconds at which `position` was taken
@@ -80,8 +80,8 @@ struct HtmlMedia {
     PrHtmlMediaSource* PR_NULLABLE mediaSource;
     double playableEnd;
     bool seekWaits;                          // a seek waits for the media source to buffer its position
-    const PrDrawImage* PR_NULLABLE frame;
-    const PrDrawImage* PR_NULLABLE poster;
+    const PrTextureSource* PR_NULLABLE frame;
+    const PrTextureSource* PR_NULLABLE poster;
     uint64_t frameSerial;
     uint32_t posters;
     bool showPoster;                     // html/#show-poster-flag
@@ -123,7 +123,7 @@ void htmlMediaLoad(HtmlMedia* media);
 double htmlMediaCurrentTime(HtmlMedia* media);
 void htmlMediaSeek(HtmlMedia* media, double seconds);
 bool htmlMediaEnded(HtmlMedia* media);
-void htmlMediaPlay(HtmlMedia* media, const PrHtmlPlayPromise& promise);
+void htmlMediaPlay(HtmlMedia* media, const PrHtmlPromise& promise);
 void htmlMediaPause(HtmlMedia* media);
 void htmlMediaSetRate(HtmlMedia* media, double rate, bool isDefault);
 void htmlMediaSetVolume(HtmlMedia* media, double volume, bool muted);

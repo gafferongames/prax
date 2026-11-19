@@ -1,4 +1,4 @@
-// Rectangles and transforms in two dimensions.
+// Rectangles, boxes, spheres and transforms, in the plane and in space.
 
 #pragma once
 
@@ -90,6 +90,12 @@ typedef struct PrDAffine2 {
     double f;
 } PrDAffine2;
 
+// An affine transform of space, as the top three rows of a 4 by 4 matrix whose last row is (0, 0, 0, 1). `m` is indexed
+// [row][column] and maps column vectors (x, y, z, 1).
+typedef struct PrAffine3 {
+    float m[3][4];
+} PrAffine3;
+
 // An affine transform in four dimensions, as the top four rows of a 5 by 5 matrix. `m` is indexed [row][column] and
 // maps column vectors (x, y, z, w, 1). A color matrix is a PrAffine4 that acts on the four channels of a color.
 typedef struct PrAffine4 {
@@ -106,6 +112,18 @@ typedef struct PrMatrix4 {
     float m[4][4];
 } PrMatrix4;
 
+// An axis-aligned box of space by its least and greatest corners.
+typedef struct PrBox3 {
+    PrVec3 min;
+    PrVec3 max;
+} PrBox3;
+
+// A sphere.
+typedef struct PrSphere {
+    PrVec3 center;
+    float radius;
+} PrSphere;
+
 // A projective transform of the plane in doubles, with the fields of PrMatrix3, and a transform in three dimensions in
 // doubles, with the fields of PrMatrix4. They compose long chains of transforms, such as the transforms and offsets
 // between a box deep in a document and the viewport, without losing the precision that small translations keep.
@@ -115,6 +133,25 @@ typedef struct PrDMatrix3 {
 typedef struct PrDMatrix4 {
     double m[4][4];
 } PrDMatrix4;
+
+// A linear transform of the plane in doubles. `m` is indexed [row][column] and maps column vectors (x, y).
+typedef struct PrDMatrix2 {
+    double m[2][2];
+} PrDMatrix2;
+
+// A quaternion x*i + y*j + z*k + w, whose real part is `w`, in floats and in doubles. A unit quaternion is a rotation.
+typedef struct PrQuat {
+    float x;
+    float y;
+    float z;
+    float w;
+} PrQuat;
+typedef struct PrDQuat {
+    double x;
+    double y;
+    double z;
+    double w;
+} PrDQuat;
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Rectangles
@@ -346,6 +383,56 @@ bool prMatrix4MapPoint(const PrMatrix4* matrix, PrVec2 point, PrVec2* out);
 // Writes `matrix` as an affine transform on the z = 0 plane to `*out`. Returns false if the matrix has perspective
 // there, and leaves `*out` unchanged.
 bool prAffine2FromMatrix4(const PrMatrix4* matrix, PrAffine2* out);
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Boxes of space
+
+// Returns the smallest box that contains `box` and `point`.
+PrBox3 prBox3Include(PrBox3 box, PrVec3 point);
+
+// Returns the smallest box that contains `a` and `b`.
+PrBox3 prBox3Union(PrBox3 a, PrBox3 b);
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Cameras
+//
+// A camera's space is right-handed, as the world is: x to the viewer's right, y up, and the viewer looks along its
+// negative z axis. A projection maps that space to clip space, which holds a point if its x and y lie within its w of
+// zero and its z between zero and its w: after the division by w, x and y in [-1, 1] and a depth in [0, 1]. Depth is
+// reversed. It is 1 at the nearest that a camera sees and falls to 0 with distance, which spreads the precision of a
+// float depth buffer evenly over the distance.
+
+// Returns the matrix that maps the world to the space of a viewer at `eye` that looks toward `target`. The world's y
+// axis is up, unless the viewer looks along it, and then the world's x axis is. `target` must differ from `eye`.
+PrMatrix4 prMatrix4LookAt(PrVec3 eye, PrVec3 target);
+
+// Returns a perspective projection of a viewer's space with no far plane, of the field of view `verticalFov`, in
+// radians from the bottom of the view to its top, for a view whose width over its height is `aspect`. Depth is 1 at
+// `nearDistance` ahead of the viewer, the nearest that the projection shows, and falls to 0 infinitely far away.
+PrMatrix4 prMatrix4PerspectiveProjection(float verticalFov, float aspect, float nearDistance);
+
+// Returns an orthographic projection of the box of a viewer's space that reaches `halfExtents` to each side of the
+// viewer's axis, across and up, and from `nearDistance` to `farDistance` ahead. Depth is 1 at `nearDistance` and 0 at
+// `farDistance`. The two distances exchanged give the same box with a depth that grows with distance, from 0 to 1.
+PrMatrix4 prMatrix4OrthographicProjection(PrVec2 halfExtents, float nearDistance, float farDistance);
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Affine transforms of space
+
+// Returns the identity.
+PrAffine3 prAffine3Identity(void);
+
+// Returns the top three rows of `matrix`: the transform that it is if its last row is (0, 0, 0, 1).
+PrAffine3 prAffine3FromMatrix4(const PrMatrix4* matrix);
+
+// Returns `transform` as a matrix, with a last row of (0, 0, 0, 1).
+PrMatrix4 prMatrix4FromAffine3(const PrAffine3* transform);
+
+// Returns `point` mapped through `transform`.
+PrVec3 prAffine3MapPoint(const PrAffine3* transform, PrVec3 point);
+
+// Returns the largest factor by which `transform` scales a length, in any direction.
+float prAffine3MaxScale(const PrAffine3* transform);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Transforms in three dimensions in doubles

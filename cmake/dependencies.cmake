@@ -147,15 +147,16 @@ pr_dependency(libvterm
     SOURCE_SUBDIR none
 )
 
-# Yoga v3.2.1 and Taffy v0.14.0, the flex layouts that the flex benchmark measures the engine against.
-pr_dependency(yoga
-    URL https://github.com/facebook/yoga/archive/042f5013152eb81c1552dec945b88f7b95ca350f.tar.gz
-    URL_HASH SHA256=4742f41722a16f181e3da37abf943390db1e928f00f26402cb154662ae7f110f
+# The reference implementation of MikkTSpace, by Morten S. Mikkelsen, at its last commit, and meshoptimizer v1.3, whose
+# tangent generator derives from it: the tangents that tools/suite/tangents compares lib/mesh's with.
+pr_dependency(mikktspace
+    URL https://github.com/mmikk/MikkTSpace/archive/3e895b49d05ea07e4c2133156cfa94369e19e409.tar.gz
+    URL_HASH SHA256=aeba65ddee85a679133d510d71d00b108f603752f90b15b9ecf7777033f6e351
     SOURCE_SUBDIR none
 )
-pr_dependency(taffy
-    URL https://github.com/DioxusLabs/taffy/archive/77f385683c1d698c91a23a259f87fdddf26925fb.tar.gz
-    URL_HASH SHA256=0e61a69c6b4f1722df706f9985bc5ec6c0813ba9f43630451cb5cffaef5382e0
+pr_dependency(meshoptimizer
+    URL https://github.com/zeux/meshoptimizer/archive/refs/tags/v1.3.tar.gz
+    URL_HASH SHA256=ca4f47d451201593904b9e3067fa54b65db94bc34ab5173864950862b748a145
     SOURCE_SUBDIR none
 )
 
@@ -178,6 +179,14 @@ pr_dependency(brotli
     URL https://github.com/google/brotli/archive/refs/tags/v1.2.0.tar.gz
     URL_HASH SHA256=816c96e8e8f193b40151dad7e8ff37b1221d019dbcb9c35cd3fadbfe6477dfec
     DOWNLOAD_NAME brotli-1.2.0.tar.gz
+    SOURCE_SUBDIR none
+)
+
+# Basis Universal 1.50.0.2, the reference transcoder and encoder of the ETC1S and UASTC textures of KTX 2.0 files, which
+# tools/suite/basis compares lib/basis's decoders with.
+pr_dependency(basis_universal
+    URL https://github.com/BinomialLLC/basis_universal/archive/refs/tags/v1_50_0_2.tar.gz
+    URL_HASH SHA256=0ef344cc7e3373ca9c15de2bd80512ea4ea17e09ed895febdf9e70f6c789bc27
     SOURCE_SUBDIR none
 )
 
@@ -206,5 +215,24 @@ pr_dependency(libdeflate
     URL https://github.com/ebiggers/libdeflate/archive/refs/tags/v1.18.tar.gz
     URL_HASH SHA256=225d982bcaf553221c76726358d2ea139bb34913180b20823c782cede060affd
     DOWNLOAD_NAME libdeflate-1.18.tar.gz
+    SOURCE_SUBDIR none
+)
+
+# Draco 1.5.7, the reference encoder and decoder of the Draco bitstream, which tools/suite/draco compares lib/draco with.
+pr_dependency(draco
+    URL https://github.com/google/draco/archive/refs/tags/1.5.7.tar.gz
+    URL_HASH SHA256=bf6b105b79223eab2b86795363dfe5e5356050006a96521477973aba8f036fe1
+    SOURCE_SUBDIR none
+)
+
+# Yoga v3.2.1 and Taffy v0.14.0, the flex layouts that the flex benchmark measures the engine against.
+pr_dependency(yoga
+    URL https://github.com/facebook/yoga/archive/042f5013152eb81c1552dec945b88f7b95ca350f.tar.gz
+    URL_HASH SHA256=4742f41722a16f181e3da37abf943390db1e928f00f26402cb154662ae7f110f
+    SOURCE_SUBDIR none
+)
+pr_dependency(taffy
+    URL https://github.com/DioxusLabs/taffy/archive/77f385683c1d698c91a23a259f87fdddf26925fb.tar.gz
+    URL_HASH SHA256=0e61a69c6b4f1722df706f9985bc5ec6c0813ba9f43630451cb5cffaef5382e0
     SOURCE_SUBDIR none
 )

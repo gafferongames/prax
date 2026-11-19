@@ -163,6 +163,10 @@ BENCHES = [
           sources=[os.path.join(common.ROOT, "tools", "bench", "doc_bench.cpp")]),
     Bench("draw", "recording and rendering draw_features' drawings on a renderer of lib/draw",
           ["draw_bench"], fetch=["fonts"], run=engine.draw, options=engine.draw_options),
+    Bench("render", "lib/render's frames of glTF assets by each technique, with handles and with the slots alone, and the "
+          "pipelines that their first frames make",
+          ["render_bench"], fetch=["gltf_sample_assets"], run=engine.render, options=engine.render_options,
+          sources=[os.path.join(common.ROOT, "tools", "bench", "render_bench.cpp")]),
     Bench("numbers", "numbers converted to text and back in lib/core and in the standard library's <charconv>: "
           "integers, shortest and rounded floats, and parses",
           ["number_bench"], run=engine.numbers, options=engine.numbers_options,

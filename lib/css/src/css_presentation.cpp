@@ -1498,17 +1498,6 @@ CssPresentationImageDrawing imageDrawingOf(const PrCssPresentation* r, const Css
     return drawing;
 }
 
-// Returns the image that an element shows of `image`, which was arranged from its stored pixels by `orientation`:
-// `image` itself if `oriented` is true, and otherwise the stored arrangement, which is made once and kept in `stored`.
-const PrDrawImage* orientedImage(const PrDrawImage* image, PrImageOrientation orientation, bool oriented,
-        const PrDrawImage* PR_NULLABLE* PR_NONNULL stored) {
-    if (oriented || orientation == PrImageOrientation_Identity)
-        return image;
-    if (*stored == nullptr)
-        *stored = prDrawImageCreateOriented(image, prImageOrientationInverse(orientation));
-    return *stored;
-}
-
 // Returns the natural size `size` of an image that its orientation displays, as an element shows it: unchanged if
 // `oriented` is true, and otherwise with its width and height exchanged if the orientation exchanged them.
 PrLayoutNaturalSize orientedSize(PrLayoutNaturalSize size, PrImageOrientation orientation, bool oriented) {
@@ -1799,7 +1788,8 @@ bool loadedImageOf(PrCssPresentation* r, PrStringView reference, CssPresentation
     layer.rendering = drawing.rendering;
     if (loaded->image != nullptr) {
         layer.kind = PrLayoutImageKind_Image;
-        layer.image = orientedImage(loaded->image, loaded->orientation, drawing.oriented, &loaded->stored);
+        layer.image = loaded->image;
+        layer.upright = drawing.oriented;
     } else {
         layer.kind = PrLayoutImageKind_Painter;
         layer.painter = loaded->vector;
@@ -3041,11 +3031,12 @@ PrLayoutNaturalSize naturalOf(PrCssPresentation* r, const PrDomElement* element,
 }
 
 // Returns the decoded image that a replaced element shows, oriented as `oriented` says, or null for none.
-const PrDrawImage* PR_NULLABLE pictureOf(const PrDomElement* element, bool oriented) {
+const PrTextureSource* PR_NULLABLE pictureOf(const PrDomElement* element, bool oriented) {
     DomElementState* state = element->state;
     if (state == nullptr || state->picture == nullptr)
         return nullptr;
-    return orientedImage(state->picture, state->orientation, oriented, &state->storedPicture);
+    (void)oriented;
+    return state->picture;
 }
 
 // Returns true if lib/svg keeps state for the presentation, which it does once it has attached to it, and so draws the
@@ -3137,7 +3128,7 @@ void applyContent(PrCssPresentation* r, const PrDomElement* element, PrLayoutNod
     prLayoutNodeSetNaturalSize(r->tree, box, size);
     if (domIsOuterSvg(element))
         return;
-    const PrDrawImage* picture = pictureOf(element, drawing.oriented);
+    const PrTextureSource* picture = pictureOf(element, drawing.oriented);
     PrLayoutContent content{};
     if (embedOf(element) != 0) {
         content.kind = PrLayoutContentKind_Embed;
@@ -3145,6 +3136,7 @@ void applyContent(PrCssPresentation* r, const PrDomElement* element, PrLayoutNod
     } else if (picture != nullptr && size.width.raw > 0 && size.height.raw > 0) {
         content.kind = PrLayoutContentKind_Image;
         content.image = picture;
+        content.upright = drawing.oriented;
         content.limit = drawing.limit;
         content.rendering = drawing.rendering;
     } else if (element->state != nullptr && element->state->vector.paint != nullptr) {
@@ -5042,7 +5034,8 @@ void applyGenerated(PrCssPresentation* r, CssPresentationEntry& entry) {
             PrLayoutContent content{};
             if (loaded->image != nullptr) {
                 content.kind = PrLayoutContentKind_Image;
-                content.image = orientedImage(loaded->image, loaded->orientation, drawing.oriented, &loaded->stored);
+                content.image = loaded->image;
+                content.upright = drawing.oriented;
                 content.limit = drawing.limit;
                 content.rendering = drawing.rendering;
             } else {
@@ -6453,7 +6446,7 @@ bool verifyElement(PrCssPresentation* r, PrDomElement* element, const CssCompute
                 return differs(out, domNode, "the replaced box's natural size");
             PrLayoutContent content = prLayoutNodeContent(r->tree, node);
             bool sized = expected.width.raw > 0 && expected.height.raw > 0 && embedOf(element) == 0;
-            const PrDrawImage* picture = pictureOf(element, drawing.oriented);
+            const PrTextureSource* picture = pictureOf(element, drawing.oriented);
             // The painter of an outermost svg element's content, or of an SVG image.
             PrLayoutPainter vector = element->state != nullptr ? element->state->vector : PrLayoutPainter{};
             bool painted = (domIsOuterSvg(element) && presentsSvg(r)) ||
@@ -6461,7 +6454,8 @@ bool verifyElement(PrCssPresentation* r, PrDomElement* element, const CssCompute
             if ((content.kind == PrLayoutContentKind_Embed) != (embedOf(element) != 0) ||
                     (content.kind == PrLayoutContentKind_Embed && content.embed != embedOf(element)) ||
                     (content.kind == PrLayoutContentKind_Image) != (sized && picture != nullptr) ||
-                    (content.kind == PrLayoutContentKind_Image && content.image != picture) ||
+                    (content.kind == PrLayoutContentKind_Image &&
+                        (content.image != picture || content.upright != drawing.oriented)) ||
                     content.kind == PrLayoutContentKind_DrawList || (content.kind == PrLayoutContentKind_Painter) != painted ||
                     (content.kind == PrLayoutContentKind_Painter && !domIsOuterSvg(element) &&
                         (content.painter.context != vector.context ||
@@ -7612,7 +7606,8 @@ bool cssPresentationCreateImage(PrCssPresentation* presentation, PrLayoutNode bo
     PrLayoutContent content{};
     if (loaded->image != nullptr) {
         content.kind = PrLayoutContentKind_Image;
-        content.image = orientedImage(loaded->image, loaded->orientation, drawing.oriented, &loaded->stored);
+        content.image = loaded->image;
+        content.upright = drawing.oriented;
         content.limit = drawing.limit;
         content.rendering = drawing.rendering;
     } else {
@@ -7877,6 +7872,8 @@ PrCssPresentation* prCssPresentationCreate(const PrCssPresentationDesc* desc) {
     r->fonts = prFontSetCreate(prTextFontSet(desc->font));
     PrLayoutTreeDesc treeDesc{.font = desc->font, .shaper = desc->shaper, .targetPixelRatio = 1};
     r->tree = prLayoutTreeCreate(&treeDesc);
+    prLayoutTreeSetTextures(r->tree, desc->textures);
+    r->textures = desc->textures;
     r->shaper = desc->shaper;
     for (uint32_t i = 0; i < desc->userAgentSheetCount; ++i) {
         const PrCssUserAgentSheet& sheet = desc->userAgentSheets[i];
@@ -8010,8 +8007,7 @@ void prCssPresentationDestroy(PrCssPresentation* PR_NULLABLE presentation) {
     for (uint32_t i = 0; i < r->images.count; ++i) {
         prRawStringReset(&r->images.data[i].url);
         r->images.data[i].waiting.reset();
-        prDrawImageRelease(r->images.data[i].image);
-        prDrawImageRelease(r->images.data[i].stored);
+        prTextureSourceRelease(r->images.data[i].image);
         prLayoutPainterRelease(r->images.data[i].vector);
     }
     r->images.reset();

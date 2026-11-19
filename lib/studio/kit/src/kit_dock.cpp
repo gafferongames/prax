@@ -6,6 +6,7 @@
 #include "pr/assert.h"
 #include "pr/hash.h"
 #include "pr/kit_button.h"
+#include "pr/kit_menu.h"
 #include "pr/kit_panel.h"
 #include "pr/kit_text.h"
 #include "pr/layout_query.h"
@@ -22,6 +23,9 @@ struct DockNode {
     RawArray<PrKitDockPanelId> tabs;   // Leaf: its panels, in the order of its tab strip
     PrKitDockNode parent;
     uint32_t active;                // a leaf's open tab
+    float scroll;                   // Leaf: px by which its strip's tabs are scrolled toward their start
+    PrKitDockPanelId revealed;      // Leaf: the open panel that the strip last scrolled into view, or zero
+    float revealedRoom;             // Leaf: the px of the strip's track when it did
     PrKitDockKind kind;
     PrKitDirection direction;       // a split's axis
     bool alive;
@@ -50,8 +54,11 @@ struct Dock {
     RawArray<DockNode> nodes;          // by PrKitDockNode; the first entry stands for none and is never alive
     RawArray<PrKitDockNode> spare;     // removed nodes, whose ids new nodes take
     RawArray<DockOp> staged;
-    RawArray<PrKitDockPane> panes;     // the open panels that the last build declared, in tree order
-    RawArray<PrLayoutNode> scratch;    // the build's nodes for the splits and strips that it is inside, innermost last
+    RawArray<PrKitDockPane> panes;       // the open panels that the last build declared, in tree order
+    RawArray<PrLayoutNode> scratch;      // the build's nodes for the splits and strips that it is inside, innermost
+                                         // last
+    RawArray<PrKitDockPanelId> previews; // the panels whose tabs are previews, at most one to a leaf
+    RawArray<PrKitDockPanelId> removed;  // the panels that the user closed, which the last build removed
     PrKitDockNode root;
     PrKitDockNode primary;
 };
@@ -245,7 +252,10 @@ PrKitDockNode makeNode(Dock& dock, PrKitDockKind kind) {
     node.weights.clear();
     node.tabs.clear();
     node.parent = kPrKitDockNodeNone;
-    node.active = false;
+    node.active = 0;
+    node.scroll = 0;
+    node.revealed = 0;
+    node.revealedRoom = 0;
     node.kind = kind;
     node.direction = PrKitDirection_Row;
     node.alive = true;
@@ -418,7 +428,34 @@ bool removePanel(Dock& dock, PrKitDockPanelId panel) {
     if (leaf == kPrKitDockNodeNone)
         return false;
     detachPanel(dock, panel, kPrKitDockNodeNone);
+    dock.previews.removeFirst(panel);
     return true;
+}
+
+// Returns the panel of `leaf` whose tab is a preview, or zero.
+PrKitDockPanelId leafPreview(const Dock& dock, PrKitDockNode leaf) {
+    for (uint32_t i = 0; i < dock.previews.count; ++i) {
+        if (findPanel(dock, dock.previews.data[i]) == leaf)
+            return dock.previews.data[i];
+    }
+    return 0;
+}
+
+PrKitDockPanelId addPreview(Dock& dock, PrKitDockNode leaf, PrKitDockPanelId panel) {
+    PR_ASSERT(panel != 0 && findPanel(dock, panel) == kPrKitDockNodeNone);
+    if (!isLeaf(dock, leaf))
+        return 0;
+    // The new preview takes the place of the leaf's preview, which leaves the dock.
+    PrKitDockPanelId replaced = leafPreview(dock, leaf);
+    uint32_t at = kArrayMissing;
+    if (replaced != 0) {
+        at = nodeAt(dock, leaf).tabs.find(replaced);
+        removeTab(dock, leaf, at);
+        dock.previews.removeFirst(replaced);
+    }
+    insertTab(dock, leaf, at, panel);
+    dock.previews.push(panel);
+    return replaced;
 }
 
 void moveToTab(Dock& dock, PrKitDockPanelId panel, PrKitDockNode leaf, uint32_t at) {
@@ -483,7 +520,8 @@ void moveToEdge(Dock& dock, PrKitDockPanelId panel, PrKitDockEdge edge) {
 void applyOp(Dock& dock, const DockOp& op) {
     switch (op.kind) {
         case DockOpKind_Remove:
-            removePanel(dock, op.panel);
+            if (removePanel(dock, op.panel))
+                dock.removed.push(op.panel);
             break;
         case DockOpKind_ToTab:
             moveToTab(dock, op.panel, op.leaf, op.index);
@@ -501,6 +539,12 @@ void applyOp(Dock& dock, const DockOp& op) {
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Views
+
+// The width in px of the strip's control that lists its tabs, which shows while they do not fit.
+constexpr float kListWidth = 24.0f;
+
+// The least width in px of the list of a strip's tabs.
+constexpr float kListMinWidth = 200.0f;
 
 // The fraction of a leaf's box, from each side toward its middle, in which a drop splits the leaf rather than joining
 // it.
@@ -525,6 +569,9 @@ enum : uint64_t {
     DockKey_Preview,
     DockKey_Mark,
     DockKey_Ghost,
+    DockKey_Track,
+    DockKey_List,
+    DockKey_ListItem,
 };
 typedef uint64_t DockKey;
 
@@ -545,6 +592,8 @@ struct DockTabFlex {
     void make(const PrKit&, PrLayoutFlexStyle& flex) const {
         flex.alignItems = PrLayoutAlignment_Center;
         flex.columnGap = prLayoutLengthPx(kPrKitSpace2);
+        // A tab keeps its title's width, and the strip scrolls the tabs that do not fit.
+        flex.shrink = 0;
     }
 };
 
@@ -598,6 +647,7 @@ struct DockBuild {
     PrKit* kit;
     Dock* dock;
     PrKitDockDescribeFn describe;
+    PrKitDockMenuFn PR_NULLABLE menu;
     void* PR_NULLABLE context;
     PrLayoutNode node;              // the dock's area, which its nodes are keyed under
     PrRect area;                    // the dock's box at the last layout
@@ -686,6 +736,30 @@ PrKitDockPanelId panelOf(const PrUiPayload* PR_NULLABLE payload) {
     return payload != nullptr && payload->kind == kPrKitDockDragKind ? payload->value : 0;
 }
 
+// Scrolls a leaf's strip by the round's wheel, and so that its open tab shows when it is new to the strip or the strip
+// changes width, within the tabs' `extent` and the track's `room`, both in px at the last layout. `open` is the open
+// tab's box at the last layout, relative to the tabs' start, and empty if it was not laid out.
+void scrollStrip(PrKit& kit, DockNode& node, PrLayoutNode track, float extent, float room, PrRect open) {
+    PrVec2 wheel{};
+    if (prUiWheel(kit.ui, track, &wheel))
+        node.scroll += wheel.x != 0 ? wheel.x : wheel.y;
+    PrKitDockPanelId panel = node.tabs.count != 0 ? node.tabs.data[node.active] : 0;
+    bool reveal = panel != node.revealed || room != node.revealedRoom;
+    if (reveal && room > 0 && open.right > open.left) {
+        // The open tab scrolls by the least that shows it.
+        if (open.left < node.scroll)
+            node.scroll = open.left;
+        else if (open.right > node.scroll + room)
+            node.scroll = open.right - room;
+        node.revealed = panel;
+        node.revealedRoom = room;
+    } else if (reveal) {
+        prUiRequestFrame(kit.ui);
+    }
+    float most = extent > room ? extent - room : 0;
+    node.scroll = node.scroll < 0 ? 0 : node.scroll > most ? most : node.scroll;
+}
+
 void buildStrip(DockBuild& b, PrLayoutNode column, PrKitDockNode leaf) {
     PrKit* kit = b.kit;
     PrUi* ui = kit->ui;
@@ -696,12 +770,23 @@ void buildStrip(DockBuild& b, PrLayoutNode column, PrKitDockNode leaf) {
     look.box.overflow = PrKitOverflow_Clip;
     look.box.place.height = prKitPx(kPrKitHeightSm);
     look.box.place.flex = PrKitFlex_Fixed;
-    PrLayoutNode strip = prKitPanel(kit, column, {}, look);
+    PrLayoutNode bar = prKitPanel(kit, column, {}, look);
+
+    // The tabs sit in a track that clips them, offset by the strip's scroll, and the wheel over the track scrolls them.
+    DockNode& node = b.dock->nodes.data[leaf];
+    uint32_t count = node.tabs.count;
+    PrKitBoxStyle trackStyle{
+        .direction = PrKitDirection_Row,
+        .overflow = PrKitOverflow_Clip,
+        .place = {.flex = PrKitFlex_Fill},
+    };
+    PrLayoutNode track = prKitBox(kit, bar, {.key = keyOf(b, DockKey_Track, leaf)}, trackStyle);
+    prUiSetFlags(ui, track, PrUiFlag_Wheel);
+    PrKitBoxStyle tabsStyle{.direction = PrKitDirection_Row, .place = {.flex = PrKitFlex_Fixed}};
+    PrLayoutNode strip = prKitBox(kit, track, {}, tabsStyle);
 
     // The tabs are created before any of them is styled, so that a click opens its tab before the strip shows which tab
     // is open.
-    DockNode& node = b.dock->nodes.data[leaf];
-    uint32_t count = node.tabs.count;
     uint32_t base = b.dock->scratch.count;
     for (uint32_t i = 0; i < count; ++i) {
         PrKitDockPanelId panel = node.tabs.data[i];
@@ -709,9 +794,29 @@ void buildStrip(DockBuild& b, PrLayoutNode column, PrKitDockNode leaf) {
         PrLayoutNode tab = prLayoutTreeFrameElement(b.kit->tree, strip, keyOf(b, DockKey_Tab, panel), 0);
         prUiSetFlags(ui, tab, PrUiFlag_Pressable);
         b.dock->scratch.push(tab);
-        if (prUiClicked(ui, tab, 0))
+        if (prUiClicked(ui, tab, 0)) {
             node.active = i;
+            // A double click keeps a preview.
+            if (prUiPressCount(ui, 0) >= 2)
+                b.dock->previews.removeFirst(panel);
+        }
     }
+    // The tabs' extent and the open tab's box, as the last layout placed them, measured from the first tab, scroll the
+    // tabs, which the margin of their row offsets.
+    PrRect room = boundsOf(*kit, track);
+    float extent = 0;
+    PrRect open{};
+    float start = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+        PrRect rect = boundsOf(*kit, b.dock->scratch.data[base + i]);
+        if (i == 0)
+            start = rect.left;
+        extent = rect.right - start > extent ? rect.right - start : extent;
+        if (i == node.active)
+            open = PrRect{rect.left - start, rect.top, rect.right - start, rect.bottom};
+    }
+    scrollStrip(*kit, node, track, extent, room.right - room.left, open);
+    prKitPlace(kit, strip, {.margin = {.left = -node.scroll}, .flex = PrKitFlex_Fixed});
     for (uint32_t i = 0; i < count; ++i) {
         PrKitDockPanelId panel = node.tabs.data[i];
         PrLayoutNode tab = b.dock->scratch.data[base + i];
@@ -719,20 +824,33 @@ void buildStrip(DockBuild& b, PrLayoutNode column, PrKitDockNode leaf) {
         bool active = i == node.active;
         bool hover = enabled && prUiIsHovered(ui, tab);
         const PrKitPalette& p = kit->theme.palette;
-        // The title is the tab's own text, set in its record's font and color.
+        PrKitDockTab info = b.describe(b.context, panel);
+        // A tab with unsaved changes is never a preview, so that opening another never replaces it.
+        if (info.dirty)
+            b.dock->previews.removeFirst(panel);
+        bool preview = b.dock->previews.find(panel) != kArrayMissing;
+        // The title is the tab's own text, set in its record's font and color, and in italics for a preview.
         KitColors fill{.background = active ? p.bg1 : hover ? p.bg3 : PrColor{0, 0, 0, 0}, .border = p.line1};
         KitInk ink{.color = active ? p.text1 : hover ? p.text2 : p.text3};
+        PrKitTextRole role = preview ? PrKitTextRole_BodyItalic : PrKitTextRole_BodySmall;
         prLayoutTreeFrameSetStyle(kit->tree, tab, kitStyle(*kit, DockTabBox{}, DockTabFlex{}, fill,
-            KitFont{.role = PrKitTextRole_BodySmall, .wrap = PrKitWrap_Nowrap}, ink));
+            KitFont{.role = role, .wrap = PrKitWrap_Nowrap}, ink));
         if (enabled && prUiIsPressed(ui, tab, 0))
             prUiDragStart(ui, tab, kDragThreshold, kPrKitDockDragKind, panel, 0);
 
-        PrKitDockTab info = b.describe(b.context, panel);
         prLayoutTreeFrameText(kit->tree, tab, 0, info.title);
         if (info.dirty) {
             PrKitTextStyle dirty{.role = PrKitTextRole_BodySmall, .tone = PrKitTone_Warning, .wrap = PrKitWrap_Nowrap};
             prKitLabel(kit, tab, {.text = "*"}, dirty);
         }
+        if (info.tooltip.size != 0)
+            prKitTooltip(kit, tab, {.text = info.tooltip});
+        if (b.menu != nullptr) {
+            PrLayoutNode menu = prKitContextMenu(kit, tab, {}, {});
+            if (menu != kPrLayoutNodeNone)
+                b.menu(b.context, panel, menu);
+        }
+
         PrKitButton close{.icon = PrStudioIconKind_Close};
         PrKitButtonStyle closeStyle{.variant = PrKitButtonVariant_Ghost, .size = PrKitControlSize_Xs};
         PrLayoutNode closer = prKitButton(kit, tab, close, closeStyle);
@@ -755,10 +873,36 @@ void buildStrip(DockBuild& b, PrLayoutNode column, PrKitDockNode leaf) {
     b.dock->scratch.resize(base);
 
     // A drop on the strip past its tabs appends.
-    prUiIsDropTarget(ui, strip, kPrKitDockDragKind);
-    PrKitDockPanelId appended = panelOf(prUiDropped(ui, strip));
+    prUiIsDropTarget(ui, track, kPrKitDockDragKind);
+    PrKitDockPanelId appended = panelOf(prUiDropped(ui, track));
     if (appended != 0)
         stage(b, DockOp{.panel = appended, .leaf = leaf, .index = kArrayMissing, .kind = DockOpKind_ToTab});
+
+    // While the tabs do not fit, a control at the strip's end lists them, and choosing one opens it.
+    if (extent <= room.right - room.left + 0.5f && node.scroll == 0)
+        return;
+    PrKitButton list{.key = keyOf(b, DockKey_List, leaf), .icon = PrStudioIconKind_ChevronDown};
+    PrKitButtonStyle listStyle{.variant = PrKitButtonVariant_Ghost, .size = PrKitControlSize_Xs};
+    PrLayoutNode lister = prKitButton(kit, bar, list, listStyle);
+    prKitPlace(kit, lister, {.width = prKitPx(kListWidth), .flex = PrKitFlex_Fixed, .align = PrKitAlign_Center});
+    if (prKitActivated(kit, lister))
+        prKitSetOpen(kit, lister, !prKitIsOpen(kit, lister));
+    // The list hangs from the control's right edge, into the strip.
+    PrLayoutNode popover =
+        prKitPopover(kit, lister, {}, {.offset = {kListWidth - kListMinWidth, 0}, .minWidth = kListMinWidth});
+    if (popover == kPrLayoutNodeNone)
+        return;
+    PrLayoutNode menu = prKitMenu(kit, popover, {}, {});
+    for (uint32_t i = 0; i < count; ++i) {
+        PrKitDockPanelId panel = node.tabs.data[i];
+        PrKitMenuItem item{
+            .key = keyOf(b, DockKey_ListItem, panel),
+            .text = b.describe(b.context, panel).title,
+            .checked = i == node.active,
+        };
+        if (prKitActivated(kit, prKitMenuItem(kit, menu, item, {})))
+            node.active = i;
+    }
 }
 
 void buildLeaf(DockBuild& b, PrLayoutNode parent, PrKitDockNode leaf) {
@@ -940,6 +1084,8 @@ void prKitDockDestroy(PrKitDock* PR_NULLABLE dock) {
     dock->staged.reset();
     dock->panes.reset();
     dock->scratch.reset();
+    dock->previews.reset();
+    dock->removed.reset();
     prMemoryFree(dock);
 }
 
@@ -1013,6 +1159,24 @@ bool prKitDockRemovePanel(PrKitDock* dock, PrKitDockPanelId panel) {
     return removePanel(*dock, panel);
 }
 
+PrKitDockPanelId prKitDockAddPreview(PrKitDock* dock, PrKitDockNode leaf, PrKitDockPanelId panel) {
+    return addPreview(*dock, leaf, panel);
+}
+
+bool prKitDockIsPreview(const PrKitDock* dock, PrKitDockPanelId panel) {
+    return panel != 0 && dock->previews.find(panel) != kArrayMissing;
+}
+
+void prKitDockKeep(PrKitDock* dock, PrKitDockPanelId panel) {
+    dock->previews.removeFirst(panel);
+}
+
+void prKitDockOpenPanel(PrKitDock* dock, PrKitDockPanelId panel) {
+    PrKitDockNode leaf = findPanel(*dock, panel);
+    if (leaf != kPrKitDockNodeNone)
+        nodeAt(*dock, leaf).active = nodeAt(*dock, leaf).tabs.find(panel);
+}
+
 void prKitDockMoveToTab(PrKitDock* dock, PrKitDockPanelId panel, PrKitDockNode leaf, uint32_t at) {
     moveToTab(*dock, panel, leaf, at);
 }
@@ -1035,6 +1199,11 @@ void prKitDockSplitSetWeights(PrKitDock* dock, PrKitDockNode split, const float*
     normalizeWeights(node);
 }
 
+void prKitDockClosePanel(PrKitDock* dock, PrKitDockPanelId panel) {
+    if (findPanel(*dock, panel) != kPrKitDockNodeNone)
+        dock->staged.push(DockOp{.panel = panel, .kind = DockOpKind_Remove});
+}
+
 void prKitDockLeafSetActiveTab(PrKitDock* dock, PrKitDockNode leaf, uint32_t index) {
     if (isLeaf(*dock, leaf) && index < nodeAt(*dock, leaf).tabs.count)
         nodeAt(*dock, leaf).active = index;
@@ -1045,6 +1214,7 @@ PrLayoutNode prKitDockBuild(PrKit* kit, PrLayoutNode parent, PrKitDockView view)
     PrKitDockDescribeFn describe = view.describe;
     void* context = view.context;
     // The staged rearrangements are applied in order. One whose panel or leaf an earlier one removed does nothing.
+    dock->removed.clear();
     for (uint32_t i = 0; i < dock->staged.count; ++i)
         applyOp(*dock, dock->staged.data[i]);
     dock->staged.clear();
@@ -1057,7 +1227,7 @@ PrLayoutNode prKitDockBuild(PrKit* kit, PrLayoutNode parent, PrKitDockView view)
 
     PrKitDockPanelId dragged = panelOf(prUiDragging(kit->ui));
     // The dock's nodes are keyed under its area.
-    DockBuild b{.kit = kit, .dock = dock, .describe = describe, .context = context, .node = area};
+    DockBuild b{.kit = kit, .dock = dock, .describe = describe, .menu = view.menu, .context = context, .node = area};
     b.area = boundsOf(*kit, area);
     b.dragging = dragged != 0;
     prUiPointer(kit->ui, nullptr, &b.pointer);
@@ -1074,4 +1244,13 @@ uint32_t prKitDockPaneCount(const PrKitDock* dock) {
 PrKitDockPane prKitDockPane(const PrKitDock* dock, uint32_t index) {
     PR_ASSERT(index < dock->panes.count);
     return dock->panes.data[index];
+}
+
+uint32_t prKitDockRemovedCount(const PrKitDock* dock) {
+    return dock->removed.count;
+}
+
+PrKitDockPanelId prKitDockRemoved(const PrKitDock* dock, uint32_t index) {
+    PR_ASSERT(index < dock->removed.count);
+    return dock->removed.data[index];
 }

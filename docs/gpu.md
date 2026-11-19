@@ -1,8 +1,8 @@
 # GPU
 
-`lib/gpu` is the interface that every Prax renderer is written against: `lib/draw`'s device backends, canvas, the
-examples and the tools. A renderer is written once, in C++ against `pr/gpu.h` and in Slang against `pr/gpu.slang`, and
-each backend runs it on one graphics API.
+`lib/gpu` is the interface that every Prax renderer is written against: `lib/draw`'s device backends, `lib/render`,
+canvas, the examples and the tools. A renderer is written once, in C++ against `pr/gpu.h` and in Slang against
+`pr/gpu.slang`, and each backend runs it on one graphics API.
 
 | backend | API | on by default |
 | --- | --- | --- |
@@ -34,6 +34,10 @@ a 3D renderer needs it.
   handle from any data that it can read, including another resource, and turns it into the resource with
   `prGpuGet<T>`. A resource that shaders write may have a second handle for writing (`prGpuBufferStorageHandle`,
   `prGpuTextureStorageHandle`), because Direct3D 12 writes through a view of its own.
+- **Slots serve every device.** A device without `PrGpuFeatureFlag_Bindless`, such as Direct3D 11 or WebGPU, reaches
+  resources only through slots: a few buffers and textures of each kind that the command buffer binds before a draw.
+  A shader source declares its slots with literal numbers. Every entry point of a source has every slot that the
+  source declares, and a draw binds them all, so entry points that should not share slots are separate sources.
 - **Root data** is push data, at most 128 bytes, and uniforms, at most 64 KiB, set on the command buffer before a draw
   or dispatch. Both are copied, and handles are `uint32_t` fields of either.
 - **Vertices** reach the vertex shader through the pipeline's vertex layout, which reads the pass's vertex buffers. A
@@ -52,12 +56,11 @@ a 3D renderer needs it.
   resources only through slots: a few buffers and textures of each kind that the command buffer binds before a draw.
   A shader source declares its slots with literal numbers. Every entry point of a source has every slot that the
   source declares, and a draw binds them all, so entry points that should not share slots are separate sources.
-- **Lifetimes need no thought.** A buffer, a texture and a pipeline are reference counted: each holder takes a
-  reference of its own (`prGpuTextureRetain`), and the release of the last destroys the resource. A graph holds what it
-  imports for the frame. So a library that holds a resource of its caller's needs no promise about when its caller is
-  done with it. A resource may be released
-  as soon as the work that uses it is recorded. The device keeps it until every command buffer that began before the
-  destruction is done.
+- **Lifetimes need no thought.** A buffer, a texture and a pipeline are reference counted: each holder takes a reference
+  of its own (`prGpuTextureRetain`), and the release of the last destroys the resource. A graph holds what it imports
+  for the frame, and lib/draw holds a texture of the host's while a frame draws it. So a library that holds a resource
+  of its caller's needs no promise about when its caller is done with it. A resource may be released as soon as the work
+  that uses it is recorded. The device keeps it until every command buffer that began before the destruction is done.
 - **One timeline.** Each submission returns a fence, and fences rise in the order of submission. A command buffer that
   records into the application's native one is submitted through the device too, so the application never signals anything.
 - **Uploads are unbounded and ordered.** `prGpuBufferUpload` and `prGpuTextureUpload` take any amount of
@@ -69,6 +72,7 @@ a 3D renderer needs it.
   every API lays out a cube map. An upload, a copy, a barrier and an attachment each name the levels and layers that
   they touch, and a view (`prGpuTextureCreateView`) is a texture of its own over some of them: one face of one level
   as a 2D texture to read back, or one level of every face as a cube to sample while a pass draws to the next level.
+  A view may also read the texture through its format's other sRGB form ([Format views](#format-views)).
 - **The stream always succeeds.** A command buffer allocates per-frame data from a stream of upload memory that is
   reclaimed once its work completes, and grows as recording needs it. Running out of memory loses the device, which
   hosts already handle.
@@ -137,12 +141,47 @@ puts one together. A swizzled format is of the family and the block of the forma
 | Direct3D 12 | always: the shader resource view's component mapping |
 | Direct3D 11, WebGPU, memory, Canvas 2D | never |
 
+## Format views
+
+A format's Srgb form and its plain form store the same bits, and differ only in whether a shader reads them through
+sRGB's transfer function. A view (`PrGpuTextureViewDesc::format`) reads a texture through either, so one texture serves
+a consumer that wants linear values, as a material's color does, and one that wants the values as stored, as lib/draw's
+encoded colors and a material's data do. A view's format is the texture's own or its other sRGB form
+(`prGpuFormatSrgb`, `prGpuFormatPlain`), with the same swizzle; any other is a caller's error.
+
+A texture that is viewed through its other form says so when it is created (`PrGpuTextureUsageFlag_SrgbViews`),
+because several APIs decide then whether a texture may be read as another format, and on some devices a texture that
+may be loses compression of its memory. `prGpuDeviceSupportsFormat` with the flag answers whether the device has both
+forms of a format. Every compressed family has both, and so do Rgba8 and Bgra8. R8 and Rg8 have Srgb forms (`R8Srgb`,
+`Rg8Srgb`) on Metal's Apple GPUs and on Vulkan devices that report them, and none on Direct3D or WebGPU.
+
+| backend | at creation | the view |
+| --- | --- | --- |
+| Metal and Metal 4 | nothing: a texture is read through its other sRGB form without `MTLTextureUsagePixelFormatView` | `newTextureViewWithPixelFormat:` |
+| Vulkan | `VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT`, with the two forms as the image's format list (`VkImageFormatListCreateInfo`), so a driver keeps what compression it can | an image view of the other form |
+| Direct3D 12 | the two forms as the resource's castable formats, which the enhanced barriers' resource creation takes | a shader resource view of the other form |
+| Direct3D 11 | the format family's typeless form | a shader resource view of the typed form |
+| WebGPU | the other form in `viewFormats`, which is the pair that WebGPU allows | `createView` with the other form |
+| memory | nothing | the same texels, read through the other form |
+| Canvas 2D | never: it has no shaders | — |
+
+**Levels of encoded color are made from linear values.** `prGpuCommandsGenerateMipmaps` filters a texture's values as
+stored (`PrGpuMipFilter_Stored`), or as color encoded with sRGB's transfer function (`PrGpuMipFilter_Srgb`), whatever
+form the texture is sampled through: each level is the level before decoded to linear values, averaged, and encoded
+again. A format of both forms whose texture has `PrGpuTextureUsageFlag_SrgbViews` renders its levels through its Srgb
+form, which the hardware decodes and encodes. Any other, such as half floats that hold scRGB, mirrored below
+zero and unclamped past one, is filtered by lib/gpu's own shader, which decodes and encodes scRGB itself, so
+encoded color of every format filters alike on every backend that renders to it.
+
 ## Texture records
 
 A texture's description also packs into 64 bits with no pointer (`PrGpuTextureRecord`): its layout, kind, format, extent
 and levels, to store ahead of the texture's bytes, in a file or in a table that says what every texture of a scene is
 before any is read. `prGpuTextureRecordBytes` gives the bytes of its levels in a layout that a file stores. `lib/gpu`
-knows nothing of image files.
+knows nothing of image files: `lib/texture` describes a source's bits before any is read, in the GPU format that its
+chain ends in ([texture.md](texture.md), `prTextureSourceDesc`), which fills a record, and `lib/ktx` says how many bytes
+from the start of a KTX 2.0 file give what its texture is (`prKtxInfoBytes`): its first 80 bytes and the parts before
+its levels' data that they place, so that a caller fetches no more of a texture than its header to know what it is.
 
 ## Shaders
 
@@ -155,7 +194,8 @@ refuses a pipeline of it, as a WebGPU device does.
 
 A device without bindless runs only the entry points that reach their resources through slots. A renderer that
 reaches resources by handle where it can compiles its source a second time for such devices, with a macro of its own
-(`DEFINES` of `pr_slang`) that turns its handles into slots, as `lib/draw`'s fragment renderer does.
+(`DEFINES` of `pr_slang`) that turns its handles into slots, as `lib/draw`'s fragment renderer and `lib/render`'s
+passes do.
 `PrGpuDeviceOptions::slotsOnly` creates such a device on a system that has bindless, on Metal, Metal 4 and Vulkan, so
 that a renderer's slot path runs and is tested on any of them. The device refuses a pipeline whose entry point reaches
 a resource by handle, as a device that lacks bindless does.
@@ -323,12 +363,30 @@ barriers itself, as `lib/draw` does. `lib/render` adds the passes of its views t
 `gpu_tests` runs every test on each backend that the build has and the system has a device for, with validation, and
 again on a device of slots only where the backend creates one. It uploads and copies blocks of every compressed format
 that a device has, samples them, and compares each texel with what the format's specification decodes. It tests each
-backend's embedding with the same shaders: recording into the application's command buffers and drawing in its
-passes. It runs under Metal's API validation, which it turns on with `MTL_DEBUG_LAYER` unless the environment sets it,
-and tests a window's swap chain on Vulkan and a view's on Metal. The renderers'
-tests compare their images with the `cpu` backend's ([draw.md](draw.md)), on the backend that `PR_BACKEND_GPU` chooses.
-On the web, `gpu_page_tests` runs the same tests in a page, on its WebGPU (`./dev.sh test wasm`), and any error of
-WebGPU's validation fails them. A page test waits for the device as a test does anywhere, because its program suspends
-while the page works (JSPI, `pr_page_tests`).
-`PR_D3D12_DEBUG=1` and `PR_VULKAN_DEBUG=1` turn on Direct3D 12's debug layer and Vulkan's validation layer for a device
-that is made without asking for validation, and write their errors to the standard error.
+backend's embedding with the same shaders: recording into the application's command buffers and drawing in its passes.
+It runs under Metal's API validation, which it turns on with `MTL_DEBUG_LAYER` unless the environment sets it, and tests
+a window's swap chain on Vulkan and a view's on Metal. The renderers' tests compare their images with the `cpu`
+backend's ([draw.md](draw.md)), on the backend that `PR_BACKEND_GPU` chooses. On the web, `gpu_page_tests` and
+`render_page_tests` run the same tests in a page, on its WebGPU (`./dev.sh test wasm`), and any error of WebGPU's
+validation fails them. A page test waits for the device as a test does anywhere, because its program suspends while the
+page works (JSPI, `pr_page_tests`). `PR_D3D12_DEBUG=1` and `PR_VULKAN_DEBUG=1` turn on Direct3D 12's debug layer and
+Vulkan's validation layer for a device that is made without asking for validation, and write their errors to the
+standard error.
+
+On macOS the Vulkan backend runs on KosmicKrisp, Mesa's Vulkan over Metal. Two failures are seen there. Their causes
+are theories, not findings: neither has been reduced to a case that shows whether the driver or the backend is at
+fault.
+
+- **A wait for a frame's work can never finish, with handles.** The theory is that the frame faults on the GPU and
+  KosmicKrisp reports success and drops the work. Runs of many models in one process have met it: the model viewer's
+  `--cycle`, `./dev.sh suite model --gpu vulkan`, and `model_corpus --gpu vulkan` over the four sample assets with
+  KTX textures. It is intermittent, and it is older than textures of blocks: it was first seen with RGBA8 textures
+  alone. A later search did not meet it once, in the whole suite and in some seventy runs of those four assets, alone
+  and six at a time, with and without the validation layer and Metal's, optimized and not, so nothing ties it to an
+  upload of blocks, to a leak, or to the number of models. A device of slots alone has not shown it. The backend waits
+  for a fence in slices and reads the timeline between them, so a loss that the driver reports only there ends the
+  wait, and a validating device writes the fence and what the timeline has reached once a wait passes ten seconds.
+  That line is the evidence to look for when it happens again: a timeline that stands still below a fence that was
+  submitted, with no loss, is the driver dropping accepted work.
+- **The device renders nothing under `MTL_SHADER_VALIDATION=1`.** Every texture reads back as zeros, so the tests that
+  compare pixels fail on Vulkan under that variable, and only there.

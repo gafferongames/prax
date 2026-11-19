@@ -9,12 +9,21 @@
 #include "pr/hash_index.h"
 #include "pr/layout_style.h"
 #include "pr/raw_array.h"
+#include "pr/texture_cache.h"
 
 #include "layout/src/layout_value.h"
 
 PR_ASSUME_NONNULL_BEGIN
 
 namespace pr_impl {
+
+// The textures that a tree's paints draw images from: its host's cache (prLayoutTreeSetTextures), and whether a paint
+// drew nothing of an image that had not arrived, so that the next paint records again.
+struct LayoutTextures {
+    PrTextureCache* PR_NULLABLE cache;
+    uint64_t generation;                // the cache's generation that the tree's recordings drew
+    bool pending;
+};
 
 // One interned list of background layers. Its layers' gradients point into `stops`, and their filter lists into
 // `filters`, which the entry owns.
@@ -98,18 +107,24 @@ void layoutBackgroundDrawGradient(const LayoutCompounds* PR_NULLABLE compounds, 
 void layoutBackgroundRound(LayoutBackgroundBoxes& boxes, const PrCornerRect& border, uint32_t used);
 
 // Records the background layer `layer`. It is sized and placed in the box that its origin names, and painted within the
-// box that its clip names, with its blend mode and operator. Returns true if anything was recorded.
-bool layoutBackgroundPaintLayer(const LayoutCompounds* compounds, const PrLayoutBackgroundLayer& layer,
-    const LayoutBackgroundBoxes& boxes, PrDrawList* list);
+// box that its clip names, with its blend mode and operator. An image is drawn from `textures`. Returns true if
+// anything was recorded.
+bool layoutBackgroundPaintLayer(LayoutTextures* PR_NULLABLE textures, const LayoutCompounds* compounds,
+    const PrLayoutBackgroundLayer& layer, const LayoutBackgroundBoxes& boxes, PrDrawList* list);
+
+// Writes the region of the texture that `image` is drawn from, and returns true, if its texture has arrived. An image
+// that has not arrived marks the paint pending. Without a cache, no image arrives.
+bool layoutTextureOf(LayoutTextures* PR_NULLABLE textures, const PrTextureSource* image, PrTextureRegion* out);
 
 // Copies the filter items of `image` into `filters` from `next`, points the image at the copy, and advances `next`.
 void layoutImageTakeFilters(PrLayoutBackgroundLayer& image, PrLayoutFilter* PR_NULLABLE filters, uint32_t* next);
 
 // Returns the source of the image of `layer` drawn at its concrete object size `size`, in pixels, filtered by its
 // filter list. The source covers the rectangle from the origin to `size`, or the image's own extent if it is unfiltered
-// and is scaled to `size`. A list that the source reads may be written to `drawn`, which the caller releases.
-PrDrawSource layoutImageSource(const LayoutCompounds* PR_NULLABLE compounds, const PrLayoutBackgroundLayer& layer,
-    PrVec2 size, PrDrawList* PR_NULLABLE* PR_NONNULL drawn);
+// and is scaled to `size`. A list that the source reads may be written to `drawn`, which the caller releases. An image
+// is drawn from `textures`, and one that has not arrived is a source that draws nothing.
+PrDrawSource layoutImageSource(LayoutTextures* PR_NULLABLE textures, const LayoutCompounds* PR_NULLABLE compounds,
+    const PrLayoutBackgroundLayer& layer, PrVec2 size, PrDrawList* PR_NULLABLE* PR_NONNULL drawn);
 
 // Returns true if one of `count` layers composites onto the layers below it otherwise than normally and source-over, so
 // that the background is an isolated group (compositing-1/#background-blend-mode).

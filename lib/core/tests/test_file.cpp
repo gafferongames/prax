@@ -207,6 +207,18 @@ TEST_CASE("a part appends to a path after one separator") {
     prTextBufferReset(&path);
 }
 
+TEST_CASE("a path's root is its leading separator, or on Windows a drive or the start of a UNC path") {
+    CHECK(prFilePathRootSize("") == 0);
+    CHECK(prFilePathRootSize("dir/notes.txt") == 0);
+    CHECK(prFilePathRootSize("/notes.txt") == 1);
+#if defined(_WIN32)
+    CHECK(prFilePathRootSize("\\notes.txt") == 1);
+    CHECK(prFilePathRootSize("C:\\dir") == 3);
+    CHECK(prFilePathRootSize("c:notes.txt") == 2);
+    CHECK(prFilePathRootSize("\\\\server\\share") == 2);
+#endif
+}
+
 TEST_CASE("a path is absolute if it has a root of its own") {
     CHECK_FALSE(prFilePathIsAbsolute(""));
     CHECK_FALSE(prFilePathIsAbsolute("notes.txt"));

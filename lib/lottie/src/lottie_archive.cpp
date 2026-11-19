@@ -64,7 +64,7 @@ void readAnimations(LottieArchive& a) {
         bytes.reserve(uint32_t(entry.size) + 1);
         PrJson* doc = prJsonCreate();
         if (prZipRead(zip, manifest, reinterpret_cast<uint8_t*>(bytes.data), size_t(entry.size)) ==
-                PrStatus_Ok && prJsonParse(doc, PrStringView{bytes.data, size_t(entry.size)}, nullptr)) {
+                PrStatus_Ok && prJsonParse(doc, PrStringView{bytes.data, size_t(entry.size)}, 0, nullptr)) {
             uint32_t list = prJsonMember(doc, 0, "animations");
             for (uint32_t i = prJsonFirst(doc, list); i != kPrJsonMissing; i = prJsonAfter(doc, list, i)) {
                 PrStringView id = prJsonString(doc, prJsonMember(doc, i, "id"));

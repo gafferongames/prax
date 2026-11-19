@@ -5,7 +5,6 @@
 #include "pr/draw_canvas.h"
 #include "pr/draw_cpu.h"
 #include "pr/draw_filter.h"
-#include "pr/draw_image.h"
 #include "pr/draw_list.h"
 #include "pr/float.h"
 #include "pr/font.h"
@@ -14,8 +13,10 @@
 #include "pr/min_max.h"
 #include "pr/path.h"
 #include "pr/string.h"
+#include "pr/texture.h"
 
 #include "tools/harness/harness_gpu.h"
+#include "tools/harness/harness_textures.h"
 
 #include "tools/harness/test.h"
 
@@ -139,7 +140,7 @@ void wheelStops(PrDrawColorStop (&out)[7]) {
 }
 
 // Returns an image of 4 by 4 texels: a checkerboard of opaque red and half-transparent blue.
-const PrDrawImage* checkerImage() {
+const PrTextureSource* checkerImage() {
     static uint8_t texels[4 * 4 * 4];
     for (uint32_t i = 0; i < 16; ++i) {
         bool red = ((i % 4) + (i / 4)) % 2 == 0;
@@ -149,12 +150,8 @@ const PrDrawImage* checkerImage() {
         t[2] = red ? 0 : 128;
         t[3] = red ? 255 : 128;
     }
-    PrDrawImageDesc desc{
-        PrPixelView{texels, 16, {4, 4}}, PrPixelFormat_Rgba8, PrDrawAlpha_Premultiplied,
-        PrColorSpace_Srgb,
-    };
-    const PrDrawImage* image = nullptr;
-    REQUIRE(prDrawImageCreate(&desc, &image) == PrStatus_Ok);
+    const PrTextureSource* image =
+        prTextureSourceCreateCopy(PrPixelView{texels, 16, {4, 4}}, PrPixelFormat_Rgba8, PrTextureAlpha_Premultiplied);
     return image;
 }
 
@@ -289,7 +286,9 @@ TEST_CASE("the canvas renderer paints each kind of gradient as the cpu renderer 
 
 TEST_CASE("the canvas renderer draws images, textures and lists as sources") {
     Renderers r;
-    const PrDrawImage* image = checkerImage();
+    const PrTextureSource* image = checkerImage();
+    // The image realizes on the device that both renderers render on.
+    PrTextureCache* textures = harnessTextureCacheCreate(r.device);
     PrGpuTextureDesc desc = prGpuTextureDesc2d(PrGpuFormat_Rgba8, PrUVec2{4, 4}, PrGpuTextureUsageFlag_Sampled);
     PrGpuTexture texture{};
     REQUIRE(prGpuTextureCreate(r.device, &desc, &texture) == PrStatus_Ok);
@@ -306,8 +305,9 @@ TEST_CASE("the canvas renderer draws images, textures and lists as sources") {
     }
     prGpuTextureWrite(r.device, texture, PrIVec2{0, 0}, PrPixelView{texels.data(), 16, {4, 4}});
     const PrDrawSource sources[3] = {
-        prDrawSourceImage(image, PrRect{0, 0, 4, 4}),
-        prDrawSourceTexture(prDrawGpuTexture(texture), PrUVec2{4, 4}, PrRect{0, 0, 4, 4}, PrDrawAlpha_Premultiplied),
+        harnessImageSource(textures, image, PrRect{0, 0, 4, 4}),
+        prDrawSourceTexture(PrTexture{.texture = texture, .alpha = PrTextureAlpha_Premultiplied}, PrUVec2{4, 4},
+            PrRect{0, 0, 4, 4}),
         prDrawSourceList(inner, PrRect{0, 0, 16, 16}),
     };
     const PrDrawSampling samplings[] = {PrDrawSampling_Nearest, PrDrawSampling_Linear};
@@ -329,7 +329,8 @@ TEST_CASE("the canvas renderer draws images, textures and lists as sources") {
     }
     prDrawListRelease(inner);
     prGpuTextureRelease(r.device, texture);
-    prDrawImageRelease(image);
+    prTextureCacheDestroy(textures);
+    prTextureSourceRelease(image);
 }
 
 TEST_CASE("the canvas renderer clips to rects and paths, nested") {

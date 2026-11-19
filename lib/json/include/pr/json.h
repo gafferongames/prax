@@ -4,6 +4,7 @@
 
 #include "pr/base.h"
 #include "pr/raw_string.h"
+#include "pr/status.h"
 #include "pr/string_view.h"
 
 PR_ASSUME_NONNULL_BEGIN
@@ -42,11 +43,19 @@ typedef uint8_t PrJsonKind;
 PrJson* prJsonCreate(void);
 void prJsonDestroy(PrJson* PR_NULLABLE document);
 
+// What a parse records beside the values.
+enum {
+    // The span of each value's text (prJsonSpan), for a tool that links values to their source, such as an editor. It
+    // costs 16 bytes a value, and limits the text to 4 GiB.
+    PrJsonParseFlag_Spans = 1u << 0,
+};
+typedef uint8_t PrJsonParseFlags;
+
 // Reads the JSON in `text` into the document, replacing what it held and keeping its storage. `text` is UTF-8 with an
 // optional byte order mark. An escaped lone surrogate reads as U+FFFD. Returns false if the text is not JSON or nests
-// deeper than kPrJsonMaxDepth, leaves the document empty, and writes to `*errorAt` the byte offset where reading
-// stopped.
-bool prJsonParse(PrJson* document, PrStringView text, size_t* PR_NULLABLE errorAt);
+// deeper than kPrJsonMaxDepth, or is longer than 4 GiB with PrJsonParseFlag_Spans. On failure, the document is empty
+// and `*errorAt` is the byte offset where reading stopped.
+bool prJsonParse(PrJson* document, PrStringView text, PrJsonParseFlags flags, size_t* PR_NULLABLE errorAt);
 
 // Returns the number of values in the document, at any depth. An empty document has none.
 uint32_t prJsonValueCount(const PrJson* document);
@@ -81,6 +90,42 @@ PrJsonValueIndex prJsonElement(const PrJson* document, PrJsonValueIndex array, u
 //     for (PrJsonValueIndex i = prJsonFirst(d, a); i != kPrJsonMissing; i = prJsonAfter(d, a, i))
 PrJsonValueIndex prJsonFirst(const PrJson* document, PrJsonValueIndex container);
 PrJsonValueIndex prJsonAfter(const PrJson* document, PrJsonValueIndex container, PrJsonValueIndex index);
+
+// Finds the value that the JSON Pointer `pointer` names (RFC 6901), from the root, and writes its index to `*out`: the
+// empty pointer names the root, and each `/` and the reference token after it, with `~1` for `/` and `~0` for `~`,
+// names a member of an object or an element of an array by its decimal index. Returns Syntax for a pointer that is not
+// empty and does not begin with `/`, for a `~` that no `0` or `1` follows, and for an array index with a leading zero,
+// and NotFound for a pointer that names no value, as `-`, the element past the end, does. On failure, `*out` is
+// kPrJsonMissing.
+PrStatus prJsonValueFromPointer(const PrJson* document, PrStringView pointer, PrJsonValueIndex* out);
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Source
+
+// The bytes of the text that a value was read from, as offsets into the parsed text, which counts a byte order mark. A
+// string's span includes its quotes, and an array's or object's includes its brackets. A member's key is a value of its
+// own, and the member's value has a span of its own after it.
+typedef struct PrJsonSpan {
+    uint32_t begin;
+    uint32_t end;               // one past the last byte
+} PrJsonSpan;
+
+// Returns true if the last parse recorded spans (PrJsonParseFlag_Spans).
+bool prJsonHasSpans(const PrJson* document);
+
+// Returns the span of the value at `index`, which must be a value of a document that has spans.
+PrJsonSpan prJsonSpan(const PrJson* document, PrJsonValueIndex index);
+
+// Returns the innermost value whose span holds the byte at `offset`, or kPrJsonMissing if no value's span holds it, as
+// for the space around the root. A key is a value, so an offset in a member's key returns the key. The document must
+// have spans. The lookup costs a binary search over the values and a step up for each level of nesting.
+PrJsonValueIndex prJsonValueFromOffset(const PrJson* document, uint32_t offset);
+
+// Returns the JSON Pointer (RFC 6901) that names the value at `index`, which prJsonValueFromPointer reads back to it
+// unless a later member of an object has the same name. The pointer of a member's key names the member's value. The
+// root's pointer is empty. The document must have spans. The cost is one step for each level of nesting. The caller
+// releases the pointer with prRawStringReset.
+PrRawString prJsonPointer(const PrJson* document, PrJsonValueIndex index);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Writers

@@ -134,7 +134,7 @@ uint32_t clampCount(double value) {
 struct Document {
     PrJson* d = prJsonCreate();
     ~Document() { prJsonDestroy(d); }
-    bool parse(PrStringView text) { return prJsonParse(d, text, nullptr); }
+    bool parse(PrStringView text) { return prJsonParse(d, text, 0, nullptr); }
     String string(PrJsonValueIndex object, const char* key) const {
         return prJsonString(d, prJsonMember(d, object, key));
     }

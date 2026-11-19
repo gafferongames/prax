@@ -77,6 +77,18 @@ struct HtmlIdleRequest {
     bool endless;       // true if an idle callback made the request, which a loop of callbacks can repeat forever
 };
 
+// An image whose decode the window waits for: its element, which it holds (domNodeHold), the generation and the URL of
+// the request that it decodes and whether that request was available, a decode() promise, if one waits for it, and the
+// page whose load event and whose event of the element's request wait for it, if they do.
+struct HtmlImageDecode {
+    PrDomElement* element;
+    uint32_t generation;
+    PrRawString url;
+    bool available;
+    PrHtmlPromise promise;              // a null settle for none
+    PrHtmlPage* PR_NULLABLE events;
+};
+
 // The Window of a browsing context (html/#the-window-object). It is reference counted (DomCountedTarget): its page
 // holds a reference while the window is its page's, and the script objects of the window and of its members hold
 // references too, so that a window that its page has closed outlives the objects that name it.
@@ -120,6 +132,12 @@ struct HtmlWindow : DomCountedTarget {
     // The canvases whose bitmaps changed since they were last shown, which the next rendering update shows. Each holds
     // its element (domNodeHold).
     RawArray<PrDomElement*> canvases;
+
+    // The cache that the images of its document realize in, or null (PrHtmlHost::textures), and the images whose
+    // realizations or decode() promises the next rendering updates settle (htmlImagesShow).
+    PrTextureCache* PR_NULLABLE textures;
+    RawArray<HtmlImageDecode> imageDecodes;
+    bool decodesQueued;                       // a task that settles `imageDecodes` is queued (htmlImagesQueue)
     RawArray<HtmlTimer> timers;               // in the order in which they were set
     RawArray<HtmlTask> tasks;                 // in the order in which they were queued
     uint32_t taskHead;                        // the first task that has not run

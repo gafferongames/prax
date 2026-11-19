@@ -256,6 +256,12 @@ enum { kPrAppPointerMouse = 1 };
 // its barrel button is the secondary button, 1.
 enum { kPrAppPointerButtonEraser = 5 };
 
+// The button numbers of a mouse's back and forward buttons, its fourth and fifth (pointerevents3/#the-button-property).
+enum {
+    kPrAppPointerButtonBack = 3,
+    kPrAppPointerButtonForward = 4,
+};
+
 // How a window constrains the mouse pointer (prAppWindowSetPointerMode). A window confines or locks the pointer only
 // while it is active. When the window stops being active, the mode returns to Free.
 enum {

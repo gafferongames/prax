@@ -8,6 +8,7 @@
 #include "pr/draw_fragment.h"
 #include "pr/draw_imgui.h"
 #include "pr/draw_triangles.h"
+#include "pr/gpu_memory.h"
 #include "pr/image_select.h"
 #include "pr/svg_glyph.h"
 
@@ -25,34 +26,52 @@ namespace {
 PrCompressCodecSet* compressCodec;
 PrImageCodecSet* imageCodec;
 
+// The memory device that the renderers in memory share, and the caches of it and of the GPU device.
+PrGpuDevice* memoryDevice;
+PrTextureCache* memoryTextures;
+PrTextureCache* deviceTextures;
+
 // One decoder for each renderer, because a decoder is used by one thread at a time and panes render renderers
 // independently.
 std::vector<PrDrawGlyphDecoder*> glyphDecoders;
 
-// Returns a decoder of SVG and bitmap glyphs for one renderer.
-PrDrawGlyphDecoder* glyphDecoder() {
-    glyphDecoders.push_back(prSvgGlyphDecoderCreate(imageCodec, compressCodec));
+// Returns a decoder of SVG and bitmap glyphs for one renderer, whose images realize in `textures`.
+PrDrawGlyphDecoder* glyphDecoder(PrTextureCache* textures) {
+    glyphDecoders.push_back(prSvgGlyphDecoderCreate(imageCodec, compressCodec, textures));
     return glyphDecoders.back();
+}
+
+// Returns a cache on `device` that realizes in the call that asks, as lib/draw's colors are, and packs as `pack` says.
+PrTextureCache* cacheOn(PrGpuDevice* device, PrTextureCachePack pack) {
+    PrTextureCacheDesc desc = prTextureCacheDescDefault(device);
+    desc.values = PrTextureCacheValues_Encoded;
+    desc.pack = pack;
+    return prTextureCacheCreate(&desc);
 }
 
 } // namespace
 
-std::vector<RendererConfig> createConfigs(PrGpuDevice* PR_NULLABLE device) {
+std::vector<RendererConfig> createConfigs(PrGpuDevice* PR_NULLABLE device, PrTextureCachePack pack) {
     compressCodec = prCompressCodecSetCreateDefault();
     imageCodec = prImageCodecSetCreateDefault(compressCodec);
+    memoryDevice = prGpuMemoryCreate(nullptr);
+    memoryTextures = cacheOn(memoryDevice, pack);
+    deviceTextures = device != nullptr ? cacheOn(device, pack) : nullptr;
     PrDrawCpuOptions cpu = prDrawCpuOptionsDefault();
-    cpu.glyphDecoder = glyphDecoder();
+    cpu.glyphDecoder = glyphDecoder(memoryTextures);
+    cpu.device = memoryDevice;
     PrDrawBlend2dOptions blend2d = prDrawBlend2dOptionsDefault();
-    blend2d.glyphDecoder = glyphDecoder();
+    blend2d.glyphDecoder = glyphDecoder(memoryTextures);
+    blend2d.device = memoryDevice;
     // Families in the order that the viewer's number keys choose them.
-    std::vector<RendererConfig> configs{RendererConfig{"cpu", prDrawCpuCreate(&cpu), "cpu", 0}};
+    std::vector<RendererConfig> configs{RendererConfig{"cpu", prDrawCpuCreate(&cpu), "cpu", 0, memoryTextures}};
     uint32_t family = 1;
     if (device != nullptr) {
         PrDrawTrianglesOptions triangles = prDrawTrianglesOptionsDefault();
-        triangles.glyphDecoder = glyphDecoder();
+        triangles.glyphDecoder = glyphDecoder(deviceTextures);
         PrDrawRenderer* trianglesRenderer = nullptr;
         if (prDrawTrianglesCreate(device, &triangles, &trianglesRenderer) == PrStatus_Ok)
-            configs.push_back(RendererConfig{"triangles", trianglesRenderer, "triangles", family++});
+            configs.push_back(RendererConfig{"triangles", trianglesRenderer, "triangles", family++, deviceTextures});
         // Fragment with each way of preparing paths, the default first.
         struct FragmentVariant {
             const char* name;
@@ -70,11 +89,14 @@ std::vector<RendererConfig> createConfigs(PrGpuDevice* PR_NULLABLE device) {
                 if ((variant.paths == standard) != first)
                     continue;
                 PrDrawFragmentOptions fragment = prDrawFragmentOptionsDefault();
-                fragment.glyphDecoder = glyphDecoder();
+                fragment.glyphDecoder = glyphDecoder(deviceTextures);
                 fragment.paths = variant.paths;
                 PrDrawRenderer* fragmentRenderer = nullptr;
                 if (prDrawFragmentCreate(device, &fragment, &fragmentRenderer) == PrStatus_Ok) {
-                    configs.push_back(RendererConfig{variant.name, fragmentRenderer, "fragment", family});
+                    configs.push_back(RendererConfig{
+                        variant.name, fragmentRenderer, "fragment", family,
+                        deviceTextures,
+                    });
                     anyFragment = true;
                 }
             }
@@ -82,18 +104,19 @@ std::vector<RendererConfig> createConfigs(PrGpuDevice* PR_NULLABLE device) {
         if (anyFragment)
             ++family;
     }
-    configs.push_back(RendererConfig{"blend2d", prDrawBlend2dCreate(&blend2d), "blend2d", family++});
+    configs.push_back(RendererConfig{"blend2d", prDrawBlend2dCreate(&blend2d), "blend2d", family++, memoryTextures});
 #if defined(__APPLE__)
     PrDrawCoreGraphicsOptions coreGraphics = prDrawCoreGraphicsOptionsDefault();
-    coreGraphics.glyphDecoder = glyphDecoder();
+    coreGraphics.glyphDecoder = glyphDecoder(memoryTextures);
+    coreGraphics.device = memoryDevice;
     configs.push_back(RendererConfig{
         "coregraphics", prDrawCoreGraphicsCreate(&coreGraphics), "coregraphics",
-        family++,
+        family++, memoryTextures,
     });
 #endif
     PrDrawRenderer* imgui = nullptr;
     if (device != nullptr && prDrawImGuiCreate(device, &imgui))
-        configs.push_back(RendererConfig{"imgui", imgui, "imgui", family++});
+        configs.push_back(RendererConfig{"imgui", imgui, "imgui", family++, deviceTextures});
     return configs;
 }
 
@@ -104,6 +127,12 @@ void destroyConfigs(std::vector<RendererConfig>& configs) {
     for (PrDrawGlyphDecoder* decoder : glyphDecoders)
         prDrawGlyphDecoderDestroy(decoder);
     glyphDecoders.clear();
+    prTextureCacheDestroy(memoryTextures);
+    prTextureCacheDestroy(deviceTextures);
+    prGpuDeviceDestroy(memoryDevice);
+    memoryTextures = nullptr;
+    deviceTextures = nullptr;
+    memoryDevice = nullptr;
     prImageCodecSetDestroy(imageCodec);
     prCompressCodecSetDestroy(compressCodec);
     imageCodec = nullptr;

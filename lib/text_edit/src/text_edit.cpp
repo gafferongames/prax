@@ -37,6 +37,7 @@ struct TextEditBuffer {
     uint32_t gapStart;
     uint32_t gapEnd;
     uint64_t version;
+    uint64_t editVersion;   // increased by every transaction that changes the text, except a load
 
     // The line starts, by line outside the gap. Line zero always starts at zero.
     uint32_t* PR_NULLABLE lines;
@@ -612,6 +613,8 @@ bool applyTransaction(TextEditBuffer* b, TextEditView* PR_NULLABLE view, const P
     if (typing && origin == PrTextEditOrigin_Local)
         view->hasTyping = false;
     ++b->version;
+    if (origin != PrTextEditOrigin_Load)
+        ++b->editVersion;
 
     for (uint32_t i = 0; i < b->anchors.count; ++i) {
         AnchorSlot& a = b->anchors.data[i];
@@ -743,6 +746,10 @@ uint32_t prTextEditBufferSize(const PrTextEditBuffer* buffer) {
 
 uint64_t prTextEditBufferVersion(const PrTextEditBuffer* buffer) {
     return buffer->version;
+}
+
+uint64_t prTextEditBufferEditVersion(const PrTextEditBuffer* buffer) {
+    return buffer->editVersion;
 }
 
 PrStringView prTextEditBufferChunk(const PrTextEditBuffer* buffer, uint32_t offset) {

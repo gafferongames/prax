@@ -5,7 +5,6 @@
 #include "pr/ascii.h"
 #include "pr/assert.h"
 #include "pr/color_space.h"
-#include "pr/draw_image.h"
 #include "pr/draw_list.h"
 #include "pr/float.h"
 #include "pr/hash.h"
@@ -16,6 +15,7 @@
 #include "pr/kit_text.h"
 #include "pr/mem.h"
 #include "pr/raw_array.h"
+#include "pr/texture.h"
 
 #include "studio/kit/src/kit.h"
 
@@ -540,25 +540,30 @@ void drawSampled(PrKit& kit, PrDrawList* list, PrVec2 extent, Sampled plane, PrC
         float up = 1 - (float(y) + 0.5f) / kSamples;
         for (uint32_t x = 0; x < kSamples; ++x) {
             PrColor color = shown(plane.at((float(x) + 0.5f) / kSamples, up), 1, gamut);
+            // A source of floats holds linear values, which the colors' extended sRGB decodes to.
             PrFloat16* texel = pixels.data + (y * kSamples + x) * 4;
-            texel[0] = prFloat16FromFloat(color.r);
-            texel[1] = prFloat16FromFloat(color.g);
-            texel[2] = prFloat16FromFloat(color.b);
+            const float encoded[3] = {color.r, color.g, color.b};
+            for (uint32_t k = 0; k < 3; ++k) {
+                float linear = prColorTransferDecode(PrColorTransfer_Srgb, prF32Abs(encoded[k]));
+                texel[k] = prFloat16FromFloat(encoded[k] < 0 ? -linear : linear);
+            }
             texel[3] = prFloat16FromFloat(1);
         }
     }
-    PrDrawImageDesc desc{
+    const PrTextureSource* image = prTextureSourceCreateCopy(
         PrPixelView{reinterpret_cast<const uint8_t*>(pixels.data), kSamples * 8, {kSamples, kSamples}},
-        PrPixelFormat_RgbaF16, PrDrawAlpha_Straight, PrColorSpace_Srgb,
-    };
-    const PrDrawImage* image = nullptr;
+        PrPixelFormat_RgbaF16, PrTextureAlpha_Straight);
     PrRect rect{0, 0, extent.x, extent.y};
-    if (prDrawImageCreate(&desc, &image) == PrStatus_Ok) {
-        PrDrawBrush brush = prDrawBrushImage(prDrawSourceImage(image, PrRect{0, 0, float(kSamples), float(kSamples)}),
-            rect, PrDrawSampling_Linear);
+    // The plane's drawing is kept, so it waits for the image's texture, and holds the image while it draws its region.
+    PrTextureRegion region{};
+    if (kit.textures != nullptr && prTextureCacheWait(kit.textures, image, 0, &region) == PrTextureCacheState_Ready) {
+        PrDrawBrush brush =
+            prDrawBrushImage(prDrawSourceRegion(&region, PrRect{0, 0, float(kSamples), float(kSamples)}),
+                rect, PrDrawSampling_Linear);
         prDrawListRect(list, rect, {.brush = &brush});
-        prDrawImageRelease(image);
+        prDrawListHoldSource(list, image);
     }
+    prTextureSourceRelease(image);
     pixels.reset();
     // An edge is where each column, walked up, first leaves a gamut.
     auto edge = [&](PrColorSpace space, const PrDrawStroke& stroke) {

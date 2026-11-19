@@ -1,9 +1,10 @@
-// Points, rectangles and transforms in two dimensions.
+// Rectangles, boxes, spheres and transforms, in the plane and in space.
 
 #include "pr/geom.h"
 
 #include "pr/assert.h"
 #include "pr/float.h"
+#include "pr/mem.h"
 #include "pr/vec.h"
 
 namespace pr_impl {
@@ -741,6 +742,113 @@ bool prAffine2FromMatrix4(const PrMatrix4* matrix, PrAffine2* out) {
         return false;
     *out = PrAffine2{m[0][0], m[1][0], m[0][1], m[1][1], m[0][3], m[1][3]};
     return true;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Boxes of space
+
+PrBox3 prBox3Include(PrBox3 box, PrVec3 point) {
+    return PrBox3{
+        {prF32Min(box.min.x, point.x), prF32Min(box.min.y, point.y), prF32Min(box.min.z, point.z)},
+        {prF32Max(box.max.x, point.x), prF32Max(box.max.y, point.y), prF32Max(box.max.z, point.z)},
+    };
+}
+
+PrBox3 prBox3Union(PrBox3 a, PrBox3 b) {
+    return PrBox3{
+        {prF32Min(a.min.x, b.min.x), prF32Min(a.min.y, b.min.y), prF32Min(a.min.z, b.min.z)},
+        {prF32Max(a.max.x, b.max.x), prF32Max(a.max.y, b.max.y), prF32Max(a.max.z, b.max.z)},
+    };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Cameras
+
+PrMatrix4 prMatrix4LookAt(PrVec3 eye, PrVec3 target) {
+    PrVec3 forward = prVec3Normalize(target - eye);
+    PrVec3 side = prVec3Cross(forward, PrVec3{0, 1, 0});
+    if (prVec3Dot(side, side) < 1e-10f)
+        side = prVec3Cross(forward, PrVec3{1, 0, 0});
+    PrVec3 right = prVec3Normalize(side);
+    PrVec3 up = prVec3Cross(right, forward);
+    return PrMatrix4{
+        {
+            {right.x, right.y, right.z, -prVec3Dot(right, eye)},
+            {up.x, up.y, up.z, -prVec3Dot(up, eye)},
+            {-forward.x, -forward.y, -forward.z, prVec3Dot(forward, eye)},
+            {0, 0, 0, 1},
+        },
+    };
+}
+
+PrMatrix4 prMatrix4PerspectiveProjection(float verticalFov, float aspect, float nearDistance) {
+    float f = 1 / prF32Tan(verticalFov * 0.5f);
+    return PrMatrix4{{{f / aspect, 0, 0, 0}, {0, f, 0, 0}, {0, 0, 0, nearDistance}, {0, 0, -1, 0}}};
+}
+
+PrMatrix4 prMatrix4OrthographicProjection(PrVec2 halfExtents, float nearDistance, float farDistance) {
+    float range = farDistance - nearDistance;
+    return PrMatrix4{
+        {
+            {1 / halfExtents.x, 0, 0, 0},
+            {0, 1 / halfExtents.y, 0, 0},
+            {0, 0, 1 / range, farDistance / range},
+            {0, 0, 0, 1},
+        },
+    };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Affine transforms of space
+
+PrAffine3 prAffine3Identity(void) {
+    return PrAffine3{{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}}};
+}
+
+PrAffine3 prAffine3FromMatrix4(const PrMatrix4* matrix) {
+    PrAffine3 out;
+    prMemCopy(out.m, matrix->m, sizeof(out.m));
+    return out;
+}
+
+PrMatrix4 prMatrix4FromAffine3(const PrAffine3* transform) {
+    PrMatrix4 out = prMatrix4Identity();
+    prMemCopy(out.m, transform->m, sizeof(transform->m));
+    return out;
+}
+
+PrVec3 prAffine3MapPoint(const PrAffine3* transform, PrVec3 point) {
+    const float (*m)[4] = transform->m;
+    return PrVec3{
+        m[0][0] * point.x + m[0][1] * point.y + m[0][2] * point.z + m[0][3],
+        m[1][0] * point.x + m[1][1] * point.y + m[1][2] * point.z + m[1][3],
+        m[2][0] * point.x + m[2][1] * point.y + m[2][2] * point.z + m[2][3],
+    };
+}
+
+// The square of the factor is the largest eigenvalue of the transform's linear part times its transpose, which is
+// symmetric, by the closed form for a matrix of three rows.
+float prAffine3MaxScale(const PrAffine3* transform) {
+    const float (*m)[4] = transform->m;
+    float a[3][3];
+    for (uint32_t i = 0; i < 3; ++i) {
+        for (uint32_t j = 0; j < 3; ++j)
+            a[i][j] = m[0][i] * m[0][j] + m[1][i] * m[1][j] + m[2][i] * m[2][j];
+    }
+    float offDiagonal = a[0][1] * a[0][1] + a[0][2] * a[0][2] + a[1][2] * a[1][2];
+    float largest = prF32Max(a[0][0], prF32Max(a[1][1], a[2][2]));
+    if (offDiagonal > 0) {
+        float mean = (a[0][0] + a[1][1] + a[2][2]) / 3;
+        float d0 = a[0][0] - mean;
+        float d1 = a[1][1] - mean;
+        float d2 = a[2][2] - mean;
+        float spread = prF32Sqrt((d0 * d0 + d1 * d1 + d2 * d2 + 2 * offDiagonal) / 6);
+        float determinant = d0 * (d1 * d2 - a[1][2] * a[1][2]) - a[0][1] * (a[0][1] * d2 - a[1][2] * a[0][2]) +
+            a[0][2] * (a[0][1] * a[1][2] - d1 * a[0][2]);
+        float cosine = prF32Clamp(determinant / (2 * spread * spread * spread), -1, 1);
+        largest = mean + 2 * spread * prF32Cos(prF32Acos(cosine) / 3);
+    }
+    return prF32Sqrt(prF32Max(largest, 0));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

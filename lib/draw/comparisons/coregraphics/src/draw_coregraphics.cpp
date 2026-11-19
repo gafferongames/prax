@@ -240,57 +240,46 @@ void setFillColor(Renderer& r, PrColor color) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Images
 
-void releaseImageData(void* PR_NULLABLE info, const void*, size_t) {
-    prDrawImageRelease(static_cast<const PrDrawImage*>(info));
+void releaseImageData(void* PR_NULLABLE, const void* data, size_t) {
+    prMemoryFree(const_cast<void*>(data));
 }
 
-// Returns a Quartz image over the image's pixels, which holds a reference to the image. It is created once and kept for
-// as long as renders use it.
-CGImageRef imageOf(CgBackend* cg, const PrDrawImage* image) {
-    uint64_t id = prDrawImageId(image);
+// Returns a Quartz image over pixels read from a Texture source's texture, premultiplied, which it owns. It is created
+// once and kept for as long as renders use it, as a texture that renders draw does not change while they draw it.
+// Returns null for a texture that the device does not hold in memory.
+CGImageRef PR_NULLABLE imageOf(CgBackend* cg, const PrDrawSource& source) {
+    uint64_t id = source.texture.id;
     uint32_t found = cg->imageIndex.find(id, [&](uint32_t i) { return cg->images.data[i].id; });
     if (found != kHashMissing) {
         cg->images.data[found].lastUsed = cg->render;
         return cg->images.data[found].image;
     }
-    uint32_t width = prDrawImageExtent(image).x;
-    uint32_t height = prDrawImageExtent(image).y;
-    const PrPixelView pixels = prDrawImagePixels(image);
-    size_t stride = pixels.stride;
-    prDrawImageRetain(image);
-    CGDataProviderRef provider = CGDataProviderCreateWithData(
-        const_cast<PrDrawImage*>(image), pixels.data, stride * height, releaseImageData);
-    PrDrawAlpha alpha = prDrawImageAlpha(image);
-    CGImageAlphaInfo info = kCGImageAlphaPremultipliedLast;
-    if (alpha == PrDrawAlpha_Opaque)
-        info = kCGImageAlphaNoneSkipLast;
-    else if (alpha == PrDrawAlpha_Straight)
-        info = kCGImageAlphaLast;
+    PrUVec2 extent = source.extent;
+    uint32_t width = extent.x;
+    uint32_t height = extent.y;
+    PrGpuFormat stored = prGpuTextureDesc(cg->device, source.texture).format;
+    bool wide = prGpuFormatPlain(stored) == PrGpuFormat_Rgba16F;
+    PrPixelFormat format = wide ? PrPixelFormat_RgbaF16 : PrPixelFormat_Rgba8;
+    size_t stride = size_t(width) * prPixelFormatSize(format);
+    uint8_t* pixels = static_cast<uint8_t*>(prMemoryAlloc(stride * height + 1));
     CGImageRef made = nullptr;
-    switch (prDrawImageFormat(image)) {
-        case PrPixelFormat_Rgba8:
-            made = CGImageCreate(width, height, 8, 32, stride, cg->srgb,
-                CGBitmapInfo(info) | kCGBitmapByteOrder32Big, provider, nullptr, false, kCGRenderingIntentDefault);
-            break;
-        case PrPixelFormat_Bgra8: {
-            CGImageAlphaInfo first = kCGImageAlphaPremultipliedFirst;
-            if (alpha == PrDrawAlpha_Opaque)
-                first = kCGImageAlphaNoneSkipFirst;
-            else if (alpha == PrDrawAlpha_Straight)
-                first = kCGImageAlphaFirst;
-            made = CGImageCreate(width, height, 8, 32, stride, cg->srgb,
-                CGBitmapInfo(first) | kCGBitmapByteOrder32Little, provider, nullptr, false, kCGRenderingIntentDefault);
-            break;
-        }
-        case PrPixelFormat_RgbaF16:
+    PrDrawSource whole = source;
+    whole.rect = PrRect{0, 0, float(width), float(height)};
+    if (drawMemoryReadSource(cg->device, whole, format, PrPixels{pixels, stride, extent})) {
+        CGDataProviderRef provider = CGDataProviderCreateWithData(nullptr, pixels, stride * height, releaseImageData);
+        bool opaque = source.alpha == PrTextureAlpha_None;
+        CGImageAlphaInfo info = opaque ? kCGImageAlphaNoneSkipLast : kCGImageAlphaPremultipliedLast;
+        if (wide)
             made = CGImageCreate(width, height, 16, 64, stride, cg->extended,
                 CGBitmapInfo(info) | kCGBitmapByteOrder16Little | kCGBitmapFloatComponents,
                 provider, nullptr, false, kCGRenderingIntentDefault);
-            break;
-        default:
-            break;
+        else
+            made = CGImageCreate(width, height, 8, 32, stride, cg->srgb,
+                CGBitmapInfo(info) | kCGBitmapByteOrder32Big, provider, nullptr, false, kCGRenderingIntentDefault);
+        CGDataProviderRelease(provider);
+    } else {
+        prMemoryFree(pixels);
     }
-    CGDataProviderRelease(provider);
     cg->imageIndex.insert(id, cg->images.count);
     cg->images.push(CachedImage{id, made, cg->render});
     return made;
@@ -540,9 +529,10 @@ void paintBrush(Renderer& r, const PrDrawBrush* brush, PrColor color, PrRect bou
     switch (brush->kind) {
         case PrDrawBrushKind_Image: {
             const PrDrawSource& source = brush->image.source;
-            if (source.kind == PrDrawSourceKind_Image) {
+            CGImageRef image = source.kind == PrDrawSourceKind_Texture ? imageOf(r.cg, source) : nullptr;
+            if (image != nullptr) {
                 CGContextSetAlpha(r.context, CGFloat(prF32Clamp(color.a, 0, 1)));
-                drawTiles(r, imageOf(r.cg, source.image), source.rect, brush->image.tiles, brush->image.sampling);
+                drawTiles(r, image, source.rect, brush->image.tiles, brush->image.sampling);
             }
             break;
         }
@@ -780,9 +770,9 @@ void drawDecoration(Renderer& r, const PrDrawCommand& c) {
 // draws nothing.
 void drawImageRects(Renderer& r, const PrDrawCommand& c, const PrDrawImageRect* rects, uint32_t count) {
     const PrDrawSource& source = c.nineSlice.source;
-    if (source.kind != PrDrawSourceKind_Image)
+    if (source.kind != PrDrawSourceKind_Texture)
         return;
-    CGImageRef image = imageOf(r.cg, source.image);
+    CGImageRef image = imageOf(r.cg, source);
     if (image == nullptr)
         return;
     beginPaint(r, c);
@@ -816,7 +806,7 @@ void writePixels(Renderer& r, const PrDrawCommand& c) {
     if (r.pixels == nullptr)
         return;
     CGContextFlush(r.context);
-    prDrawImageWritePixels(c.writePixels.image, *r.pixels, r.format, c.writePixels.origin);
+    drawMemoryWriteSource(r.cg->device, c.writePixels.source, *r.pixels, r.format, c.writePixels.origin);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

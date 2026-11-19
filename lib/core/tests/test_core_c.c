@@ -47,6 +47,7 @@
 #include "pr/utf8.h"
 #include "pr/vec.h"
 #include "pr/vmem.h"
+#include "pr/xxh64.h"
 
 int prTestCoreCApi(void);
 
@@ -83,6 +84,8 @@ int prTestCoreCApi(void) {
 
     PrStringView name = PR_SV("platform");
     PrVec2 point = {1, 2};
-    return !texts || usable < 64 || name.size != 8 || point.y != 2 || !(now >= 0) || prThreadHardwareCount() == 0 ||
-        epoch.year != 1970 || !(elapsed >= 0) || today.year < 2026;
+    PrVec3 axis = prVec3Normalize(prVec3Cross((PrVec3){2, 0, 0}, (PrVec3){0, 3, 0}));
+    PrDVec3 wide = prDVec3FromVec3(axis);
+    return !texts || prDVec3Dot(wide, wide) != 1 || usable < 64 || name.size != 8 || point.y != 2 || axis.z != 1 ||
+        !(now >= 0) || prThreadHardwareCount() == 0 || epoch.year != 1970 || !(elapsed >= 0) || today.year < 2026;
 }

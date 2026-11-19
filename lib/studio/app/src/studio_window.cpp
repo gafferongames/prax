@@ -4,6 +4,7 @@
 #include "pr/studio_window.h"
 
 #include "pr/alloc.h"
+#include "pr/float.h"
 #include "pr/kit_panel.h"
 #include "pr/kit_theme.h"
 #include "pr/layout_frame.h"
@@ -73,6 +74,7 @@ bool openTarget(StudioAppState* app, StudioWindowTarget* target, PrAppWindow* ap
         return false;
     }
     target->frame = prDrawFrameCreate(app->renderer);
+    target->graph = prGpuGraphCreate(app->device, nullptr);
     target->generation = app->generation;
     return true;
 }
@@ -106,26 +108,30 @@ PrGpuTexture renderedFor(StudioAppState* app, StudioWindowTarget& target, PrUVec
     return target.rendered;
 }
 
-// Takes the texels of a frame that the swap chain captured, in the swap chain's format, as 8-bit RGBA with encoded sRGB
-// and premultiplied alpha, and gives them to the window's capture (prGpuCaptureToRgba8). A format that holds no sRGB,
-// as HDR10's, gives no pixels. Called on the device's thread.
-void captured(void* PR_NULLABLE context, PrPixelView texels, PrGpuFormat format) {
-    PrStudioWindow* w = static_cast<PrStudioWindow*>(context);
-    PrUVec2 extent = texels.extent;
-    RawArray<uint8_t> rgba;
-    rgba.resize(extent.x * extent.y * 4);
-    PrPixels pixels{rgba.data, size_t(extent.x) * 4, extent};
-    if (prGpuCaptureToRgba8(texels, format, pixels))
-        w->capture(w->captureContext, prPixelsView(pixels));
-    else
-        w->capture(w->captureContext, PrPixelView{});
-    rgba.reset();
+// What a frame's 2D prepares and renders with, which the graph's work and pass read while it records.
+struct FrameDraw {
+    PrDrawFrame* frame;
+    const PrDrawList* list;
+    PrDrawTarget target;
+};
+
+void prepareFrame(void* PR_NULLABLE context, PrGpuCommands* commands) {
+    FrameDraw& d = *static_cast<FrameDraw*>(context);
+    d.target.commands = commands;
+    prDrawFramePrepare(d.frame, d.list, &d.target);
+}
+
+void renderFrame2d(void* PR_NULLABLE context, PrGpuPass* pass) {
+    const FrameDraw& d = *static_cast<const FrameDraw*>(context);
+    prDrawFrameRender(d.frame, pass, PrIVec2{0, 0});
 }
 
 // Renders `list` into the target's swap chain at `extent` target pixels and presents it, clearing to `canvas`, which is
-// premultiplied. A swap chain that holds more than 8-bit sRGB on a device without the display shader shows nothing.
+// premultiplied. The target's graph, which the caller began, may hold the passes of GPU views that the list's play
+// rendered, which write `rendered`: the graph records them first, and then the list, which draws their textures. A swap
+// chain that holds more than 8-bit sRGB on a device without the display shader shows nothing.
 void render(StudioAppState* studio, StudioWindowTarget& target, PrDrawList* list, PrUVec2 extent, PrColor canvas,
-        const PrAppDisplay& display) {
+        const PrAppDisplay& display, const RawArray<PrGpuGraphTexture>& rendered) {
     PrGpuDevice* device = studio->device;
     PrGpuSwapChainFrame frame{};
     PrGpuCommands* commands = nullptr;
@@ -147,24 +153,41 @@ void render(StudioAppState* studio, StudioWindowTarget& target, PrDrawList* list
     }
     PrGpuTexture into = mapped ? renderedFor(studio, target, extent) : frame.color;
     PrPixelFormat format = PrPixelFormat(mapped ? PrPixelFormat_RgbaF16 : direct);
-    PrDrawTarget drawn{.extent = extent, .format = format, .commands = commands};
-    prDrawFramePrepare(target.frame, list, &drawn);
+
+    PrGpuGraph* graph = target.graph;
+    FrameDraw* draw = static_cast<FrameDraw*>(prGpuGraphAlloc(graph, sizeof(FrameDraw)));
+    *draw = FrameDraw{target.frame, list, PrDrawTarget{.extent = extent, .format = format}};
+    // The 2D prepares its own textures before the pass that it draws in begins.
+    PrGpuGraphPass prepare = prGpuGraphAddWork(graph, "prepare 2D", prepareFrame, draw);
     // Between frames, the half-float texture is left in the fragment-read state. The display shader reads it only in
     // the fragment stage, so no barrier waits on the vertex stage. The drawable holds nothing yet.
+    PrGpuGraphTexture drawnInto =
+        prGpuGraphImportTexture(graph, into, mapped ? PrGpuAccessFlag_FragmentRead : PrGpuAccessFlag_Discard);
+    prGpuGraphLeaveTexture(graph, drawnInto, PrGpuAccessFlag_ColorAttachment);
+    PrGpuGraphPassDesc passDesc{
+        .name = "2D",
+        .viewCount = 1,
+        .colorCount = 1,
+        .color = {{.texture = drawnInto, .load = PrGpuLoad_Clear, .store = PrGpuStore_Keep}},
+        .clearColor = {canvas},
+    };
+    PrGpuGraphPass pass = prGpuGraphAddPass(graph, &passDesc, renderFrame2d, draw);
+    prGpuGraphFollowPass(graph, pass, prepare);
+    // lib/draw reads a host's texture in the accesses of shader reads, where the textures stay until they render again.
+    for (PrGpuGraphTexture texture : rendered.span()) {
+        prGpuGraphUseTexture(graph, pass, texture, PrGpuAccessFlag_ShaderRead);
+        prGpuGraphLeaveTexture(graph, texture, PrGpuAccessFlag_ShaderRead);
+    }
+    prGpuGraphRecord(graph, commands);
+
     PrGpuSubresources all{};
-    prGpuCommandsTextureBarrier(commands, into, all, mapped ? PrGpuAccessFlag_FragmentRead : PrGpuAccessFlag_Discard,
-        PrGpuAccessFlag_ColorAttachment);
-    PrGpuPassDesc pass = prGpuPassDescColor(into, PrGpuLoad_Clear, canvas);
-    PrGpuPass* encoder = prGpuPassBegin(commands, &pass);
-    prDrawFrameRender(target.frame, encoder, PrIVec2{0, 0});
-    prGpuPassEnd(encoder);
     if (mapped) {
         prGpuCommandsTextureBarrier(commands, into, all, PrGpuAccessFlag_ColorAttachment, PrGpuAccessFlag_FragmentRead);
         prGpuCommandsTextureBarrier(commands, frame.color, all, PrGpuAccessFlag_Discard,
             PrGpuAccessFlag_ColorAttachment);
         PrGpuSwapChainInfo info = prGpuSwapChainInfo(target.swapChain);
         PrGpuPassDesc shown = prGpuPassDescColor(frame.color, PrGpuLoad_Discard, PrColor{});
-        encoder = prGpuPassBegin(commands, &shown);
+        PrGpuPass* encoder = prGpuPassBegin(commands, &shown);
         PrDrawDisplayDesc mapping{.target = info.space, .headroom = display.headroom, .gamut = display.gamut};
         prDrawDisplayDraw(shader, encoder, into, &mapping);
         prGpuPassEnd(encoder);
@@ -172,6 +195,67 @@ void render(StudioAppState* studio, StudioWindowTarget& target, PrDrawList* list
     prGpuCommandsTextureBarrier(commands, frame.color, all, PrGpuAccessFlag_ColorAttachment, PrGpuAccessFlag_Present);
     prGpuSwapChainPresent(target.swapChain, commands);
     prGpuCommandsSubmit(commands);
+}
+
+// Takes the texels of a frame that the swap chain captured, in the swap chain's format, as 8-bit RGBA with encoded sRGB
+// and premultiplied alpha, and gives them to the window's capture (prGpuCaptureToRgba8). A format that holds no sRGB,
+// as HDR10's, gives no pixels. Called on the device's thread.
+void captured(void* PR_NULLABLE context, PrPixelView texels, PrGpuFormat format) {
+    PrStudioWindow* w = static_cast<PrStudioWindow*>(context);
+    PrUVec2 extent = texels.extent;
+    RawArray<uint8_t> rgba;
+    rgba.resize(extent.x * extent.y * 4);
+    PrPixels pixels{rgba.data, size_t(extent.x) * 4, extent};
+    if (prGpuCaptureToRgba8(texels, format, pixels))
+        w->capture(w->captureContext, prPixelsView(pixels));
+    else
+        w->capture(w->captureContext, PrPixelView{});
+    rgba.reset();
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// GPU views
+
+// Returns the GPU view of the window that an embed slot names, or null.
+PrStudioWindowGpuView* PR_NULLABLE gpuViewOf(const StudioWindowState* w, uint64_t embed) {
+    for (PrStudioWindowGpuView* view : w->gpuViews.span()) {
+        if (view->embed == embed)
+            return view;
+    }
+    return nullptr;
+}
+
+// Fills the embed slot of a GPU view while the frame's scene plays: renders the view into the frame's graph if it was
+// invalidated or its laid-out size in target pixels changed, and draws the texture that it shows over the slot.
+void playGpuView(void* PR_NULLABLE context, uint64_t embed, PrLayoutVec extent, PrDrawList* list) {
+    PrStudioWindow* w = static_cast<PrStudioWindow*>(context);
+    PrStudioWindowGpuView* view = gpuViewOf(w, embed);
+    PrVec2 size = prLayoutVecToPx(extent);
+    PrUVec2 pixels{uint32_t(prF32Ceil(size.x * w->pixelRatio)), uint32_t(prF32Ceil(size.y * w->pixelRatio))};
+    if (view == nullptr || pixels.x == 0 || pixels.y == 0)
+        return;
+    PrGpuDevice* device = w->studio->device;
+    if (view->invalid || view->extent.x != pixels.x || view->extent.y != pixels.y || view->shown.texture.id == 0) {
+        PrStudioWindowRender render{.device = device, .graph = w->target.graph, .extent = pixels};
+        PrStudioWindowGpuOutput output = view->render(view->context, &render);
+        PrGpuGraphTexture rendered = output.texture;
+        view->invalid = false;
+        view->extent = pixels;
+        PrGpuTexture texture = prGpuGraphTexture(w->target.graph, rendered);
+        prGpuTextureRetain(device, texture);
+        prGpuTextureRelease(device, view->shown.texture);
+        view->shown = PrTexture{.texture = texture, .alpha = output.alpha};
+        if (rendered.id != 0)
+            w->rendered.push(rendered);
+    }
+    if (view->shown.texture.id == 0)
+        return;
+    PrUVec2 texels = prGpuTextureExtent(device, view->shown.texture);
+    PrRect whole{0, 0, float(texels.x), float(texels.y)};
+    PrRect box{0, 0, size.x, size.y};
+    PrDrawSource source = prDrawSourceTexture(view->shown, texels, whole);
+    PrDrawBrush brush = prDrawBrushImage(source, box, PrDrawSampling_Linear);
+    prDrawListRect(list, box, {.brush = &brush});
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -237,6 +321,7 @@ PrAppOutput portalFrame(void* context, PrAppWindow*, const PrAppFrame* f) {
     }
     prGpuSwapChainWait(s->target.swapChain);
     s->drawn = prLayoutNodeDrawingRevision(w->tree, s->info.root);
+    prGpuGraphBegin(s->target.graph);
     float ratio = f->display.pixelRatio;
     prDrawListClear(s->list);
     prDrawListPushTransformAffine2(s->list, prAffine2Scale(PrVec2{ratio, ratio}));
@@ -244,7 +329,7 @@ PrAppOutput portalFrame(void* context, PrAppWindow*, const PrAppFrame* f) {
     prDrawListPopTransform(s->list);
     PrUVec2 extent{uint32_t(f->extent.x * ratio + 0.5f), uint32_t(f->extent.y * ratio + 0.5f)};
     if (extent.x != 0 && extent.y != 0)
-        render(w->studio, s->target, s->list, extent, PrColor{0, 0, 0, 1}, f->display);
+        render(w->studio, s->target, s->list, extent, PrColor{0, 0, 0, 1}, f->display, RawArray<PrGpuGraphTexture>{});
     return output;
 }
 
@@ -370,6 +455,8 @@ void freeWindow(PrStudioWindow* w) {
     prDrawListRelease(w->list);
     prLayoutSceneRelease(w->scene);
     w->scrolls.reset();
+    w->rendered.reset();
+    w->gpuViews.reset();
     w->portals.reset();
     w->viewports.reset();
     prKitDestroy(w->kit);
@@ -449,7 +536,10 @@ PrAppOutput renderFrame(PrStudioWindow* w, const PrAppFrame* f) {
     w->extent = f->extent;
     w->titleBar = f->titleBar;
     w->safeArea = f->safeArea;
+    w->pixelRatio = f->display.pixelRatio;
     PrTimePerf waited = prTimePerfNow();
+    // The window's images realize in the application's cache, on the device that it renders on.
+    prKitSetTextures(w->kit, w->studio->textures);
     uint32_t rounds = prUiFrame(w->ui, &desc, build, w);
     if (w->desc.laidOut != nullptr && w->desc.laidOut(w->desc.context, w))
         prUiRequestFrame(w->ui);
@@ -467,6 +557,11 @@ PrAppOutput renderFrame(PrStudioWindow* w, const PrAppFrame* f) {
     options.scrolls = w->scrolls.data;
     options.scrollCount = w->scrolls.count;
     options.canvasFilled = true;
+    // The GPU views render as the scene plays, at the sizes of this frame's layout, into the frame's graph.
+    options.embed = playGpuView;
+    options.embedContext = w;
+    prGpuGraphBegin(w->target.graph);
+    w->rendered.clear();
     PrTimePerf sceneTaken = prTimePerfNow();
     float ratio = f->display.pixelRatio;
     prDrawListClear(w->list);
@@ -486,10 +581,13 @@ PrAppOutput renderFrame(PrStudioWindow* w, const PrAppFrame* f) {
     }
     if (extent.x != 0 && extent.y != 0) {
         PrColor clear{canvas.r * canvas.a, canvas.g * canvas.a, canvas.b * canvas.a, canvas.a};
-        render(w->studio, w->target, w->list, extent, clear, f->display);
+        render(w->studio, w->target, w->list, extent, clear, f->display, w->rendered);
     }
     if (capturing)
         prAppWindowRequestFrame(w->appWindow);
+    // The frame is the cache's: what no window drew since its last trim, and nothing else holds, may go.
+    if (w->studio->textures != nullptr)
+        prTextureCacheTrim(w->studio->textures);
     if (w->desc.drawn != nullptr)
         w->desc.drawn(w->desc.context, w, w->list, extent, canvas);
     PrAppOutput output = prUiOutput(w->ui);
@@ -606,6 +704,40 @@ void prStudioWindowDestroy(PrStudioWindow* PR_NULLABLE window) {
         window->closing = true;
     else
         destroyWindow(window);
+}
+
+PrStudioWindowGpuView* prStudioWindowGpuViewCreate(PrStudioWindow* window, const PrStudioWindowGpuViewDesc* desc) {
+    PrStudioWindowGpuView* view = allocZeroed<PrStudioWindowGpuView>();
+    view->window = window;
+    view->render = desc->render;
+    view->lost = desc->lost;
+    view->context = desc->context;
+    view->embed = ++window->nextEmbed;
+    view->invalid = true;
+    window->gpuViews.push(view);
+    return view;
+}
+
+void prStudioWindowGpuViewDestroy(PrStudioWindowGpuView* PR_NULLABLE view) {
+    if (view == nullptr)
+        return;
+    PrStudioWindow* w = view->window;
+    for (uint32_t i = 0; i < w->gpuViews.count; ++i) {
+        if (w->gpuViews.data[i] == view)
+            w->gpuViews.erase(i);
+    }
+    if (w->studio->device != nullptr)
+        prGpuTextureRelease(w->studio->device, view->shown.texture);
+    prMemoryFree(view);
+}
+
+uint64_t prStudioWindowGpuViewEmbed(const PrStudioWindowGpuView* view) {
+    return view->embed;
+}
+
+void prStudioWindowGpuViewInvalidate(PrStudioWindowGpuView* view) {
+    view->invalid = true;
+    prAppWindowRequestFrame(view->window->appWindow);
 }
 
 void prStudioWindowCapture(PrStudioWindow* window, PrStudioWindowCaptureFn capture, void* PR_NULLABLE context) {

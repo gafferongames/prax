@@ -1,4 +1,4 @@
-# Geometry: rectangles and transforms in two dimensions.
+# Geometry: rectangles, boxes, spheres and transforms, in the plane and in space.
 pr_library(geom INCLUDE include
     src/geom.cpp
 )

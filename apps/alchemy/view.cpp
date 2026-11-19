@@ -62,24 +62,14 @@ PrLayoutNode row(PrKit* kit, PrLayoutNode parent, float gap = kPrKitSpace3) {
     return prKitBox(kit, parent, {}, style);
 }
 
-// A button that runs the command `id`, disabled while the command is and on while it is checked.
+// The style of Alchemy's toolbar buttons, which most of its command buttons take.
+constexpr PrKitButtonStyle kToolStyle{.variant = PrKitButtonVariant_Ghost, .size = PrKitControlSize_Sm};
+
+// Creates a button that runs the command `id` (prCommandButton), keyed by the id, showing `text`, `icon` or both.
 PrLayoutNode commandButton(PrKit* kit, PrLayoutNode parent, Commands& commands, PrStringView id, PrStringView text,
-        PrStudioIconKind icon, PrKitButtonVariant variant = PrKitButtonVariant_Ghost,
-        PrKitControlSize size = PrKitControlSize_Sm) {
-    PrCommandIndex index = prCommandRegistryFind(commands.registry, id);
-    PrCommandStateFlags state = index != kPrCommandMissing ? prCommandRegistryState(commands.registry, index) : 0;
-    PrKitButton button{
-        .key = prHashString(id, 0),
-        .text = text,
-        .icon = icon,
-        .selected = (state & PrCommandStateFlag_Checked) != 0,
-        .disabled = index == kPrCommandMissing || (state & PrCommandStateFlag_Disabled) != 0,
-    };
-    PrLayoutNode node = prKitButton(kit, parent, button, {.variant = variant, .size = size});
-    prCommandTooltip(kit, node, commands.registry, commands.keymap, id);
-    if (prKitActivated(kit, node))
-        runCommand(commands, id);
-    return node;
+        PrStudioIconKind icon, PrKitButtonStyle style = kToolStyle) {
+    PrKitButton button{.key = prHashString(id, 0), .text = text, .icon = icon};
+    return prCommandButton(kit, parent, commands.registry, commands.keymap, id, button, style);
 }
 
 // A small button of an icon alone, with a tooltip.
@@ -172,7 +162,7 @@ void buildSource(PrKit* kit, PrLayoutNode parent, AppState& state, Commands& com
         .place = {.width = prKitPx(kSourceThumbnail), .height = prKitPx(kSourceThumbnail), .flex = PrKitFlex_Fixed},
     };
     PrLayoutNode thumbnail = prKitBox(kit, line, {}, frame);
-    if (const PrDrawImage* image = imageCacheGet(state.images, p.sourcePath, ImageScale_Thumbnail)) {
+    if (const PrTextureSource* image = imageCacheGet(state.images, p.sourcePath, ImageScale_Thumbnail)) {
         PrKitImageStyle contain{
             .fit = PrKitImageFit_Contain,
             .place = {.width = prKitPercent(100), .height = prKitPercent(100)},
@@ -187,7 +177,7 @@ void buildSource(PrKit* kit, PrLayoutNode parent, AppState& state, Commands& com
         textStyle(PrKitTextRole_BodySmall, PrKitTone_Secondary));
     PrLayoutNode actions = row(kit, column);
     commandButton(kit, actions, commands, "alchemy.clearSource", "Clear", PrStudioIconKind_None,
-        PrKitButtonVariant_Default, PrKitControlSize_Xs);
+        {.size = PrKitControlSize_Xs});
     PrLayoutNode menu = prKitContextMenu(kit, thumbnail, {}, {.minWidth = kMenuWidth});
     if (menu != kPrLayoutNodeNone) {
         prCommandMenuItem(kit, menu, commands.registry, commands.keymap, "alchemy.revealSource", {});
@@ -632,14 +622,14 @@ void buildViewport(PrKit* kit, PrLayoutNode content, AppState& state, Commands& 
     prKitSpacer(kit, toolbar, {});
 
     const GalleryEntry* entry = gallerySelected(state.gallery);
-    const PrDrawImage* image = entry != nullptr ? imageCacheGet(state.images, entry->path, ImageScale_Full) : nullptr;
+    const PrTextureSource* image = entry != nullptr ? imageCacheGet(state.images, entry->path, ImageScale_Full) : nullptr;
     const Job* job = activeJob(state);
     bool previewing = state.showPreview && state.preview != nullptr && job != nullptr &&
         job->promptId == state.previewPromptId;
     if (entry != nullptr) {
         String label = entry->filename;
         if (image != nullptr) {
-            PrUVec2 extent = prDrawImageExtent(image);
+            PrUVec2 extent = prTextureDescDisplayedExtent(prTextureSourceDesc(image));
             formatTo(label, "  {} x {}", extent.x, extent.y);
         }
         prKitLabel(kit, toolbar, {.text = label}, textStyle(PrKitTextRole_Mono, PrKitTone_Muted));
@@ -661,7 +651,7 @@ void buildViewport(PrKit* kit, PrLayoutNode content, AppState& state, Commands& 
         .align = PrKitAlign_Center,
         .place = {.width = prKitPercent(100), .height = prKitPercent(100)},
     });
-    const PrDrawImage* shown = previewing ? state.preview : image;
+    const PrTextureSource* shown = previewing ? state.preview : image;
     PrKitImageStyle fit{
         .fit = PrKitImageFit(previewing ? PrKitImageFit_Contain : PrKitImageFit_ScaleDown),
         .place = {.width = prKitPercent(100), .height = prKitPercent(100)},
@@ -710,7 +700,7 @@ void buildBrowser(PrKit* kit, PrLayoutNode content, AppState& state, Commands& c
         PrKitTile item{.index = i, .item = hashKey(entry.filename), .selected = gallery.selected[i] != 0};
         PrLayoutNode tile = prKitListTile(kit, view, item);
         // The thumbnail is an icon until the cache has decoded the image.
-        const PrDrawImage* image = imageCacheGet(state.images, entry.path, ImageScale_Thumbnail);
+        const PrTextureSource* image = imageCacheGet(state.images, entry.path, ImageScale_Thumbnail);
         if (image != nullptr)
             prKitTileImage(kit, tile, {.image = image}, {.hoverZoom = kTileHoverZoom});
         else
@@ -841,7 +831,7 @@ void buildImportDialog(PrKit* kit, PrLayoutNode trigger, AppState& state, View& 
         .background = PrKitBackground_Viewport,
     };
     PrLayoutNode preview = prKitPanel(kit, body, {}, stage);
-    const PrDrawImage* image = state.import.image;
+    const PrTextureSource* image = state.import.image;
     if (image != nullptr) {
         PrKitImageStyle fit{
             .fit = PrKitImageFit_ScaleDown,
@@ -856,7 +846,7 @@ void buildImportDialog(PrKit* kit, PrLayoutNode trigger, AppState& state, View& 
     }
     String caption = state.import.message;
     if (caption.isEmpty() && image != nullptr) {
-        PrUVec2 extent = prDrawImageExtent(image);
+        PrUVec2 extent = prTextureSourceDesc(image)->extent;
         caption = format("{} x {}", extent.x, extent.y);
     }
     if (!caption.isEmpty()) {
@@ -864,8 +854,7 @@ void buildImportDialog(PrKit* kit, PrLayoutNode trigger, AppState& state, View& 
         prKitLabel(kit, body, {.text = caption}, textStyle(PrKitTextRole_BodySmall, tone));
     }
     PrLayoutNode footer = prKitDialogFooter(kit, body);
-    PrLayoutNode paste = commandButton(kit, footer, commands, "alchemy.pasteImage", "Paste", PrStudioIconKind_Image,
-        PrKitButtonVariant_Default, PrKitControlSize_Md);
+    PrLayoutNode paste = commandButton(kit, footer, commands, "alchemy.pasteImage", "Paste", PrStudioIconKind_Image, {});
     // The dialog's chord applies while focus is in its body, which the first focusable of the dialog is not.
     prKitModalAutofocus(kit, paste);
     prKitSpacer(kit, footer, {});
@@ -943,9 +932,9 @@ void buildTitleBarRow(PrKit* kit, PrLayoutNode bar, View& view, Commands& comman
     PrLayoutNode run = row(kit, bar);
     prKitPlace(kit, run, {.flex = PrKitFlex_Fixed});
     commandButton(kit, run, commands, "alchemy.generate", kRuns[state.mode], PrStudioIconKind_Play,
-        PrKitButtonVariant_Primary, PrKitControlSize_Sm);
-    commandButton(kit, run, commands, "alchemy.interrupt", "", PrStudioIconKind_Stop, PrKitButtonVariant_Danger,
-        PrKitControlSize_Sm);
+        {.variant = PrKitButtonVariant_Primary, .size = PrKitControlSize_Sm});
+    commandButton(kit, run, commands, "alchemy.interrupt", "", PrStudioIconKind_Stop,
+        {.variant = PrKitButtonVariant_Danger, .size = PrKitControlSize_Sm});
 
     // The activity: the active job's stage and progress, or the last message while nothing runs.
     side.justify = PrKitJustify_End;

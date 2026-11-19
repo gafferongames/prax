@@ -44,7 +44,7 @@ struct Adapter {
     Array<String> commands() {
         Array<String> names;
         for (const String& body : take()) {
-            REQUIRE(prJsonParse(json, body, nullptr));
+            REQUIRE(prJsonParse(json, body, 0, nullptr));
             PrStringView command = prJsonString(json, prJsonMember(json, 0, "command"));
             names.push(command);
         }
@@ -147,7 +147,7 @@ TEST_CASE("dap: a session initializes, launches, configures its breakpoints, and
     CHECK(prStringContains(bodies[0], "{\"line\":5},{\"line\":10}"));
     CHECK(prStringContains(bodies[1], "\"command\":\"configurationDone\""));
     CHECK(prDapClientState(client) == PrDapClientState_Running);
-    REQUIRE(prJsonParse(adapter.json, bodies[0], nullptr));
+    REQUIRE(prJsonParse(adapter.json, bodies[0], 0, nullptr));
     uint32_t breakpointsSeq = uint32_t(prJsonNumber(adapter.json, prJsonMember(adapter.json, 0, "seq"), 0));
     answer(client, breakpointsSeq, "setBreakpoints",
         "{\"breakpoints\":[{\"verified\":true,\"line\":5},{\"verified\":false,\"line\":11}]}");
@@ -224,7 +224,7 @@ TEST_CASE("dap: a refused launch fails the session, and the adapter's own reques
     CHECK(prDapClientLaunch(client, "{\"program\":\"/missing\"}"));
     bodies = adapter.take();
     REQUIRE(bodies.count() == 1);
-    REQUIRE(prJsonParse(adapter.json, bodies[0], nullptr));
+    REQUIRE(prJsonParse(adapter.json, bodies[0], 0, nullptr));
     uint32_t seq = uint32_t(prJsonNumber(adapter.json, prJsonMember(adapter.json, 0, "seq"), 0));
     receive(client, format("{{\"seq\":2,\"type\":\"response\",\"request_seq\":{},\"success\":false,"
         "\"command\":\"launch\",\"message\":\"no such program\"}}", seq));

@@ -6,7 +6,6 @@
 #include "pr/assert.h"
 #include "pr/atomic.h"
 #include "pr/compress.h"
-#include "pr/draw_image.h"
 #include "pr/file.h"
 #include "pr/float.h"
 #include "pr/image.h"
@@ -22,6 +21,7 @@
 #include "pr/raw_array.h"
 #include "pr/raw_string.h"
 #include "pr/string_ops.h"
+#include "pr/texture.h"
 #include "pr/thread.h"
 #include "pr/time.h"
 #include "pr/ui.h"
@@ -137,7 +137,7 @@ struct TerminalRow {
 // `drawing` is the number of the last drawing that showed it (Terminal::drawings).
 struct TerminalImage {
     uint64_t key;
-    const PrDrawImage* image;
+    const PrTextureSource* image;
     uint32_t drawing;
 };
 
@@ -576,7 +576,7 @@ void launchProcess(Terminal* terminal, PrUVec2 extent) {
 
 void imagesReset(Terminal* terminal) {
     for (TerminalImage& image : terminal->images.span())
-        prDrawImageRelease(image.image);
+        prTextureSourceRelease(image.image);
     terminal->images.clear();
 }
 
@@ -1955,7 +1955,7 @@ void drawGutter(const Terminal* terminal, PrDrawList* list) {
 
 // The drawing image for the screen image `key`, which the snapshot made, or null if there is none. Marks it as shown by
 // the current drawing, so that imagesTrim keeps it.
-const PrDrawImage* PR_NULLABLE drawImageOf(Terminal* terminal, uint64_t key) {
+const PrTextureSource* PR_NULLABLE drawImageOf(Terminal* terminal, uint64_t key) {
     for (TerminalImage& image : terminal->images.span()) {
         if (image.key == key) {
             image.drawing = terminal->drawings;
@@ -1975,15 +1975,12 @@ void imageMake(Terminal* terminal, uint64_t key) {
     PrVtermImage pixels{};
     if (!prVtermImage(terminal->vterm, key, &pixels))
         return;
-    PrDrawImageDesc desc{
-        .pixels = PrPixelView{pixels.pixels, size_t(pixels.extent.x) * 4, pixels.extent},
-        .format = PrPixelFormat_Rgba8,
-        .alpha = PrDrawAlpha_Straight,
-        .space = PrColorSpace_Srgb,
-    };
-    const PrDrawImage* image = nullptr;
-    if (prDrawImageCreate(&desc, &image) == PrStatus_Ok)
-        terminal->images.push(TerminalImage{.key = key, .image = image, .drawing = terminal->drawings});
+    // The screen's image may change or go once the lock is released, so the drawing image keeps a copy of its pixels.
+    const PrTextureSource* image = prTextureSourceCreateCopy(PrPixelView{
+        pixels.pixels, size_t(pixels.extent.x) * 4,
+        pixels.extent,
+    }, PrPixelFormat_Rgba8, PrTextureAlpha_Straight);
+    terminal->images.push(TerminalImage{.key = key, .image = image, .drawing = terminal->drawings});
 }
 
 // Frees the drawing images that the drawing just recorded did not show.
@@ -1991,7 +1988,7 @@ void imagesTrim(Terminal* terminal) {
     for (uint32_t i = terminal->images.count; i-- > 0;) {
         const TerminalImage& image = terminal->images.data[i];
         if (image.drawing != terminal->drawings) {
-            prDrawImageRelease(image.image);
+            prTextureSourceRelease(image.image);
             terminal->images.erase(i);
         }
     }
@@ -2016,8 +2013,12 @@ void drawImages(Terminal* terminal, PrDrawList* list, int64_t low, int64_t high)
         };
         if (clip.left >= clip.right || clip.top >= clip.bottom)
             continue;
-        const PrDrawImage* image = drawImageOf(terminal, placement.image);
-        if (image == nullptr)
+        const PrTextureSource* image = drawImageOf(terminal, placement.image);
+        // The image holds its pixels in memory, so its texture is an upload, which the drawing waits for.
+        PrTextureRegion region{};
+        PrTextureCache* textures = terminal->kit != nullptr ? terminal->kit->textures : nullptr;
+        if (image == nullptr || textures == nullptr ||
+                prTextureCacheWait(textures, image, 0, &region) != PrTextureCacheState_Ready)
             continue;
         PrRect destination{
             left + placement.offset.x * cell.x, top + placement.offset.y * cell.y,
@@ -2031,7 +2032,7 @@ void drawImages(Terminal* terminal, PrDrawList* list, int64_t low, int64_t high)
         };
         // Edges snap to target pixels, so that placements which tile an image, as programs that place it a cell at a
         // time do, meet without seams where they share a pixel that each would cover in part.
-        PrDrawBrush brush = prDrawBrushImage(prDrawSourceImage(image, source), destination, PrDrawSampling_Linear);
+        PrDrawBrush brush = prDrawBrushImage(prDrawSourceRegion(&region, source), destination, PrDrawSampling_Linear);
         prDrawListPushClipRect(list, clip, PrDrawEdges_Snapped);
         prDrawListRect(list, destination, PrDrawPaint{.brush = &brush, .edges = PrDrawEdges_Snapped});
         prDrawListPopClip(list);

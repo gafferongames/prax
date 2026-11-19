@@ -334,6 +334,11 @@ if (PR_GPU_VULKAN)
     endif()
 endif()
 
+# What a shader set of lib/render compiles for (lib/render/render_shaders.cmake), in this build and in the build of a
+# project that adds this one.
+set_property(GLOBAL PROPERTY PR_SHADER_TARGETS ${PR_SHADER_TARGETS})
+set_property(GLOBAL PROPERTY PR_SHADER_METAL_SDK ${PR_METAL_SDK})
+include(lib/render/render_shaders.cmake)
 
 # Where the build's programs find the font bundles' files.
 set(PR_FONT_BUNDLE_DIR "${PROJECT_BINARY_DIR}/font_bundle")

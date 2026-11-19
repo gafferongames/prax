@@ -791,7 +791,13 @@ leaves them to the renderer.
 - Content that another scene fills (an iframe's document, and later a video's frames) is embedded. The recording names
   a slot with the content's id where its box paints, as it names a layer, and draws nothing there. Whoever plays the
   scene fills each slot (`PrLayoutScenePlayOptions::embed`), so the embedded content updates without the scene around
-  it recording again.
+  it recording again. A host that renders content on the GPU, as a Studio window renders a GPU view, renders it as it
+  fills the slot.
+- **A content callback sees the size of the layout that it draws for.** Every callback that draws content, or a
+  background, at a size (a painter, an embed slot's filler, and a host's GPU content filled through a slot) is called
+  after the round's layout is complete, when the scene is recorded or played, with the extent that that layout gave
+  the box. So content follows a resize in the frame that lays it out, never a frame later, and nothing that draws for
+  a box reads its size before layout.
 - `stretch` is a sizing value of every box: the containing block's size minus the margins, or auto if that size is
   indefinite.
 

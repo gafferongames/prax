@@ -30,15 +30,30 @@ if (TARGET pr_quickjs)
 endif()
 
 configure_package_config_file(${CMAKE_CURRENT_LIST_DIR}/prax-config.cmake.in
-    ${PROJECT_BINARY_DIR}/prax-config.cmake INSTALL_DESTINATION ${PR_PACKAGE_DIR})
+    ${PROJECT_BINARY_DIR}/prax-config.cmake INSTALL_DESTINATION ${PR_PACKAGE_DIR}
+    PATH_VARS CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_DATADIR)
 # Prax is before 1.0, so a minor version may change the API.
 write_basic_package_version_file(${PROJECT_BINARY_DIR}/prax-config-version.cmake COMPATIBILITY SameMinorVersion)
 install(FILES
     ${PROJECT_BINARY_DIR}/prax-config.cmake
     ${PROJECT_BINARY_DIR}/prax-config-version.cmake
     ${PROJECT_SOURCE_DIR}/cmake/pr_dependency.cmake
+    ${PROJECT_SOURCE_DIR}/cmake/slang.cmake
+    ${PROJECT_SOURCE_DIR}/cmake/shader_library.cmake
+    ${PROJECT_SOURCE_DIR}/cmake/shader_reflect.cmake
     ${PROJECT_SOURCE_DIR}/lib/font_bundle/font_bundle.cmake
+    ${PROJECT_SOURCE_DIR}/lib/render/render_shaders.cmake
+    ${PROJECT_SOURCE_DIR}/lib/render/render_shaders_check.cmake
     DESTINATION ${PR_PACKAGE_DIR})
+
+# The sources of the passes that a shader set compiles with a consumer's materials (render_shaders.cmake), which include
+# each other as "render/src/<file>".
+install(FILES
+    ${PROJECT_SOURCE_DIR}/lib/render/src/render_depth_mask.slang
+    ${PROJECT_SOURCE_DIR}/lib/render/src/render_forward.slang
+    ${PROJECT_SOURCE_DIR}/lib/render/src/render_varyings.slang
+    ${PROJECT_SOURCE_DIR}/lib/render/src/render_visibility.slang
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/prax/shaders/render/src)
 
 install(FILES
     ${PROJECT_SOURCE_DIR}/LICENSE-MIT

@@ -451,3 +451,50 @@ TEST_CASE("eight-bit premultiplying and unpremultiplying round the exact value h
     }
     CHECK(wrong == 0);
 }
+
+TEST_CASE("image colors of chromaticities convert through their primaries, and unsigned 32-bit samples by their range") {
+    PrImageFormat acescg{
+        .model = PrColorModel_Rgb,
+        .sample = PrImageSample_F32,
+        .alpha = PrImageAlpha_None,
+        .color = {
+            .encoding = PrImageColorEncoding_Chromaticities,
+            .chromaticities = prColorPrimariesChromaticities(PrColorPrimaries_AcesAp1),
+        },
+    };
+    PrImageFormat linear{
+        .model = PrColorModel_Rgb,
+        .sample = PrImageSample_F32,
+        .alpha = PrImageAlpha_None,
+        .color = {.encoding = PrImageColorEncoding_Named, .space = PrColorSpace_SrgbLinear},
+    };
+    CHECK(prImageFormatSize(&acescg) == 12);
+    // ACEScg's red in linear sRGB, as Academy TB-2014-004 gives the matrix.
+    float red[3] = {1, 0, 0};
+    float out[3] = {};
+    REQUIRE(prImageConvert(PrPixelView{reinterpret_cast<const uint8_t*>(red), sizeof(red), {1, 1}}, &acescg,
+        PrPixels{reinterpret_cast<uint8_t*>(out), sizeof(out), {1, 1}}, &linear, 0) == PrStatus_Ok);
+    CHECK(out[0] == doctest::Approx(1.70505).epsilon(2e-3));
+    CHECK(out[1] == doctest::Approx(-0.13026).epsilon(2e-2));
+    CHECK(out[2] == doctest::Approx(-0.02400).epsilon(5e-2));
+    // Linear sRGB's white is ACEScg's.
+    float white[3] = {1, 1, 1};
+    REQUIRE(prImageConvert(PrPixelView{reinterpret_cast<const uint8_t*>(white), sizeof(white), {1, 1}}, &linear,
+        PrPixels{reinterpret_cast<uint8_t*>(out), sizeof(out), {1, 1}}, &acescg, 0) == PrStatus_Ok);
+    for (float channel : out)
+        CHECK(channel == doctest::Approx(1).epsilon(1e-5));
+
+    // Degenerate chromaticities are no format.
+    PrImageFormat collinear = acescg;
+    collinear.color.chromaticities.blue = collinear.color.chromaticities.red;
+    CHECK(prImageFormatSize(&collinear) == 0);
+
+    uint32_t wide[3] = {0, 0x80000000u, 0xffffffffu};
+    PrImageFormat words = linear;
+    words.sample = PrImageSample_U32;
+    REQUIRE(prImageConvert(PrPixelView{reinterpret_cast<const uint8_t*>(wide), sizeof(wide), {1, 1}}, &words,
+        PrPixels{reinterpret_cast<uint8_t*>(out), sizeof(out), {1, 1}}, &linear, 0) == PrStatus_Ok);
+    CHECK(out[0] == 0.0f);
+    CHECK(out[1] == doctest::Approx(0.5));
+    CHECK(out[2] == 1.0f);
+}

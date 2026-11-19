@@ -216,6 +216,96 @@ TEST_CASE("a command's menu item shows its title, chord and check, and runs it")
     CHECK_FALSE(prKitIsOpen(f.kit, trigger));
 }
 
+TEST_CASE("a command's button runs it, and a disabled command's button does nothing") {
+    KitFixture f;
+    Commands c;
+    c.add("go.back", "Back", "Go");
+    c.bind("Cmd [", "go.back");
+    PrLayoutNode button = kPrLayoutNodeNone;
+    PrLayoutNode missing = kPrLayoutNodeNone;
+    f.build = [&](PrLayoutNode root) {
+        button = prCommandButton(f.kit, root, c.registry, c.keymap, "go.back", {.icon = PrStudioIconKind_ArrowLeft}, {});
+        missing = prCommandButton(f.kit, root, c.registry, c.keymap, "go.none", {.icon = PrStudioIconKind_ArrowLeft}, {});
+    };
+    f.frame();
+    REQUIRE(button != kPrLayoutNodeNone);
+    CHECK(missing == kPrLayoutNodeNone);
+    f.click(f.center(button));
+    f.frame();
+    CHECK(c.runs == Array<String>({"go.back"}));
+    c.disabled = true;
+    f.frame();
+    f.click(f.center(button));
+    f.frame();
+    CHECK(c.runs.count() == 1);
+}
+
+TEST_CASE("a command's button shows the text, icon and style that it is given, as a Kit button does") {
+    KitFixture f;
+    Commands c;
+    c.add("view.zoomReset", "Actual Size", "View");
+    c.add("go.back", "Back", "Go");
+    PrKitButtonStyle small{.variant = PrKitButtonVariant_Ghost, .size = PrKitControlSize_Sm};
+    PrKitButtonStyle large{.size = PrKitControlSize_Lg};
+    PrLayoutNode text = kPrLayoutNodeNone;
+    PrLayoutNode textShown = kPrLayoutNodeNone;
+    PrLayoutNode both = kPrLayoutNodeNone;
+    PrLayoutNode bothShown = kPrLayoutNodeNone;
+    PrLayoutNode icon = kPrLayoutNodeNone;
+    f.build = [&](PrLayoutNode root) {
+        PrLayoutNode row = prKitBox(f.kit, root, {}, {.direction = PrKitDirection_Row, .align = PrKitAlign_Start});
+        text = prCommandButton(f.kit, row, c.registry, c.keymap, "view.zoomReset", {.text = "150%"}, small);
+        textShown = prKitButton(f.kit, row, {.text = "150%"}, small);
+        PrKitButton back{.text = "Back", .icon = PrStudioIconKind_ArrowLeft};
+        both = prCommandButton(f.kit, row, c.registry, c.keymap, "go.back", back, large);
+        bothShown = prKitButton(f.kit, row, back, large);
+        icon = prCommandButton(f.kit, row, c.registry, c.keymap, "go.back", {.icon = PrStudioIconKind_ArrowLeft}, small);
+    };
+    f.frame();
+    auto size = [&](PrLayoutNode node) {
+        PrRect box = f.bounds(node);
+        return PrVec2{box.right - box.left, box.bottom - box.top};
+    };
+    CHECK(size(text).x == size(textShown).x);
+    CHECK(size(text).y == size(textShown).y);
+    CHECK(size(both).x == size(bothShown).x);
+    CHECK(size(both).y == size(bothShown).y);
+    // A small button of text is wider than the square of a small icon, and a large button is taller than both.
+    CHECK(size(text).x > size(icon).x);
+    CHECK(size(text).y == size(icon).y);
+    CHECK(size(both).y > size(text).y);
+    f.click(f.center(text));
+    f.frame();
+    f.click(f.center(both));
+    f.frame();
+    CHECK(c.runs == Array<String>({"view.zoomReset", "go.back"}));
+}
+
+TEST_CASE("a command's button takes its selection from the command, not from the button that it is given") {
+    KitFixture f;
+    Commands c;
+    c.add("view.grid", "Show Grid", "View");
+    c.checked = true;
+    Array<uint8_t> checked;
+    Array<uint8_t> unchecked;
+    f.build = [&](PrLayoutNode root) {
+        PrKitButton grid{.text = "Grid", .selected = !c.checked};
+        prCommandButton(f.kit, root, c.registry, c.keymap, "view.grid", grid, {});
+    };
+    f.frame();
+    REQUIRE(f.render(&checked));
+    c.checked = false;
+    f.frame();
+    REQUIRE(f.render(&unchecked));
+    // The button that a Kit draws for the same content and selection.
+    Array<uint8_t> shown;
+    f.build = [&](PrLayoutNode root) { prKitButton(f.kit, root, {.text = "Grid", .selected = true}, {}); };
+    f.frame();
+    REQUIRE(f.render(&shown));
+    CHECK(checked == shown);
+    CHECK(unchecked != shown);
+}
+
 TEST_CASE("the command palette lists the commands that match its query, and runs the one activated") {
     KitFixture f;
     Commands c;

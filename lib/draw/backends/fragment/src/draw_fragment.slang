@@ -157,7 +157,7 @@ float3 copysignOf(float3 m, float3 s) {
     return asfloat((asuint(m) & 0x7fffffffu) | (asuint(s) & 0x80000000u));
 }
 
-// What the vertex shader passes to the fragment shaders, which take it in only at their entry points (Fragment).
+// What the vertex shader passes to the fragment shaders.
 struct VertexOut {
     float4 position : SV_Position;
     float2 local : LOCAL;               // the pixel's point in the instance's local space
@@ -165,27 +165,6 @@ struct VertexOut {
     nointerpolation uint instance : INSTANCE;
     nointerpolation float4 clipRect : CLIP;
 };
-
-// A fragment's VertexOut, as the code under the entry points reads it. Slang's WGSL keeps the interpolation of a
-// VertexOut that passes to a function on the struct's copy in the module, which WGSL refuses without a location, so
-// only the entry points name VertexOut, and each reads its fields into a Fragment (fragmentOf).
-struct Fragment {
-    float4 position;
-    float2 local;
-    float coverage;
-    uint instance;
-    float4 clipRect;
-
-    __init(float4 position, float2 local, float coverage, uint instance, float4 clipRect) {
-        this.position = position;
-        this.local = local;
-        this.coverage = coverage;
-        this.instance = instance;
-        this.clipRect = clipRect;
-    }
-};
-
-#define fragmentOf(v) (Fragment((v).position, (v).local, (v).coverage, (v).instance, (v).clipRect))
 
 // The pass's target: its top left in the target's pixels, and its size.
 float4 clipPosition(float2 position, float4 target) {
@@ -517,15 +496,15 @@ struct ImageSource {
     uint tileX;
     uint tileY;
     uint sampling;
-    uint alpha;                 // PrDrawAlpha of the texels
+    uint alpha;                 // FragmentAlpha of the texels
     bool2 whole;                // whether `texels` spans the texture whole along each axis
 };
 
 // Returns a filtered color, premultiplied as the source's alpha says.
 float4 premultiplied(float4 c, uint alpha) {
-    if (alpha == PrDrawAlpha_Opaque)
+    if (alpha == FragmentAlpha_Opaque)
         c.a = 1;
-    else if (alpha == PrDrawAlpha_Straight)
+    else if (alpha == FragmentAlpha_Straight)
         c.rgb *= c.a;
     return c;
 }
@@ -665,7 +644,7 @@ struct ImageLevel {
     uint level;
     TapAxis x;
     TapAxis y;
-    uint alpha;                 // PrDrawAlpha of the texels
+    uint alpha;                 // FragmentAlpha of the texels
 };
 
 // A texel, premultiplied, or transparent for a tap outside the texels.
@@ -1125,7 +1104,7 @@ float4 sidedColor(FragmentSidedRing r, float2 p) {
 // or in a helper lane that runs only for derivatives, where an index from it would read far outside the records. If
 // `Basic` is true, the instance must be basic (fragmentShadeBasic), and the code for every other kind of coverage is
 // compiled out.
-float instanceCoverage<let Basic : bool>(Fragment input, FragmentInstance i, float2 pixel) {
+float instanceCoverage<let Basic : bool>(VertexOut input, FragmentInstance i, float2 pixel) {
     uint kind = i.flags & FragmentInstanceFlag_Coverage;
     uint v = i.data * 4;            // the record's byte offset in the values
     int2 at = int2(floor(input.local));
@@ -1171,7 +1150,7 @@ float instanceCoverage<let Basic : bool>(Fragment input, FragmentInstance i, flo
 
 // Shades the pixel. If `Basic` is true, the instance must be basic (fragmentShadeBasic), and the code that only other
 // instances need is compiled out.
-Shaded shade<let Basic : bool>(Fragment input) {
+Shaded shade<let Basic : bool>(VertexOut input) {
     FragmentInstance i = frameInstances[input.instance];
     float2 pixel = input.position.xy + draw.origin;
     Shaded result;
@@ -1319,7 +1298,7 @@ float4 composite(float4 s, float4 d, uint op, uint mode) {
 
 [shader("fragment")]
 float4 fragmentShade(VertexOut input) : SV_Target {
-    Shaded s = shade<false>(fragmentOf(input));
+    Shaded s = shade<false>(input);
     return s.paint * (s.shape * s.clip);
 }
 
@@ -1328,12 +1307,12 @@ float4 fragmentShade(VertexOut input) : SV_Target {
 // other instance, the shader is small and fast, and most of a user interface's pixels are basic.
 [shader("fragment")]
 float4 fragmentShadeBasic(VertexOut input) : SV_Target {
-    Shaded s = shade<true>(fragmentOf(input));
+    Shaded s = shade<true>(input);
     return s.paint * (s.shape * s.clip);
 }
 
 // The instance composited onto the destination `under`.
-float4 compositeOver(Fragment input, float4 under) {
+float4 compositeOver(VertexOut input, float4 under) {
     Shaded s = shade<false>(input);
     FragmentInstance i = frameInstances[input.instance];
     FragmentPaint r = framePaints[i.paint - 1];
@@ -1346,7 +1325,7 @@ float4 compositeOver(Fragment input, float4 under) {
 // Composites onto the destination, which it reads from the target.
 [shader("fragment")]
 float4 fragmentBlend(VertexOut input PR_GPU_TARGET_PARAM) : SV_Target {
-    return compositeOver(fragmentOf(input), prGpuTarget(input.position));
+    return compositeOver(input, prGpuTarget(input.position));
 }
 
 // The snapshot of the layer that the pass draws into, on a device that cannot read its target (FragmentPass). Its texel
@@ -1356,7 +1335,7 @@ PR_GPU_TEXTURE(Texture2D<float4>, frameSnapshot, 0);
 // Composites onto the destination, which it reads from the snapshot of its layer.
 [shader("fragment")]
 float4 fragmentBlendSnapshot(VertexOut input) : SV_Target {
-    return compositeOver(fragmentOf(input), frameSnapshot.Load(int3(int2(input.position.xy), 0)));
+    return compositeOver(input, frameSnapshot.Load(int3(int2(input.position.xy), 0)));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

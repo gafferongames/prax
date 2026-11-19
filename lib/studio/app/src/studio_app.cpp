@@ -75,12 +75,14 @@ PrStatus prStudioAppRun(const PrStudioAppDesc* desc) {
     s->status = PrStatus_Ok;
     s->shaper = prTextShaperCreate(PrTextShaperBackend_Default);
     s->paths = prPathCacheCreate();
-    s->glyphs = desc->images != nullptr ? prDrawGlyphBitmapCreate(desc->images) : nullptr;
+    s->compress = desc->compress;
+    s->images = desc->images;
     prAppRun(platform, {.context = s, .start = start, .event = event, .shutdown = shutdown});
     PrStatus status = s->status;
     prAppDestroy(platform);
     s->windows.reset();
     prDrawGlyphDecoderDestroy(s->glyphs);
+    prTextureCacheDestroy(s->textures);
     prTextShaperDestroy(s->shaper);
     prPathCacheDestroy(s->paths);
     prMemoryFree(s);

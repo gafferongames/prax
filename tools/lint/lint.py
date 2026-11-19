@@ -23,6 +23,7 @@ import tokenize
 import urllib.parse
 
 import tools
+from tools.fetch import checkouts
 from tools.lint import modules
 from tools.suite.prax import suite
 
@@ -2210,7 +2211,7 @@ def check_implementation_names(report, path, text):
 
 
 # The module words that begin the names of internal functions, as `layoutBlock` and `cssParse` begin with theirs.
-MODULE_WORDS = ("layout|css|dom|html|js|kit|ui|draw|text|font|path|svg|lottie|url|image|cpu|sfnt|woff|gpu|app"
+MODULE_WORDS = ("layout|css|dom|html|js|kit|ui|draw|text|font|path|svg|lottie|url|image|cpu|sfnt|woff|gpu|app|render"
                 "|fragment|triangles|jpeg|png|gif|brotli|inflate|deflate")
 
 # Matches a name that a comment or a document refers to: a public name (`Pr`, `pr`, `kPr`) wherever it is, and a
@@ -2302,7 +2303,8 @@ def check_include_paths(report, path, text):
 # harness's doctest header stands in for doctest's own, so it sorts and is allowed as doctest is (check_test_include).
 THIRD_PARTY = {
     "tools/harness/test.h": ("lib/*/tests/*", "examples/*/tests/*", "apps/*/tests/*", "tools/*/tests/*",
-                             "tools/harness/kit_fixture.h", "tools/harness/test.cpp"),
+                             "tools/harness/kit_fixture.h", "tools/harness/render_fixture.h",
+                             "tools/harness/test.cpp"),
     "mimalloc.h": ("lib/core/backends/mimalloc/src/core_mimalloc.cpp",),
     "quickjs.h": ("lib/*/quickjs/*", "lib/*/quickjs_cpp/*", "lib/lottie/src/lottie_expression.cpp", "tools/shell/page_host.cpp",
                   "apps/browser/main.cpp"),
@@ -2318,11 +2320,16 @@ THIRD_PARTY = {
     "vterm.h": ("tools/bench/vterm_bench/libvterm_engine.cpp",),
     "cmark-gfm.h": ("tools/suite/markdown/cmark_gfm_reference.cpp",),
     "cmark-gfm-core-extensions.h": ("tools/suite/markdown/cmark_gfm_reference.cpp",),
+    "mikktspace.h": ("tools/suite/tangents/tangent_references.cpp",),
+    "meshoptimizer.h": ("tools/suite/tangents/tangent_references.cpp", "tools/suite/meshopt/tests/*.cpp"),
     "zstd.h": ("tools/suite/zstd/tests/*.cpp", "tools/bench/compress_bench.cpp"),
     "zlib.h": ("tools/bench/compress_bench.cpp",),
     "brotli/decode.h": ("tools/bench/compress_bench.cpp",),
     "brotli/encode.h": ("tools/bench/compress_bench.cpp",),
     "common/xxhash.h": ("tools/bench/compress_bench.cpp",),
+    "basisu_transcoder.h": ("tools/suite/basis/tests/*.cpp",),
+    "basisu_comp.h": ("tools/suite/basis/tests/*.cpp",),
+    "basisu_gpu_texture.h": ("tools/suite/basis/tests/*.cpp",),
     "hb.h": ("lib/text/backends/harfbuzz/src/text_harfbuzz.cpp",),
     "tree_sitter/api.h": ("lib/syntax/backends/treesitter/src/syntax_treesitter.cpp",),
     "freetype/freetype.h": ("lib/font/backends/freetype/src/font_freetype.cpp", "lib/font/tests/test_font.cpp",
@@ -2562,6 +2569,9 @@ def check_backend_names(report, paths, texts):
 # The libraries that may include each other's implementation headers: the web engine's, for now.
 SHARED_IMPLEMENTATION = ("lib/css/", "lib/dom/", "lib/html/", "lib/mathml/", "lib/svg/", "lib/xhr/")
 
+# The directories of applications, whose files include each other from the root, as apps/<name>/<header>.
+APPLICATIONS = ("examples/", "apps/")
+
 
 def check_private_includes(report, path, text):
     """A library reaches another through its public headers, never through its implementation (`<module>/src/`) or its
@@ -2582,10 +2592,11 @@ def check_private_includes(report, path, text):
                    "%s reaches into %s's implementation; include its public headers" % (relative, module[:-1]))
     # A module's tests are as private as its implementation, with no library that shares them, except that a codec's
     # tests read the fixtures of the format library that it adapts: lib/<interface>/backends/<format>/tests reads
-    # lib/<format>/tests.
+    # lib/<format>/tests. An application's tests are as private, and it includes them from the root.
     codec = re.match(r"lib/\w+/backends/(\w+)/tests/", relative)
     for match in re.finditer(r'^#include "((?:[\w]+/)+?)tests/[^"]+"', text, re.M):
-        module = "lib/" + match.group(1)
+        owner = match.group(1)
+        module = owner if owner.startswith(APPLICATIONS) else "lib/" + owner
         if codec is not None and module == "lib/%s/" % codec.group(1):
             continue
         if not relative.startswith(module):
@@ -2799,16 +2810,18 @@ def check_homes(report, headers, sources, texts):
 # as PrIRect is of PrRect, is a tag of its own.
 TAGS = {
     "lib/core": ("Adler32", "Ascii", "Base64", "Blob", "ByteView", "Condition", "Core", "Crash", "Crc32", "DateTime",
-                 "DVec2", "Environment", "F32", "F64", "Fail", "File", "Float16", "Hash", "IVec2", "Mem", "Memory",
+                 "DVec2", "DVec3", "DVec4", "Environment", "F32", "F64", "Fail", "File", "Float16", "Hash", "IVec2", "IVec3",
+                 "IVec4", "Mem", "Memory",
                  "Mutex", "Pixel", "Pixels", "Random", "RawString", "Resource", "Sha1", "Status", "String",
-                 "TextBuffer", "Thread", "Time", "U64", "UVec2", "Utf8", "Vec2", "Vec3", "Vmem", "Xxh64"),
-    "lib/geom": ("Affine2", "Affine4", "Corner", "DAffine2", "DMatrix3", "DMatrix4", "IRect", "Matrix3", "Matrix4",
-                 "Rect"),
+                 "TextBuffer", "Thread", "Time", "U64", "UVec2", "Utf8", "Vec2", "Vec3", "Vec4", "Vmem", "Xxh64"),
+    "lib/geom": ("Affine2", "Affine3", "Affine4", "Box3", "Corner", "DAffine2", "DMatrix2", "DMatrix3", "DMatrix4",
+                 "DQuat", "IRect", "Matrix3", "Matrix4", "Quat", "Rect", "Sphere"),
     "lib/locale": ("Language", "Locale", "Region", "Script"),
     "lib/webidl": ("WebIdl",),
     "lib/websocket": ("WebSocket",),
     "lib/webview": ("WebView",),
     "lib/mathml": ("MathMl",),
+    "lib/model/host": ("ModelHost",),
     "lib/studio/app": ("StudioApp", "StudioWindow"),
     "lib/studio/icons": ("StudioIcon",),
 }
@@ -3114,8 +3127,8 @@ SHORTNAME = r"\b([a-z][a-z0-9]*(?:-[a-z0-9]+)*)"
 # Matches a spec reference such as `css-syntax-3/#consume-escaped-code-point`: a spec's shortname and the id of the
 # passage. An id may hold balanced parentheses, as in `attribute-value-(double-quoted)-state`, and does not end in the
 # punctuation of the surrounding sentence. A shortname inside a URL is not a reference. A shortname may hold capitals,
-# as SVG2 and DOM-Parsing do.
-SPEC_ID = re.compile(r"(?<![\w./:-])([A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*)" +
+# as SVG2 and DOM-Parsing do, and may end in a minor version, as glTF-2.0 does.
+SPEC_ID = re.compile(r"(?<![\w./:-])([A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*(?:\.[0-9]+)?)" +
                      r"/#((?:[A-Za-z0-9_%]|[.:\-](?=[A-Za-z0-9_%(\-])|'(?=[A-Za-z]+-)|\([A-Za-z0-9_.:%\-]*\))+)")
 
 # Matches a shortname followed by a section number or a quoted name, which a reference does not use, on one line or
@@ -3140,6 +3153,26 @@ def spec_ids():
         ids[file[:-len(".json")]] = {urllib.parse.unquote(url[url.index("#") + 1:])
                                      for url in urls if "#" in url}
     ids.update(markdown_spec_ids())
+    ids.update(asciidoc_spec_ids())
+    return ids
+
+
+# The specifications written in AsciiDoc that webref does not extract, by shortname, with the checkouts that dev.sh
+# fetches them in.
+ASCIIDOC_SPECS = {
+    "glTF-2.0": ("gltf_spec", os.path.join(ROOT, "third_party", "gltf-spec", "Specification.adoc")),
+}
+
+
+def asciidoc_spec_ids():
+    """Returns the ids of the passages of each AsciiDoc specification, by shortname. A passage's id is the anchor
+    written before it, `[[id]]`, which the published specification keeps."""
+    ids = {}
+    for spec, (checkout, path) in ASCIIDOC_SPECS.items():
+        if not os.path.isfile(path):
+            sys.exit("no %s specification at %s; run ./dev.sh fetch %s" % (spec, path, checkout))
+        with open(path, encoding="utf-8") as f:
+            ids[spec] = set(re.findall(r"^\[\[([A-Za-z0-9_-]+)\]\]", f.read(), re.M))
     return ids
 
 
@@ -3148,6 +3181,7 @@ def spec_ids():
 MARKDOWN_SPECS = {
     "commonmark": ("commonmark", os.path.join(ROOT, "third_party", "commonmark-spec", "spec.txt")),
     "gfm": ("cmark_gfm", os.path.join(ROOT, "third_party", "cmark-gfm", "test", "spec.txt")),
+    "usd-core": ("usd_spec", os.path.join(ROOT, "third_party", checkouts.USD_SPEC_DIRECTORY, "core_spec.md")),
 }
 
 
@@ -3316,6 +3350,42 @@ def check_module_dependencies(report):
             elif linked in owners.values() and linked not in used and linked not in FOUNDATION:
                 report.add(os.path.join(ROOT, cmake), line, "module-dependency",
                            "%s links %s, but includes none of its headers" % (target.name, linked))
+
+
+# The libraries of formats, each of which holds its format's API: of images and compression (docs/texture.md), and of
+# scenes and their materials (docs/model.md).
+FORMAT_LIBRARIES = ("basis", "draco", "exr", "gltf", "hdr", "ktx", "lz4", "materialx", "usd", "webp", "zstd")
+
+# The libraries that load what formats hold without depending on any format: a program hands them the formats' adapters.
+FORMAT_FREE = ("model", "texture")
+
+
+def check_format_dependencies(report):
+    """A library that loads what any format holds, as lib/model loads textures and lib/texture prepares them, reaches
+    the formats through the adapters that its program hands it, so it links no format library. A format library may
+    depend on such a library's interface instead. The check reads the library's own links: an interface module that it
+    links, such as lib/compress, builds in the backends that the build turns on, which are the program's choice."""
+    graph = modules.targets(ROOT)
+    for name in FORMAT_FREE:
+        target = graph.get(name)
+        if target is None:
+            continue
+        for linked in sorted(target.links):
+            # What the library links, and what that links in turn, which the library carries too.
+            reached = {linked: [linked]}
+            pending = [linked]
+            while pending:
+                at = pending.pop()
+                below = graph.get(at)
+                for further in sorted(below.links) if below is not None else ():
+                    if further not in reached:
+                        reached[further] = reached[at] + [further]
+                        pending.append(further)
+            for format_name in sorted(set(reached) & set(FORMAT_LIBRARIES)):
+                cmake, line = target.link_lines[linked]
+                chain = " through ".join(reversed(reached[format_name]))
+                report.add(os.path.join(ROOT, cmake), line, "format-dependency",
+                           "%s links %s, a format library; hand it the format's adapter instead" % (name, chain))
 
 
 def is_test(path):
@@ -3569,6 +3639,7 @@ def main():
     check_function_names(report, public_headers, texts)
     check_unique_names(report, code_files("lib/**/*.[ch]", "lib/**/*.cpp", "lib/**/*.mm"))
     check_module_dependencies(report)
+    check_format_dependencies(report)
 
     # Every text file of the working tree, tracked or new, has the line endings that .gitattributes keeps. A file whose
     # extension .gitattributes marks binary is not text, whatever its bytes.

@@ -75,12 +75,12 @@ struct TextEditorDocument {
     TextEditor* editor;
     PrRawString path;               // null for a text of no file
     bool crlf;                      // the file ended its lines with CR LF, which saving restores
-    uint64_t savedVersion;          // the version of the text that the file holds
-    PrRawString mediaType;          // the media type of the text, whose language is `language`
+    uint64_t savedVersion;          // the edit version of the text that the file holds
     PrTextEditBuffer* buffer;
     PrTextEditHistory* history;
     PrTextView* view;
 
+    PrRawString mediaType;          // the media type of the text, whose language is `language`
     const PrSyntaxLanguage* PR_NULLABLE language;
     PrSyntaxTree* PR_NULLABLE syntax;
     uint64_t syntaxChanges;         // the number of updates that changed the tree's spans
@@ -106,10 +106,14 @@ struct TextEditorDocument {
     PrLspDocument* PR_NULLABLE lsp;
 
     // A place to show once the buffer holds its line: a definition's target, a debugger's stop, or the place given to
-    // prTextEditorShowAt. The position is in the encoding of whatever named it.
+    // prTextEditorShowAt. The position is in the encoding of whatever named it. A range to select instead, given to
+    // prTextEditorShowRange, once the buffer holds it.
     bool revealPending;
     PrLspPosition revealPosition;
     PrLspEncoding revealEncoding;
+    bool revealRange;
+    uint32_t revealBegin;
+    uint32_t revealEnd;
 
     bool readOnly;
     bool listed;                    // the editor's list of documents holds it, as it holds every document of its host
@@ -432,10 +436,9 @@ void attachServer(TextEditor* editor, TextEditorDocument* document) {
         document->language->name);
 }
 
-// Ends the load: the file holds what the buffer does, and the source is no longer needed.
+// Ends the load and frees the source. A load is not an edit, so the document's edited state does not change.
 void finishLoad(TextEditorDocument* document) {
     document->loading = false;
-    document->savedVersion = prTextEditBufferVersion(document->buffer);
     prBlobRelease(document->file);
     document->file = nullptr;
     document->source.reset();
@@ -501,16 +504,28 @@ void moveCaret(TextEditorDocument* document, uint32_t offset) {
 void revealPending(TextEditorDocument* document) {
     if (!document->revealPending)
         return;
+    if (document->revealRange) {
+        uint32_t size = prTextEditBufferSize(document->buffer);
+        if (document->loading && size < document->revealEnd)
+            return;
+        document->revealPending = false;
+        uint32_t end = document->revealEnd < size ? document->revealEnd : size;
+        uint32_t begin = document->revealBegin < end ? document->revealBegin : end;
+        PrTextEditSelection range{.anchor = end, .caret = begin};
+        prTextEditViewSetSelections(prTextViewEdit(document->view), &range, 1);
+        prTextViewReveal(document->view);
+        return;
+    }
     if (document->loading && prTextEditBufferLineCount(document->buffer) <= document->revealPosition.line + 1)
         return;
     document->revealPending = false;
     moveCaret(document, prLspOffsetFromPosition(document->buffer, document->revealPosition, document->revealEncoding));
 }
 
-void showDocument(TextEditor* editor, TextEditorDocument* document) {
+void showDocument(TextEditor* editor, TextEditorDocument* document, bool focus) {
     editor->shown = document;
     editor->diff = nullptr;
-    editor->focusAsked = true;
+    editor->focusAsked = editor->focusAsked || focus;
     editor->hoverDocument = nullptr;
 }
 
@@ -548,7 +563,7 @@ int32_t paneSlotOf(const TextEditorDiff* diff, const TextEditorDocument* PR_NULL
 
 // Shows the comparison, with focus on its new document or its result.
 void showDiff(TextEditor* editor, TextEditorDiff* diff) {
-    showDocument(editor, diff->documents[primarySlot(diff)]);
+    showDocument(editor, diff->documents[primarySlot(diff)], true);
     editor->diff = diff;
     for (uint32_t slot = 0; slot < kTextEditorDiffMaxBuffers; ++slot) {
         diff->offsets[slot] = -1;
@@ -951,7 +966,7 @@ PrStatus saveDocument(TextEditorDocument* document) {
     }
     if (!ok)
         return PrStatus_Io;
-    document->savedVersion = prTextEditBufferVersion(document->buffer);
+    document->savedVersion = prTextEditBufferEditVersion(document->buffer);
     if (document->lsp != nullptr)
         prLspDocumentSave(document->lsp);
     return PrStatus_Ok;
@@ -1082,8 +1097,9 @@ void revealStop(TextEditor* editor) {
             return;
         document = documentFromPath(editor, prRawStringView(&frame->path));
     }
-    showDocument(editor, document);
+    showDocument(editor, document, true);
     document->revealPending = true;
+    document->revealRange = false;
     document->revealPosition = PrLspPosition{frame->line, 0};
     document->revealEncoding = PrLspEncoding_Utf8;
     revealPending(document);
@@ -1251,9 +1267,10 @@ void definitionAnswered(void* PR_NULLABLE context, const PrLspResponse* response
     }
     prRawStringReset(&path);
     target->revealPending = true;
+    target->revealRange = false;
     target->revealPosition = location.range.start;
     target->revealEncoding = encoding;
-    showDocument(editor, target);
+    showDocument(editor, target, true);
     revealPending(target);
 }
 
@@ -2444,7 +2461,7 @@ PrStatus prTextEditorDocumentCreate(PrTextEditor* editor, const PrTextEditorDocu
         prTextEditBufferSetPropose(document->buffer, refuseEdits, nullptr);
     document->history = prTextEditHistoryCreate(document->buffer);
     document->view = prTextViewCreate(document->buffer);
-    document->savedVersion = prTextEditBufferVersion(document->buffer);
+    document->savedVersion = prTextEditBufferEditVersion(document->buffer);
     document->spansVersion = UINT64_MAX;
     PrStringView type = desc->mediaType;
     if (type.isEmpty()) {
@@ -2464,7 +2481,7 @@ PrStatus prTextEditorDocumentCreate(PrTextEditor* editor, const PrTextEditorDocu
     if (!document->loading)
         attachServer(editor, document);
     if (editor->shown == nullptr)
-        showDocument(editor, document);
+        showDocument(editor, document, !desc->keepFocus);
     *out = document;
     return PrStatus_Ok;
 }
@@ -2490,7 +2507,7 @@ void prTextEditorDocumentDestroy(PrTextEditorDocument* PR_NULLABLE document) {
     if (editor->shown == document) {
         editor->shown = nullptr;
         if (editor->documents.count != 0)
-            showDocument(editor, editor->documents.last());
+            showDocument(editor, editor->documents.last(), false);
     }
     freeDocument(document);
 }
@@ -2512,15 +2529,26 @@ PrTextEditorDocument* PR_NULLABLE prTextEditorShown(const PrTextEditor* editor) 
     return static_cast<PrTextEditorDocument*>(editor->shown);
 }
 
-void prTextEditorShow(PrTextEditor* editor, PrTextEditorDocument* document) {
-    showDocument(editor, document);
+void prTextEditorShow(PrTextEditor* editor, PrTextEditorDocument* document, bool focus) {
+    showDocument(editor, document, focus);
 }
 
-void prTextEditorShowAt(PrTextEditor* editor, PrTextEditorDocument* document, uint32_t line, uint32_t column) {
-    showDocument(editor, document);
+void prTextEditorShowAt(PrTextEditor* editor, PrTextEditorDocument* document, uint32_t line, uint32_t column, bool focus) {
+    showDocument(editor, document, focus);
     document->revealPending = true;
+    document->revealRange = false;
     document->revealPosition = PrLspPosition{line, column};
     document->revealEncoding = PrLspEncoding_Utf32;
+    revealPending(document);
+}
+
+void prTextEditorShowRange(PrTextEditor* editor, PrTextEditorDocument* document, uint32_t begin, uint32_t end, bool focus) {
+    PR_ASSERT(begin <= end);
+    showDocument(editor, document, focus);
+    document->revealPending = true;
+    document->revealRange = true;
+    document->revealBegin = begin;
+    document->revealEnd = end;
     revealPending(document);
 }
 
@@ -2555,7 +2583,7 @@ PrTextEditorDocumentInfo prTextEditorDocumentInfo(const PrTextEditorDocument* do
     PrTextEditorDocumentInfo info{
         .loading = document->loading,
         .loaded = document->loading && source.size != 0 ? float(double(document->loaded) / double(source.size)) : 1,
-        .edited = prTextEditBufferVersion(document->buffer) != document->savedVersion,
+        .edited = prTextEditBufferEditVersion(document->buffer) != document->savedVersion,
         .crlf = document->crlf,
         .parsing = document->syntax != nullptr && prSyntaxTreeIsPending(document->syntax),
     };
@@ -2614,7 +2642,7 @@ void prTextEditorDiffDestroy(PrTextEditorDiff* PR_NULLABLE diff) {
     TextEditor* editor = diff->editor;
     editor->diffs.removeFirst(diff);
     if (editor->diff == diff)
-        showDocument(editor, diff->documents[primarySlot(diff)]);
+        showDocument(editor, diff->documents[primarySlot(diff)], true);
     // The documents keep the gaps that align them, and the sync points, no longer.
     clearSyncs(diff);
     TextEditorDocument* owned[kTextEditorDiffMaxBuffers] = {};

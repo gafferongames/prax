@@ -48,7 +48,7 @@ struct Server {
     PrJson* takeOne() {
         Array<String> bodies = take();
         REQUIRE(bodies.count() == 1);
-        REQUIRE(prJsonParse(json, bodies[0], nullptr));
+        REQUIRE(prJsonParse(json, bodies[0], 0, nullptr));
         return json;
     }
 };
@@ -370,7 +370,7 @@ TEST_CASE("lsp: a cancelled request's callback is not called") {
 
 TEST_CASE("lsp: hover text, locations and completions read from each form a result may take") {
     PrJson* json = prJsonCreate();
-    REQUIRE(prJsonParse(json, "{\"contents\":[\"first\",{\"language\":\"cpp\",\"value\":\"int a\"}]}", nullptr));
+    REQUIRE(prJsonParse(json, "{\"contents\":[\"first\",{\"language\":\"cpp\",\"value\":\"int a\"}]}", 0, nullptr));
     PrRawString text = prLspHoverText(json, 0);
     CHECK(prRawStringView(&text) == "first\n\nint a");
     prRawStringReset(&text);
@@ -378,7 +378,7 @@ TEST_CASE("lsp: hover text, locations and completions read from each form a resu
     REQUIRE(prJsonParse(json, "[{\"targetUri\":\"file:///b.h\",\"targetRange\":{\"start\":{\"line\":1,\"character\":0},"
         "\"end\":{\"line\":3,\"character\":1}},\"targetSelectionRange\":{\"start\":{\"line\":1,\"character\":4},"
         "\"end\":{\"line\":1,\"character\":7}}},{\"uri\":\"file:///c.h\",\"range\":{\"start\":{\"line\":9,"
-        "\"character\":2},\"end\":{\"line\":9,\"character\":3}}}]", nullptr));
+        "\"character\":2},\"end\":{\"line\":9,\"character\":3}}}]", 0, nullptr));
     PrLspLocation locations[4];
     REQUIRE(prLspLocations(json, 0, locations, 4) == 2);
     CHECK(locations[0].uri == "file:///b.h");
@@ -387,7 +387,7 @@ TEST_CASE("lsp: hover text, locations and completions read from each form a resu
 
     REQUIRE(prJsonParse(json, "{\"isIncomplete\":false,\"items\":[{\"label\":\"push_back\",\"kind\":2,"
         "\"textEdit\":{\"range\":{\"start\":{\"line\":0,\"character\":2},\"end\":{\"line\":0,\"character\":4}},"
-        "\"newText\":\"push_back\"}},{\"label\":\"size\",\"insertText\":\"size()\"}]}", nullptr));
+        "\"newText\":\"push_back\"}},{\"label\":\"size\",\"insertText\":\"size()\"}]}", 0, nullptr));
     PrLspCompletion completions[4];
     REQUIRE(prLspCompletions(json, 0, completions, 4) == 2);
     CHECK(completions[0].hasRange);

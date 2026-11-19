@@ -13,6 +13,7 @@
 #include "pr/css_presentation.h"
 #include "pr/dom_xml.h"
 #include "pr/float.h"
+#include "pr/image_texture_source.h"
 #include "pr/mime.h"
 #include "pr/net.h"
 #include "pr/string_ops.h"
@@ -1294,6 +1295,7 @@ void newDocument(PrHtmlPage* page) {
             .font = page->host.font,
             .shaper = page->host.shaper,
             .agent = window->agent,
+            .textures = page->host.textures,
             .userAgentSheets = sheets,
             .userAgentSheetCount = sheetCount,
             .embedding = embedding,
@@ -1357,6 +1359,8 @@ EmbedFetch* newEmbedFetch(PrHtmlPage* page, PrDomElement* element, PrRawString u
 
 void dropEmbedFetch(void* PR_NULLABLE data) {
     EmbedFetch* fetch = static_cast<EmbedFetch*>(data);
+    if (fetch->element->state != nullptr && fetch->element->state->generation == fetch->generation)
+        fetch->element->state->imageFetching = false;
     domNodeUnhold(fetch->element);
     prRawStringReset(&fetch->url);
     prMemoryFree(fetch);
@@ -1440,6 +1444,8 @@ void attachFrame(PrHtmlPage* page, PrDomElement* element, PrStringView source, P
         childHost.shaper = page->host.shaper;
     if (childHost.images == nullptr)
         childHost.images = page->host.images;
+    if (childHost.textures == nullptr)
+        childHost.textures = page->host.textures;
     if (childHost.media == nullptr)
         childHost.media = page->host.media;
     if (childHost.mixer == nullptr)
@@ -1603,8 +1609,7 @@ bool loadSecureImage(void* PR_NULLABLE context, PrDomDocument* from, PrStringVie
         if (htmlImageIsSvg(bytes)) {
             out->svg = svgImageOf(bytes, domUrlFragment(url), loader);
         } else if (codec != nullptr) {
-            PrByteView view = prStringBytes(bytes);
-            prDrawImageCreateFromBytes(codec, view, &out->raster, nullptr);
+            prImageTextureSourceOpenBytes(prStringBytes(bytes), codec, nullptr, PrImageTextureColor_Srgb, &out->raster);
         }
     }
     prRawStringReset(&body);
@@ -1628,6 +1633,7 @@ const PrSvgImage* PR_NULLABLE svgImageOf(PrStringView bytes, PrStringView fragme
     PrSvgDrawOptions options = prSvgDrawOptionsDefault();
     options.loadImage = loadSecureImage;
     options.loadContext = loader;
+    options.textures = loader->textures;
     const PrSvgImage* image = svg != nullptr ? prSvgImageCreate(svg, fragment, &options) : nullptr;
     prDomDocumentRelease(document);
     return image;
@@ -1637,6 +1643,7 @@ const PrSvgImage* PR_NULLABLE svgImageOf(PrStringView bytes, PrStringView fragme
 // caller, and writes its natural dimensions. `fragment` is the fragment of the URL that named the image. Returns a
 // painter with no paint function if the bytes do not parse as an SVG document.
 PrLayoutPainter svgPainter(PrHtmlPage* page, PrStringView bytes, PrStringView fragment, PrLayoutNaturalSize* natural) {
+    page->svgImages = HtmlSvgImageLoader{.images = page->host.images, .textures = page->window->textures};
     const PrSvgImage* image = svgImageOf(bytes, fragment, &page->svgImages);
     if (image == nullptr)
         return PrLayoutPainter{};
@@ -1651,6 +1658,21 @@ PrLayoutPainter svgPainter(PrHtmlPage* page, PrStringView bytes, PrStringView fr
     return prSvgImagePainter(image);
 }
 
+// Returns the EXIF orientation that displays the image, which its description states as flags.
+PrImageOrientation orientationOf(const PrTextureSource* image) {
+    switch (prTextureSourceDesc(image)->orientation) {
+        case PrTextureOrientationFlag_FlipX: return PrImageOrientation_FlipHorizontal;
+        case PrTextureOrientationFlag_FlipX | PrTextureOrientationFlag_FlipY: return PrImageOrientation_Rotate180;
+        case PrTextureOrientationFlag_FlipY: return PrImageOrientation_FlipVertical;
+        case PrTextureOrientationFlag_Transpose: return PrImageOrientation_Transpose;
+        case PrTextureOrientationFlag_Transpose | PrTextureOrientationFlag_FlipX: return PrImageOrientation_Rotate90;
+        case PrTextureOrientationFlag_Transpose | PrTextureOrientationFlag_FlipX | PrTextureOrientationFlag_FlipY:
+            return PrImageOrientation_Transverse;
+        case PrTextureOrientationFlag_Transpose | PrTextureOrientationFlag_FlipY: return PrImageOrientation_Rotate270;
+        default: return PrImageOrientation_Identity;
+    }
+}
+
 // Decodes an image that a style or an SVG image element names (DomDocumentHost::decodeImage). An SVG image is drawn
 // here, and the host decodes any other image.
 bool decodeImage(void* PR_NULLABLE context, PrByteView bytes, PrStringView fragment, DomDecodedImage* out) {
@@ -1663,11 +1685,12 @@ bool decodeImage(void* PR_NULLABLE context, PrByteView bytes, PrStringView fragm
         return false;
     if (htmlImageIsSvg(text)) {
         out->vector = svgPainter(page, text, fragment, &out->natural);
-    } else if (page->host.images != nullptr &&
-            prDrawImageCreateFromBytes(page->host.images, bytes, &out->image, &out->orientation) == PrStatus_Ok) {
-        // The decoded image is in its orientation, which turns a header's width and height a quarter turn for some
-        // orientations (css-images-3/#the-image-orientation).
-        PrUVec2 extent = prDrawImageExtent(out->image);
+    } else if (page->host.images != nullptr && prImageTextureSourceOpenBytes(bytes, page->host.images, nullptr,
+            PrImageTextureColor_Srgb, &out->image) == PrStatus_Ok) {
+        // The natural size is that of the image as its orientation displays it, which turns a header's width and height
+        // a quarter turn for some orientations (css-images-3/#the-image-orientation).
+        out->orientation = orientationOf(out->image);
+        PrUVec2 extent = prTextureDescDisplayedExtent(prTextureSourceDesc(out->image));
         out->natural = prLayoutNaturalSizeNone();
         out->natural.width = prLayoutUnitFromPx(float(extent.x));
         out->natural.height = prLayoutUnitFromPx(float(extent.y));
@@ -1686,29 +1709,8 @@ void correctForDensity(DomElementState* state) {
     state->naturalHeight = uint32_t(prF64Round(double(state->naturalHeight) / state->density));
 }
 
-void showImage(PrHtmlPage* page, PrDomElement* element, PrStringView bytes) {
-    DomElementState* state = element->state;
-    prDrawImageRelease(state->picture);
-    state->picture = nullptr;
-    prDrawImageRelease(state->storedPicture);
-    state->storedPicture = nullptr;
-    state->orientation = PrImageOrientation_Identity;
-    prLayoutPainterRelease(state->vector);
-    state->vector = PrLayoutPainter{};
-    if (state->image == PrDomImageState_CompletelyAvailable && htmlImageIsSvg(bytes)) {
-        PrStringView fragment = domUrlFragment(prRawStringView(&state->imageUrl));
-        state->vector = svgPainter(page, bytes, fragment, &state->vectorNatural);
-    } else if (state->image == PrDomImageState_CompletelyAvailable && page->host.images != nullptr) {
-        PrByteView view = prStringBytes(bytes);
-        PrImageOrientation orientation = PrImageOrientation_Identity;
-        if (prDrawImageCreateFromBytes(page->host.images, view, &state->picture, &orientation) == PrStatus_Ok) {
-            PrUVec2 extent = prDrawImageExtent(state->picture);
-            state->naturalWidth = extent.x;
-            state->naturalHeight = extent.y;
-            correctForDensity(state);
-            state->orientation = orientation;
-        }
-    }
+// Tells the element's presentation that its content changed.
+void imageContentChanged(PrDomElement* element) {
     if (!domIsConnected(element))
         return;
     // Only the content of svg elements draws an SVG element's image.
@@ -1716,6 +1718,162 @@ void showImage(PrHtmlPage* page, PrDomElement* element, PrStringView bytes) {
         svgContentImageChanged(element);
     else
         cssPresentationElementContentChanged(element);
+}
+
+// Shows `bytes` as the element's image, according to its current request's state, and tells its presentation. A raster
+// image starts realizing in the window's textures, so that it is decoded before it is drawn, and the window waits for
+// its decode (htmlImagesShow). Returns false for a raster image that does not decode: whose bytes do not open within
+// the image library's limits, or whose realization failed at once.
+bool showImage(PrHtmlPage* page, PrDomElement* element, PrStringView bytes) {
+    DomElementState* state = element->state;
+    prTextureSourceRelease(state->picture);
+    state->picture = nullptr;
+    state->orientation = PrImageOrientation_Identity;
+    prLayoutPainterRelease(state->vector);
+    state->vector = PrLayoutPainter{};
+    bool decodes = true;
+    if (state->image == PrDomImageState_CompletelyAvailable && htmlImageIsSvg(bytes)) {
+        PrStringView fragment = domUrlFragment(prRawStringView(&state->imageUrl));
+        state->vector = svgPainter(page, bytes, fragment, &state->vectorNatural);
+    } else if (state->image == PrDomImageState_CompletelyAvailable && page->host.images != nullptr) {
+        decodes = prImageTextureSourceOpenBytes(prStringBytes(bytes), page->host.images, nullptr,
+            PrImageTextureColor_Srgb, &state->picture) == PrStatus_Ok;
+        PrTextureCache* textures = page->window->textures;
+        PrTextureRegion region{};
+        if (decodes && textures != nullptr &&
+                prTextureCacheRealize(textures, state->picture, 0, &region) == PrTextureCacheState_Failed) {
+            prTextureSourceRelease(state->picture);
+            state->picture = nullptr;
+            decodes = false;
+        }
+        if (state->picture != nullptr) {
+            PrUVec2 extent = prTextureDescDisplayedExtent(prTextureSourceDesc(state->picture));
+            state->naturalWidth = extent.x;
+            state->naturalHeight = extent.y;
+            correctForDensity(state);
+            state->orientation = orientationOf(state->picture);
+            htmlImageWaitDecode(page->window, element, nullptr);
+        }
+    }
+    imageContentChanged(element);
+    return decodes;
+}
+
+// Makes the element's current request broken (html/#img-error): it shows no image, and has no natural size.
+void breakImage(PrHtmlWindow* window, PrDomElement* element) {
+    (void)window;
+    DomElementState* state = element->state;
+    state->image = PrDomImageState_Broken;
+    state->naturalWidth = 0;
+    state->naturalHeight = 0;
+    prTextureSourceRelease(state->picture);
+    state->picture = nullptr;
+    state->orientation = PrImageOrientation_Identity;
+    imageContentChanged(element);
+}
+
+// A decode that failed after its request's events: the element and the generation of its request, for its error event.
+struct BrokenImage {
+    PrDomElement* element;
+    uint32_t generation;
+};
+
+// Fires error at an image whose decode failed, if its request is still current.
+void fireBrokenImage(void* data) {
+    BrokenImage* broken = static_cast<BrokenImage*>(data);
+    if (broken->element->state->generation == broken->generation)
+        domEventFire(broken->element, "error");
+    domNodeUnhold(broken->element);
+    prMemoryFree(broken);
+}
+
+// Settles the promise of a waiting decode, if it has one, and releases it. A request whose event waited for the decode
+// fires load or error now, if it is still current, and its page's load event stops waiting for it.
+void settleDecode(HtmlImageDecode& decode, bool decoded) {
+    if (decode.promise.settle != nullptr) {
+        decode.promise.settle(decode.promise.context, decoded ? PrStringView{} : PrStringView{"EncodingError"});
+        decode.promise.release(decode.promise.context);
+    }
+    if (PrHtmlPage* page = decode.events) {
+        const DomElementState* state = decode.element->state;
+        if (state != nullptr && state->generation == decode.generation)
+            queueElementEvent(page, decode.element, !decoded);
+        --page->delayingFetches;
+        queueAdvance(page);
+    }
+    prRawStringReset(&decode.url);
+    domNodeUnhold(decode.element);
+}
+
+// Returns true once a waiting decode has settled, and settles it: its request decoded, broke or changed.
+bool decodeSettles(PrHtmlWindow* window, HtmlImageDecode& decode) {
+    PrDomElement* element = decode.element;
+    DomElementState* state = element->state;
+    // An image of a document that is not fully active does not decode (html/#dom-img-decode).
+    PrHtmlWindow* view = prHtmlDocumentDefaultView(element->document);
+    if (view == nullptr || !htmlWindowIsFullyActive(view)) {
+        settleDecode(decode, false);
+        return true;
+    }
+    // An available request that an update replaced with the same image, available too, is the one that a promise
+    // decodes: the update showed nothing new (html/#updating-the-image-data, the list of available images).
+    if (state != nullptr && state->generation != decode.generation && decode.promise.settle != nullptr &&
+            decode.available && state->image == PrDomImageState_CompletelyAvailable && !state->imageFetching &&
+            prRawStringView(&state->imageUrl) == prRawStringView(&decode.url))
+        decode.generation = state->generation;
+    // A request whose fetch has not answered is waited for.
+    if (state != nullptr && state->generation == decode.generation && state->imageFetching)
+        return false;
+    if (state == nullptr || state->generation != decode.generation || state->image == PrDomImageState_Broken) {
+        settleDecode(decode, false);
+        return true;
+    }
+    // A request that is not fetching and not available has nothing to decode.
+    if (state->image != PrDomImageState_CompletelyAvailable) {
+        settleDecode(decode, false);
+        return true;
+    }
+    PrTextureRegion region{};
+    PrTextureCacheState realized = PrTextureCacheState_Ready;
+    if (state->picture != nullptr && window->textures != nullptr)
+        realized = prTextureCacheRealize(window->textures, state->picture, 0, &region);
+    if (realized == PrTextureCacheState_Pending)
+        return false;
+    if (realized == PrTextureCacheState_Failed) {
+        // The image is broken. A request whose event waited for the decode fires error; one whose load event fired
+        // fires error after it, as the request does that it was decoded from.
+        breakImage(window, element);
+        if (decode.events == nullptr) {
+            BrokenImage* broken = alloc<BrokenImage>();
+            *broken = BrokenImage{element, state->generation};
+            domNodeHold(element);
+            htmlWindowQueueTask(window, fireBrokenImage, broken);
+        }
+    }
+    settleDecode(decode, realized == PrTextureCacheState_Ready);
+    return true;
+}
+
+// Queues the load or error event of the element's current request (queueElementEvent). The load event of a request
+// whose decode the window waits for waits for it too, and so does the page's, so that an image that its page loaded
+// with has decoded once the page's load event fires, and draws in the frames after it.
+void queueImageEvent(PrHtmlPage* page, PrDomElement* element, bool error) {
+    const DomElementState* state = element->state;
+    PrTextureCache* textures = page->window->textures;
+    PrTextureRegion region{};
+    bool pending = !error && state->picture != nullptr && textures != nullptr &&
+        prTextureCacheRealize(textures, state->picture, 0, &region) == PrTextureCacheState_Pending;
+    if (pending) {
+        for (HtmlImageDecode& decode : page->window->imageDecodes.span()) {
+            if (decode.element == element && decode.generation == state->generation && decode.events == nullptr &&
+                    decode.promise.settle == nullptr) {
+                decode.events = page;
+                ++page->delayingFetches;
+                return;
+            }
+        }
+    }
+    queueElementEvent(page, element, error);
 }
 
 // Receives the result of fetching an image's source: sets its natural size and image if it decodes, and queues its load
@@ -1741,6 +1899,7 @@ void imageFetched(void* PR_NULLABLE data, const DomFetchResult* result) {
     EmbedFetch* fetch = static_cast<EmbedFetch*>(data);
     if (isCurrent(fetch)) {
         DomElementState* state = fetch->element->state;
+        state->imageFetching = false;
         bool loaded = result->status == PrStatus_Ok &&
             htmlImageSize(domFetchText(result), &state->naturalWidth, &state->naturalHeight);
         correctForDensity(state);
@@ -1753,10 +1912,17 @@ void imageFetched(void* PR_NULLABLE data, const DomFetchResult* result) {
         }
         if (loaded)
             state->image = PrDomImageState_CompletelyAvailable;
-        showImage(fetch->page, fetch->element, loaded ? domFetchText(result) : PrStringView{});
-        queueElementEvent(fetch->page, fetch->element, !loaded);
+        // An image that does not decode is broken (html/#img-error), dimensions read or not: nothing of it can show.
+        if (!showImage(fetch->page, fetch->element, loaded ? domFetchText(result) : PrStringView{})) {
+            loaded = false;
+            breakImage(fetch->page->window, fetch->element);
+        }
+        queueImageEvent(fetch->page, fetch->element, !loaded);
     }
+    PrHtmlWindow* window = fetch->page->window;
     dropEmbedFetch(fetch);
+    // The decodes that waited for the answer settle after it, if they can.
+    htmlImagesQueue(window);
 }
 
 // html/#update-the-image-data for an img or an image button whose source is `source`, which is its src attribute, or
@@ -1766,6 +1932,7 @@ void imageFetched(void* PR_NULLABLE data, const DomFetchResult* result) {
 void updateImage(PrHtmlPage* page, PrDomElement* element, PrStringView source, double density = 1) {
     DomElementState* state = domElementState(element);
     ++state->generation;
+    state->imageFetching = false;
     state->density = density;
     prRawStringReset(&state->imageUrl);
     state->image = PrDomImageState_Broken;
@@ -1775,6 +1942,7 @@ void updateImage(PrHtmlPage* page, PrDomElement* element, PrStringView source, d
     if (source.size == 0) {
         if (source.data != nullptr)
             queueElementEvent(page, element, true);
+        htmlImagesQueue(page->window);
         return;
     }
     PrUrl* url = nullptr;
@@ -1786,10 +1954,13 @@ void updateImage(PrHtmlPage* page, PrDomElement* element, PrStringView source, d
             htmlImageSize(bytes, &state->naturalWidth, &state->naturalHeight);
             correctForDensity(state);
             state->image = PrDomImageState_CompletelyAvailable;
-            showImage(page, element, bytes);
-            queueElementEvent(page, element, false);
+            bool decodes = showImage(page, element, bytes);
+            if (!decodes)
+                breakImage(page->window, element);
+            queueImageEvent(page, element, !decodes);
         } else {
             EmbedFetch* fetch = newEmbedFetch(page, element, prUrlSerialize(url, PrUrlSerialization_Whole));
+            state->imageFetching = true;
             startFetch(page, prRawStringView(&request), DomFetchDestination_Image,
                 element->tag == PrDomTag_Input ? PrFetchInitiator_Input : PrFetchInitiator_Img,
                 domAttributeValue(element, "referrerpolicy"),
@@ -1800,6 +1971,8 @@ void updateImage(PrHtmlPage* page, PrDomElement* element, PrStringView source, d
         queueElementEvent(page, element, true);
     }
     prUrlDestroy(url);
+    // The decodes of the request that this one replaced settle.
+    htmlImagesQueue(page->window);
 }
 
 // Updates an img element's image to the source that it selects for the window's display (html_image_source.h).
@@ -1865,8 +2038,11 @@ void objectFetched(void* PR_NULLABLE data, const DomFetchResult* result) {
             bool decoded = htmlImageSize(domFetchText(result), &state->naturalWidth, &state->naturalHeight);
             if (decoded)
                 state->image = PrDomImageState_CompletelyAvailable;
-            showImage(fetch->page, element, decoded ? domFetchText(result) : PrStringView{});
-            queueElementEvent(fetch->page, element, !decoded);
+            if (!showImage(fetch->page, element, decoded ? domFetchText(result) : PrStringView{})) {
+                decoded = false;
+                breakImage(fetch->page->window, element);
+            }
+            queueImageEvent(fetch->page, element, !decoded);
         } else if (prAsciiEqualsFold(essence, "text/html") || prMimeTypeIsXml(essence)) {
             attachFrame(fetch->page, element, domFetchText(result), prRawStringView(&fetch->url),
                 PrHtmlResponseHeaders{essence, result->contentLanguage, PrStringView{nullptr, 0}});
@@ -1880,6 +2056,7 @@ void objectFetched(void* PR_NULLABLE data, const DomFetchResult* result) {
 void objectChanged(PrHtmlPage* page, PrDomElement* element) {
     DomElementState* state = domElementState(element);
     ++state->generation;
+    state->imageFetching = false;
     state->image = PrDomImageState_Broken;
     state->naturalWidth = 0;
     state->naturalHeight = 0;
@@ -2301,6 +2478,7 @@ void shareWithWindow(PrHtmlPage* page, PrHtmlWindow* window) {
     window->storage[PrHtmlStorageKind_Session].provider = page->host.sessionStorage;
     window->renderer = page->host.renderer;
     window->images = page->host.images;
+    window->textures = page->host.textures;
     window->mediaCodec = page->host.media;
     window->mixer = page->host.mixer;
     if (page->host.fetcher != nullptr)
@@ -2365,6 +2543,7 @@ void replaceWindow(PrHtmlPage* page) {
         }
     }
     page->window = window;
+    htmlImagesDrop(closed);
     domEventTargetRelease(closed);
 }
 
@@ -3678,6 +3857,52 @@ PrStatus htmlPageBeginStreamedLoad(PrHtmlPage* page, PrStringView url, const PrH
     return PrStatus_Ok;
 }
 
+void htmlImagesShow(PrHtmlWindow* window) {
+    uint32_t kept = 0;
+    for (uint32_t i = 0; i < window->imageDecodes.count; ++i) {
+        HtmlImageDecode decode = window->imageDecodes.data[i];
+        if (!decodeSettles(window, decode))
+            window->imageDecodes.data[kept++] = decode;
+    }
+    window->imageDecodes.count = kept;
+}
+
+void htmlImageWaitDecode(PrHtmlWindow* window, PrDomElement* element, const PrHtmlPromise* PR_NULLABLE promise) {
+    DomElementState* state = domElementState(element);
+    domNodeHold(element);
+    bool available = state->image == PrDomImageState_CompletelyAvailable && !state->imageFetching;
+    window->imageDecodes.push(HtmlImageDecode{
+        element, state->generation, prRawStringClone(&state->imageUrl), available,
+        promise != nullptr ? *promise : PrHtmlPromise{}, nullptr,
+    });
+    htmlImagesQueue(window);
+}
+
+void htmlImagesQueue(PrHtmlWindow* window) {
+    if (window->decodesQueued || window->imageDecodes.count == 0)
+        return;
+    window->decodesQueued = true;
+    htmlWindowQueueTask(window, [](void* data) {
+        PrHtmlWindow* queued = static_cast<PrHtmlWindow*>(data);
+        queued->decodesQueued = false;
+        htmlImagesShow(queued);
+    }, window, [](void* data) { static_cast<PrHtmlWindow*>(data)->decodesQueued = false; });
+}
+
+void htmlImagesDrop(PrHtmlWindow* window) {
+    RawArray<HtmlImageDecode> decodes = window->imageDecodes;
+    window->imageDecodes = RawArray<HtmlImageDecode>{};
+    for (HtmlImageDecode& decode : decodes.span()) {
+        // A discarded document's request fires no event.
+        if (decode.events != nullptr) {
+            --decode.events->delayingFetches;
+            decode.events = nullptr;
+        }
+        settleDecode(decode, false);
+    }
+    decodes.reset();
+}
+
 } // namespace pr_impl
 
 using namespace pr_impl;
@@ -3686,7 +3911,6 @@ PrHtmlPage* prHtmlPageCreate(const PrHtmlHost* PR_NULLABLE host) {
     PrHtmlPage* page = allocZeroed<PrHtmlPage>();
     page->window = htmlWindowCreate();
     page->host = host != nullptr ? *host : prHtmlHostDefault();
-    page->svgImages = HtmlSvgImageLoader{.images = page->host.images};
     shareWithWindow(page, page->window);
     // A browsing context with no history of its host's keeps its own, whose first entry is its initial about:blank's.
     page->ownsHistory = page->host.sessionHistory == nullptr;
@@ -3751,6 +3975,7 @@ void prHtmlPageDestroy(PrHtmlPage* PR_NULLABLE page) {
     page->inOrder.reset();
     dropElementEvents(page);
     page->elementEvents.reset();
+    htmlImagesDrop(page->window);
     closeWindow(page);
     if (page->host.closed != nullptr)
         page->host.closed(page->host.context, page);

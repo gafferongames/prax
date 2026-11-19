@@ -4,6 +4,11 @@
 pr_harness(image_bench prax::image image_bench.cpp)
 target_link_libraries(image_bench PRIVATE prax::compress_select prax::image_select prax::compress prax::image)
 
+# What lib/render's frames cost, drawing glTF assets that lib/model loads, which ./dev.sh bench render runs.
+pr_harness(render_bench prax::model render_bench.cpp)
+target_link_libraries(render_bench PRIVATE prax::compress_select prax::image_select prax::gpu_select prax::gpu prax::model_host
+                                           prax::render)
+
 # What converting numbers to text and back costs in lib/core and in the standard library's <charconv>, which
 # ./dev.sh bench numbers runs.
 pr_harness(number_bench prax::core_cpp number_bench.cpp)
@@ -48,8 +53,9 @@ target_compile_definitions(text_edit_bench PRIVATE PR_FONTS_DIR="${PROJECT_SOURC
 
 # What a windowed view costs at each size of document, which ./dev.sh bench text-view runs.
 pr_harness(text_view_bench prax::text_view text_view_bench.cpp)
-target_link_libraries(text_view_bench PRIVATE prax::draw_select prax::gpu_select prax::draw prax::font prax::gpu
-                                              prax::layout prax::mime prax::syntax prax::text)
+target_link_libraries(text_view_bench PRIVATE prax::gpu_select prax::draw prax::draw_select prax::font prax::gpu
+                                              prax::layout prax::mime prax::syntax
+                                              prax::text)
 target_compile_definitions(text_view_bench PRIVATE PR_FONTS_DIR="${PROJECT_SOURCE_DIR}/third_party/fonts")
 
 # The vterm benchmark (./dev.sh bench vterm), which writes the same program output to lib/vterm and to libvterm.

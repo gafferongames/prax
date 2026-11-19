@@ -14,6 +14,7 @@ commit names it, is fetched again.
 import hashlib
 import os
 import shutil
+import sys
 import tempfile
 import urllib.request
 import zipfile
@@ -93,38 +94,6 @@ class Files:
                 f.write(self.stamp[1] + "\n")
 
 
-class Captures:
-    """The pages of a checkout, each a path under `checkout`, captured into `directory` by tools/pages/pages.py with
-    what they load from other origins, so that they load the same on every run and without the network. A capture is
-    made once, and again only when the `stamp` changes, since what a server answers can change while the pin does
-    not."""
-
-    def __init__(self, directory, checkout, pages, stamp):
-        self.directory = directory
-        self.checkout = checkout
-        self.pages = pages
-        self.stamp = stamp
-
-    def fetch(self):
-        directory = os.path.join(THIRD_PARTY, self.directory)
-        stamp_file = os.path.join(directory, self.stamp[0])
-        try:
-            with open(stamp_file) as f:
-                current = f.read().strip()
-        except FileNotFoundError:
-            current = None
-        if current != self.stamp[1]:
-            shutil.rmtree(directory, ignore_errors=True)
-            os.makedirs(directory)
-            with open(stamp_file, "w") as f:
-                f.write(self.stamp[1] + "\n")
-        missing = [page for page in self.pages
-                   if not os.path.exists(os.path.join(directory, os.path.splitext(page)[0] + ".json"))]
-        if missing:
-            print("capturing %d pages of %s" % (len(missing), self.checkout), flush=True)
-            dev.python("tools.pages.pages", "local", os.path.join(THIRD_PARTY, self.checkout), directory, *missing)
-
-
 class Zip:
     """The `names` of a ZIP archive at `url`, whose SHA-256 is `digest`, extracted into `directory`. The archive is
     fetched only while a file is missing, and kept nowhere."""
@@ -182,6 +151,49 @@ class Captures:
         if missing:
             print("capturing %d pages of %s" % (len(missing), self.checkout), flush=True)
             dev.python("tools.pages.pages", "local", os.path.join(THIRD_PARTY, self.checkout), directory, *missing)
+
+
+class Wheel:
+    """A Python package from PyPI at `version`, installed from its wheel into a virtual environment in `directory`, so
+    that nothing is installed into the system's Python or the user's. A wheel is built for the versions of Python that
+    its release names, so the environment is made with the first of `pythons` that is installed, which need not be the
+    Python that runs the tools. A development-only reference that a suite compares the engine with is fetched this
+    way when its project publishes it built."""
+
+    def __init__(self, directory, package, version, pythons):
+        self.directory = directory
+        self.package = package
+        self.version = version
+        self.pythons = pythons
+
+    def interpreter(self):
+        """Returns the environment's Python."""
+        directory = os.path.join(THIRD_PARTY, self.directory)
+        if sys.platform == "win32":
+            return os.path.join(directory, "Scripts", "python.exe")
+        return os.path.join(directory, "bin", "python")
+
+    def fetch(self):
+        directory = os.path.join(THIRD_PARTY, self.directory)
+        stamp_file = os.path.join(directory, "version")
+        try:
+            with open(stamp_file) as f:
+                current = f.read().strip()
+        except FileNotFoundError:
+            current = None
+        if current == self.version and os.path.exists(self.interpreter()):
+            return
+        python = next((path for path in map(shutil.which, self.pythons) if path), None)
+        if python is None:
+            dev.fail("%s %s has wheels for %s, and none of them is installed" %
+                     (self.package, self.version, ", ".join(self.pythons)))
+        print("installing %s %s into third_party/%s" % (self.package, self.version, self.directory), flush=True)
+        shutil.rmtree(directory, ignore_errors=True)
+        dev.run([python, "-m", "venv", directory])
+        dev.run([self.interpreter(), "-m", "pip", "install", "--quiet", "--disable-pip-version-check",
+                 "--only-binary", ":all:", "%s==%s" % (self.package, self.version)])
+        with open(stamp_file, "w") as f:
+            f.write(self.version + "\n")
 
 
 class Pages:
@@ -277,17 +289,36 @@ PRINCE_SAMPLES = {
 ESCTEST2_COMMIT = "2798f12149a19c3295e9b4853ab2da4b2eff1b2b"
 # Fred Wang's MathFonts, which holds math fonts as web fonts and Mozilla's MathML torture test, whose formulas stand
 # beside images of TeX's setting of them. The commit is of the site's branch (gh-pages), which holds the built fonts.
+MATHFONTS_COMMIT = "9182b146cb64ac1a5e9cb92a09cd79612ca95d1c"
+# Khronos's glTF repository, whose specification of glTF 2.0 lint checks references against (glTF-2.0/#accessors).
+GLTF_COMMIT = "70129abe2ba5c8f0b50da8328874780b85a621ae"
+# Khronos's glTF sample assets: each model in the variants that it is published in.
+GLTF_SAMPLE_ASSETS_COMMIT = "8f492390ddc7a2ae221a1369ef560589cf8c70fb"
 # libwebp's test data: the conformance vectors of VP8, and images of the container's and the lossless format's features
 # and of their invalid forms, which the webp suite decodes with lib/image and with libwebp.
 LIBWEBP_TEST_DATA_COMMIT = "06ddd96e276c2c638a72d39d3c0f340afd61978c"
 # The OpenEXR project's test images: every layout, channel type and compression of the file format, and invalid and
 # truncated files, which the exr suite decodes with lib/image and with OpenEXR.
 OPENEXR_IMAGES_COMMIT = "e38ffb0790f62f05a6f083a6fa4cac150b3b7452"
+# The USD working group's assets: sample and test scenes in every layer format.
+USD_ASSETS_COMMIT = "091bb5c6f8eb665ad4cf9d6c10025cecc07eda88"
+# The Alliance for OpenUSD's supplement to its core specification: sample implementations, and the layers of its
+# composition tests with the opinions that each should compose.
+USD_SPEC_SUPPLEMENTAL_COMMIT = "1a4adb266a370f49ceedd2ce30442c2e7f457864"
+# The Alliance for OpenUSD's published specifications, whose core specification lint checks references against
+# (usd-core/#specs). The file is the specification as Markdown, under CC BY-ND 4.0, fetched and never committed.
+USD_SPEC_COMMIT = "83e25aceb11a9340db4778263bda5d5175875f49"
+USD_SPEC_VERSION = "1.1.0"
+# The folder of third_party that holds a version of the specification, so that a checkout of another version keeps
+# its own.
+USD_SPEC_DIRECTORY = "usd-spec/" + USD_SPEC_VERSION
+# Pixar's OpenUSD as PyPI publishes it built, the reference of the usd suite. Its wheels are for these versions of
+# Python.
+USD_CORE = Wheel("usd-core", "usd-core", "26.11", ("python3.14", "python3.13", "python3.12", "python3.11"))
+
 # The files of the Silesia corpus.
 SILESIA_FILES = ("dickens", "mozilla", "mr", "nci", "ooffice", "osdb", "reymont", "samba", "sao", "webster", "xml",
                  "x-ray")
-
-MATHFONTS_COMMIT = "9182b146cb64ac1a5e9cb92a09cd79612ca95d1c"
 
 UCD = "https://www.unicode.org/Public/17.0.0/ucd/"
 OFL = "https://raw.githubusercontent.com/google/fonts/%s/ofl/" % GOOGLE_FONTS_COMMIT
@@ -589,57 +620,6 @@ CHECKOUTS = {
         ("fontawesome.min.css", NPM + "@fortawesome/fontawesome-free@6.5.2/css/all.min.css"),
         ("animate.min.css", NPM + "animate.css@4.1.1/animate.min.css"),
     ])],
-    # The real pages the benchmarks read, which are whatever is in third_party/pages. Unlike a corpus that a suite
-    # reads, this one is meant to move, but only when asked: `./dev.sh pages roll` (or `./dev.sh fetch pages`) takes
-    # the day's pages from the sources that tools/pages/pages.py names and drops the oldest, so the set rolls forward
-    # and nothing can be tuned to it. Every page taken is also kept in third_party/pages-corpus, which only grows. A
-    # benchmark run takes pages only if there are none, so that it stays quick and needs no network. The pages are a
-    # benchmark's inputs, so a comparison across a roll reports that its workload changed (tools/bench/perf.py).
-    "pages": lambda: [Pages()],
-    # Long documents the document benchmark loads, scrolls and navigates. The Vulkan specification moves with each
-    # release; a benchmark records the hash of the copy it read, so runs compare only on the same one.
-    "docs": lambda: [Files("docs", [("vulkan.html",
-                                     "https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html")])],
-    # The video example's video (examples/video): a ginger cat on a side table, from the Internet Archive under the
-    # Public Domain Mark 1.0 (archive.org/details/the-table-and-the-kitten). H.264 High in MP4, 720 by 1280, BT.709,
-    # 30 seconds, which every platform's media backend and every browser plays.
-    "videos": lambda: [Files("videos", [
-        ("cat.mp4", "https://archive.org/download/the-table-and-the-kitten/The%20Table%20And%20The%20Kitten.mp4"),
-    ])],
-    # The named character references, which html-parsing provides as one JSON file.
-    "entities": lambda: [Files("html", [("entities.json", "https://html.spec.whatwg.org/entities.json")])],
-    # The Encoding Standard's encodings, with their labels, and its indexes, for the charset generator.
-    "encodings": lambda: [Files("encoding", [
-        (name + ".json", "https://raw.githubusercontent.com/whatwg/encoding/%s/%s.json" % (ENCODING_COMMIT, name))
-        for name in ("encodings", "indexes")], ("commit", ENCODING_COMMIT))],
-    # The Unicode Character Database files that the generators read, at one version, UTS #46's mapping table and
-    # conformance tests for that version, and UAX #31's revision for that version, whose Table 5 lists the scripts in
-    # modern use.
-    "unicode": lambda: [Files("unicode", [
-        (path.split("/")[-1], UCD + path) for path in (
-            "extracted/DerivedBidiClass.txt", "extracted/DerivedJoiningType.txt", "BidiBrackets.txt", "BidiMirroring.txt",
-            "BidiTest.txt",
-            "BidiCharacterTest.txt", "LineBreak.txt", "auxiliary/LineBreakTest.txt", "EastAsianWidth.txt",
-            "extracted/DerivedGeneralCategory.txt", "auxiliary/GraphemeBreakProperty.txt",
-            "auxiliary/GraphemeBreakTest.txt",
-            "auxiliary/WordBreakProperty.txt", "auxiliary/WordBreakTest.txt",
-            "emoji/emoji-data.txt", "DerivedCoreProperties.txt", "PropList.txt",
-            "UnicodeData.txt", "SpecialCasing.txt", "CaseFolding.txt", "Scripts.txt", "ScriptExtensions.txt",
-            "VerticalOrientation.txt",
-            "PropertyValueAliases.txt", "CompositionExclusions.txt", "NormalizationTest.txt")] + [
-        ("IdnaMappingTable.txt", "https://www.unicode.org/Public/17.0.0/idna/IdnaMappingTable.txt"),
-        ("IdnaTestV2.txt", "https://www.unicode.org/Public/17.0.0/idna/IdnaTestV2.txt"),
-        ("tr31-45.html", "https://www.unicode.org/reports/tr31/tr31-45.html"),
-    ])],
-    # Unicode CLDR, for the language generator: its supplemental data (likely subtags, populations), each locale's
-    # delimiters, and the copies of the IANA Language Subtag Registry and ISO 639-3's code table it keeps, which neither
-    # authority publishes at a versioned URL.
-    "cldr": lambda: [Git("cldr", "https://github.com/unicode-org/cldr.git", CLDR_COMMIT, "common/supplemental",
-                         "common/main", "tools/cldr-code/src/main/resources/org/unicode/cldr/util/data")],
-    # The web-features data, at the version that tools/suite/wpt/web_features.txt rules on and states.
-    "webfeatures": lambda: [Files("web-features", [
-        (web_features_version() + ".json", NPM + "web-features@%s/data.json" % web_features_version())])],
-    # The RFCs that generators read. A published RFC never changes, so its number pins it.
     # The Silesia corpus, the usual set of files that compressors are compared on: twelve of text, executables,
     # databases and images, 212 MB in all, which the compression benchmark encodes and decodes (./dev.sh bench
     # compress-corpus). The archive has no versions, so its digest pins it.
@@ -698,12 +678,6 @@ CHECKOUTS = {
     # The RFCs that generators read. A published RFC never changes, so its number pins it.
     "rfcs": lambda: [Files("rfc", [(name, "https://www.rfc-editor.org/rfc/" + name)
                                    for name in ("rfc7932.txt", "rfc6386.txt", "rfc9649.txt")])],
-    # webmproject/libwebp-test-data: the corpus of the webp suite (tools/suite/webp.py).
-    "libwebp_test_data": lambda: [Git("libwebp-test-data", "https://github.com/webmproject/libwebp-test-data.git",
-                                      LIBWEBP_TEST_DATA_COMMIT)],
-    # AcademySoftwareFoundation/openexr-images: the corpus of the exr suite (tools/suite/exr.py).
-    "openexr_images": lambda: [Git("openexr-images", "https://github.com/AcademySoftwareFoundation/openexr-images.git",
-                                   OPENEXR_IMAGES_COMMIT)],
     # MathML Core's operator dictionary, the operators that stretch along the inline axis, the combining characters
     # that stand for spacing accents, and the glyph assemblies built from Unicode characters, for the MathML generator,
     # with MathML 3's dictionary, the last that lists the accent property, at its dated Recommendation.
@@ -726,6 +700,32 @@ CHECKOUTS = {
     "cmark_gfm": lambda: [Git("cmark-gfm", "https://github.com/github/cmark-gfm.git", CMARK_GFM_COMMIT, "test")],
     # ThomasDickey/esctest2: the corpus of the esctest suite, which lib/vterm runs (tools/suite/esctest.py).
     "esctest": lambda: [Git("esctest2", "https://github.com/ThomasDickey/esctest2.git", ESCTEST2_COMMIT, "esctest")],
+    # The source of the glTF 2.0 specification, whose anchors are the ids of its passages.
+    "gltf_spec": lambda: [Files("gltf-spec", [
+        ("Specification.adoc", "https://raw.githubusercontent.com/KhronosGroup/glTF/%s/specification/2.0/"
+                               "Specification.adoc" % GLTF_COMMIT)], ("commit", GLTF_COMMIT))],
+    # KhronosGroup/glTF-Sample-Assets: the corpus of the gltf suite, which lib/gltf loads (tools/suite/gltf.py).
+    "gltf_sample_assets": lambda: [Git("glTF-Sample-Assets", "https://github.com/KhronosGroup/glTF-Sample-Assets.git",
+                                       GLTF_SAMPLE_ASSETS_COMMIT, "Models")],
+    # webmproject/libwebp-test-data: the corpus of the webp suite (tools/suite/webp.py).
+    "libwebp_test_data": lambda: [Git("libwebp-test-data", "https://github.com/webmproject/libwebp-test-data.git",
+                                      LIBWEBP_TEST_DATA_COMMIT)],
+    # AcademySoftwareFoundation/openexr-images: the corpus of the exr suite (tools/suite/exr.py).
+    "openexr_images": lambda: [Git("openexr-images", "https://github.com/AcademySoftwareFoundation/openexr-images.git",
+                                   OPENEXR_IMAGES_COMMIT)],
+    # The USD Core Specification, whose headings are the ids of its passages.
+    "usd_spec": lambda: [Files(USD_SPEC_DIRECTORY, [
+        ("core_spec.md", "https://raw.githubusercontent.com/aousd/specifications-public/%s/core/%s/core_spec.md"
+                         % (USD_SPEC_COMMIT, USD_SPEC_VERSION))], ("commit", USD_SPEC_COMMIT))],
+    # usd-wg/assets: the corpus of the usd suite, which lib/usd reads (tools/suite/usd.py).
+    "usd_assets": lambda: [Git("usd-assets", "https://github.com/usd-wg/assets.git", USD_ASSETS_COMMIT)],
+    # aousd/core-spec-supplemental-public: more layers for the usd suite, written to test composition.
+    "usd_spec_supplemental": lambda: [Git("usd-spec-supplemental",
+                                          "https://github.com/aousd/core-spec-supplemental-public.git",
+                                          USD_SPEC_SUPPLEMENTAL_COMMIT, "releases")],
+    # The reference that the usd suite compares lib/usd's reading of a layer with (tools/suite/usd_reference.py). It is
+    # run, never linked or built.
+    "usd_core": lambda: [USD_CORE],
     # yeslogic/prince-samples: documents written for print, each with the PDF that Prince made of it, which the viewer
     # shows beside the engine's own PDF (tools/viewer/suite_prince.cpp). The repository provides a file without license
     # information only for evaluating Prince, so only the directories whose README licenses both the HTML and its PDF

@@ -2622,7 +2622,10 @@ PrLayoutNode prUiPortal(PrUi* ui, PrUiKey key, const PrUiPortalDesc* desc, PrUiF
     // A portal that has not been laid out yet has no extent to place by, so it requests the frame that places it.
     if (s.extent.x <= 0 && s.extent.y <= 0)
         prUiRequestFrame(ui);
-    PrRect area = prLayoutRectToPx(prLayoutNodeBounds(tree, overlay, PrLayoutCoordinates_Viewport));
+    // A popup is placed against the root's bounds, which the overlay fills. An overlay that this round created has no
+    // layout yet, but the root keeps the previous round's.
+    PrLayoutNode root = prLayoutTreeFrameParent(tree, overlay);
+    PrRect area = prLayoutRectToPx(prLayoutNodeBounds(tree, root, PrLayoutCoordinates_Viewport));
     placePortal(ui, s, portalPlace(s, area));
     s.node = prUiElement(ui, overlay, key, s.style, flags);
     return s.node;

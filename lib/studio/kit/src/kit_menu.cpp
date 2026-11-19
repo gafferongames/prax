@@ -758,12 +758,24 @@ PrLayoutNode prKitContextMenu(PrKit* kit, PrLayoutNode host, PrKitContextMenu me
         if (escape || outside)
             state.open = false;
     }
+    // A secondary click, or on macOS a click with Control, opens the menu at the pointer.
     PrVec2 pointer{};
     PrUiViewport viewport = kPrUiViewportMain;
-    if (prUiClicked(ui, host, 1) && prUiPointer(ui, &viewport, &pointer)) {
+    bool clicked = prUiClicked(ui, host, 1) || (kKitControlClickIsContext && prUiClicked(ui, host, 0) &&
+        (prUiPressModifiers(ui, 0) & PrAppModifierFlag_Control) != 0);
+    if (clicked && prUiPointer(ui, &viewport, &pointer)) {
         state.open = true;
         state.viewport = viewport;
         state.point = pointer;
+    }
+    // The menu key, or Shift F10, opens the menu of the focused host at the host's bottom left.
+    bool key = prUiKeyPressed(ui, host, PrAppKey_ContextMenu, 0) ||
+        prUiKeyPressed(ui, host, PrAppKey_F10, PrAppModifierFlag_Shift);
+    if (key && !state.open) {
+        PrRect bounds = boundsOf(*kit, host);
+        state.open = true;
+        state.viewport = prUiNodeViewport(ui, host);
+        state.point = PrVec2{bounds.left, bounds.bottom};
     }
     if (!state.open) {
         state.portal = kPrLayoutNodeNone;

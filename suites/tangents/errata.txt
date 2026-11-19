@@ -1,0 +1,31 @@
+# Assets at which lib/mesh follows the MikkTSpace algorithm and the reference implementation departs from it, and assets
+# that break a rule that lib/gltf refuses them for. An entry lists its assets, a key per line, followed by the indented
+# reason: what the reference or the asset does and why it loses.
+
+ABeautifulGame/glTF/ABeautifulGame.gltf
+CarConcept/glTF/CarConcept.gltf
+CarConcept/glTF-Binary/CarConcept.glb
+CarConcept/glTF-WEBP/CarConcept.gltf
+CesiumMan/glTF-Draco/CesiumMan.gltf
+ChairDamaskPurplegold/glTF/ChairDamaskPurplegold.gltf
+ChairDamaskPurplegold/glTF-Binary/ChairDamaskPurplegold.glb
+Lantern/glTF-Quantized/Lantern.gltf
+SheenChair/glTF/SheenChair.gltf
+SheenChair/glTF-Binary/SheenChair.glb
+SheenWoodLeatherSofa/glTF/SheenWoodLeatherSofa.gltf
+SheenWoodLeatherSofa/glTF-Binary/SheenWoodLeatherSofa.glb
+Sponza/glTF/Sponza.gltf
+USDShaderBallForGltf/glTF/USDShaderBallForGltf.gltf
+USDShaderBallForGltf/glTF-Binary/USDShaderBallForGltf.glb
+    The reference's BuildNeighborsFast sorts its edges by their lower vertex, then sorts each run of one lower vertex
+    by the upper vertex and each run of one edge by triangle, closing a run when the next one starts. The last run of
+    each pass is never closed, so the edges of the vertex that is the lower end of the edges last in the first sort
+    stay unsorted, and pairing, which looks only at the run of equal edges that follows an edge, misses some of their
+    neighbors. Two triangles that share such an edge then fall into two groups, at a few corners near the end of a
+    primitive: 2 to 12 of each of these assets'. With those two runs sorted, the reference's tangents equal lib/mesh's
+    at every corner of the corpus.
+
+AnimationPointerUVs/glTF-Binary/AnimationPointerUVs.glb
+AnimationPointerUVs/glTF/AnimationPointerUVs.gltf
+    The asset, not the reference, is wrong: two channels of its animation have one pointer, which KHR_animation_pointer
+    forbids, so lib/gltf refuses it as InvalidData (suites/gltf/errata.txt) and there are no tangents to compare.

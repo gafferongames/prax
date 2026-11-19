@@ -5,7 +5,6 @@
 
 #include "pr/draw_commands.h"
 #include "pr/draw_glyph.h"
-#include "pr/draw_image.h"
 #include "pr/draw_renderer.h"
 #include "pr/draw_transform.h"
 #include "pr/path.h"
@@ -34,9 +33,17 @@ void drawSharedAppendHex(PrTextBuffer& out, uint64_t value, uint32_t bytes);
 // Returns the straight-alpha color clamped to [0, 1], as a format without extended range holds it.
 PrColor drawSharedClamp(PrColor color);
 
+// An image that a writer embeds: texels in memory, of a texture on the writer's device or of what it rasterized.
+struct DrawSharedImage {
+    uint64_t id;                // the same for the same texels, or zero for texels that are not drawn again
+    PrPixelView pixels;
+    PrPixelFormat format;       // Rgba8, Bgra8 or RgbaF16
+    PrTextureAlpha alpha;
+};
+
 // Writes the image's pixels to `out` as straight-alpha sRGB Rgba8, clamped to [0, 1]. Returns true if any pixel is not
 // opaque.
-bool drawSharedImageRgba8(const PrDrawImage* image, RawArray<uint8_t>& out);
+bool drawSharedImageRgba8(const DrawSharedImage& image, RawArray<uint8_t>& out);
 
 // A color of a gradient at an offset along its parameter, as a format's stops hold it.
 struct DrawSharedStop {
@@ -88,7 +95,7 @@ struct DrawSharedWriterOps {
         const DrawSharedPaint* paint);
 
     // Draws the texels of `source` stretched over `destination`, with the image's alpha, times `opacity`.
-    void (*image)(void* PR_NULLABLE context, const PrDrawImage* image, PrRect source, PrRect destination,
+    void (*image)(void* PR_NULLABLE context, const DrawSharedImage& image, PrRect source, PrRect destination,
         PrAffine2 transform, float opacity);
 
     // Draws a run whose glyphs are outlines, filled, or stroked by `stroke` as `stroke` describes.
@@ -136,8 +143,9 @@ struct DrawSharedWalker {
     PrVec2 page;
 };
 
-// Prepares a walker that calls `ops`, and rasterizes with a renderer that decodes picture glyphs with `glyphDecoder`.
-void drawSharedWalkerInit(DrawSharedWalker& walker, const DrawSharedWriterOps& ops,
+// Prepares a walker that calls `ops`, and rasterizes with a renderer on `device`, or on one of its own, that decodes
+// picture glyphs with `glyphDecoder`. It reads the textures of `device` that the pages draw.
+void drawSharedWalkerInit(DrawSharedWalker& walker, const DrawSharedWriterOps& ops, PrGpuDevice* PR_NULLABLE device,
     PrDrawGlyphDecoder* PR_NULLABLE glyphDecoder, float rasterScale);
 
 // Frees what the walker holds.

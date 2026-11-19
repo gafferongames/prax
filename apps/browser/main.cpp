@@ -1,7 +1,7 @@
 // The browser example: a web browser in a window, with tabs, whose pages' scripts run, rendered through lib/layout and
 // lib/draw, inside chrome built with Studio Kit.
 //
-// Usage: browser [--cache <directory>] [--stats] [--trace] [<url | path | search>...]
+// Usage: browser [--cache <directory>] [--stats] [--trace] [--capture <png>] [<url | path | search>...]
 //
 // Each argument opens a tab, read as the address bar reads its text (addressResolve). With none, the browser opens a
 // tab on the start page. The network is lib/net's sockets, with the platform's TLS, under lib/http and lib/fetch, and
@@ -12,6 +12,7 @@
 // argument starts prints how long it took to settle: until its document is complete and the last scene shows all of it.
 // --trace prints each viewport that the window asks for and the page sees, each layout job as it starts and ends, and
 // how long the viewport's changes took to settle, with the jobs that they took and those laid out at a replaced size.
+// --capture writes the window's frame to a PNG once the window has shown for 3 seconds, and then quits.
 //
 // main() is the composition root. Each tab is a page (pr/html_page.h), the navigable that loads each document, with its
 // view (pr/html_view.h) and a compositor of its own. One script engine (pr/html_quickjs.h) runs the scripts of every
@@ -237,8 +238,11 @@ int main(int argc, char** argv) {
             b.stats = true;
         } else if (argument == "--trace") {
             b.trace = true;
+        } else if (argument == "--capture" && at + 1 < argc) {
+            b.capture = argv[++at];
         } else if (prStringStartsWith(argument, "--")) {
-            printError("usage: browser [--cache <directory>] [--stats] [--trace] [<url | path | search>...]\n");
+            printError("usage: browser [--cache <directory>] [--stats] [--trace] [--capture <png>] "
+                "[<url | path | search>...]\n");
             return 2;
         } else {
             String url = addressResolve(argument);

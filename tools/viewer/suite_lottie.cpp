@@ -43,7 +43,7 @@ Timing timingOf(const fs::path& path) {
     Timing timing;
     PrJson* json = prJsonCreate();
     std::string text = readFile(path);
-    if (prJsonParse(json, text, nullptr)) {
+    if (prJsonParse(json, text, 0, nullptr)) {
         timing.inPoint = prJsonNumber(json, prJsonMember(json, 0, "ip"), 0);
         timing.length = prJsonNumber(json, prJsonMember(json, 0, "op"), 0) - timing.inPoint;
         timing.rate = prJsonNumber(json, prJsonMember(json, 0, "fr"), 30);

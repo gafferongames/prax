@@ -22,7 +22,6 @@
 #include "pr/compress.h"
 #include "pr/draw.h"
 #include "pr/draw_display.h"
-#include "pr/draw_image.h"
 #include "pr/draw_renderer.h"
 #include "pr/fetch.h"
 #include "pr/font_set.h"
@@ -45,6 +44,7 @@
 #include "pr/string.h"
 #include "pr/task.h"
 #include "pr/text.h"
+#include "pr/texture.h"
 #include "pr/thread.h"
 #include "pr/time.h"
 #include "pr/tls.h"
@@ -172,6 +172,14 @@ struct Browser {
     String cacheDirectory;                  // the HTTP cache's directory, or empty for the platform's cache directory
     bool stats = false;                     // true to print the frames' statistics once a second
     bool trace = false;                     // true to print what the views do with their layout jobs
+    String capture;                         // the PNG that --capture writes the window's frame to, or empty
+
+    // The capture of --capture. A thread of its own sets `captureDue` once the window has shown for a while. The
+    // window's next frame then asks the swap chain to capture it. The device's thread sets `captured` once the PNG is
+    // written, and the application then stops.
+    PrThread captureWaker{};
+    Atomic<bool> captureDue;
+    Atomic<bool> captured;
 
     // What every page shares: text, images, media, storage, the network, the agent whose event loop runs the pages, and
     // the script engine of the agent.
@@ -258,6 +266,10 @@ struct Browser {
     PrDrawRenderer* PR_NULLABLE renderer = nullptr;
     PrDrawFrame* PR_NULLABLE pageFrame = nullptr;
     PrDrawFrame* PR_NULLABLE chromeFrame = nullptr;
+
+    // The cache that the pages' and the chrome's images realize in, on `device`, which realizes on `pool` and asks for
+    // a frame as an image arrives.
+    PrTextureCache* PR_NULLABLE textures = nullptr;
     PrGpuTexture rendered{};        // the half floats that a frame renders into if the swap chain holds more than 8-bit
                                     // sRGB
     PrDrawDisplay* PR_NULLABLE display = nullptr;

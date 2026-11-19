@@ -222,6 +222,7 @@ endif()
 if (PR_DEVELOP)
     pr_module_tests(core
         tests/test_base64.cpp
+        tests/test_blob.cpp
         tests/test_byte_view.cpp
         tests/test_checksum.cpp
         tests/test_core_c.c
@@ -242,6 +243,7 @@ if (PR_DEVELOP)
         tests/test_thread.cpp
         tests/test_date_time.cpp
         tests/test_utf8.cpp
+        tests/test_vec.cpp
         tests/test_xxh64.cpp
     )
     target_compile_definitions(core_tests PRIVATE PR_CORE_TEST_DIR="${CMAKE_CURRENT_BINARY_DIR}/core_tests_files")

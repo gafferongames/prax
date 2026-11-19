@@ -415,7 +415,7 @@ PrMimeFormat sniffEbml(PrByteView bytes) {
     return PrMimeFormat_None;
 }
 
-// Identifies a ZIP archive, and a USD package among them: an archive whose first file is a USD layer.
+// Identifies a ZIP archive, and a USD package among them: an archive whose first file is a layer (usd-core/#package).
 PrMimeFormat sniffZip(PrByteView bytes) {
     if (startsWith(bytes, 0, {"PK\x05\x06", 4}))
         return PrMimeFormat_Zip;

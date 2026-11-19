@@ -4,7 +4,6 @@
 
 #include "pr/assert.h"
 #include "pr/draw_commands.h"
-#include "pr/draw_image.h"
 #include "pr/draw_list.h"
 #include "pr/float.h"
 #include "pr/geom.h"
@@ -1029,7 +1028,7 @@ struct Painter : LayoutWalkVisitor {
             }
             if (clip != nullptr)
                 prDrawListPushClipRect(out(), *clip, PrDrawEdges_Aliased);
-            bool painted = layoutBackgroundPaintLayer(&styles->compounds, layer, boxes, out());
+            bool painted = layoutBackgroundPaintLayer(tree->textures, &styles->compounds, layer, boxes, out());
             if (clip != nullptr)
                 prDrawListPopClip(out());
             if (painted)
@@ -1053,7 +1052,7 @@ struct Painter : LayoutWalkVisitor {
         PrRect viewport{0, 0, prLayoutUnitToPx(tree->viewport.x), prLayoutUnitToPx(tree->viewport.y)};
         LayoutBackgroundBoxes boxes{.boxes = {viewport, viewport, viewport}, .area = viewport};
         PrDrawList* content = prDrawListCreate();
-        if (layoutBackgroundPaintLayer(&styles->compounds, layer, boxes, content))
+        if (layoutBackgroundPaintLayer(tree->textures, &styles->compounds, layer, boxes, content))
             fixed(content, clip);
         else
             prDrawListRelease(content);
@@ -1127,7 +1126,7 @@ struct Painter : LayoutWalkVisitor {
         for (uint32_t i = layers.count; i-- > 0;) {
             const PrLayoutBackgroundLayer& layer = layers.layers[i];
             if (layer.attachment == PrLayoutBackgroundAttachment_Local &&
-                    layoutBackgroundPaintLayer(&styles->compounds, layer, boxes, out()))
+                    layoutBackgroundPaintLayer(tree->textures, &styles->compounds, layer, boxes, out()))
                 recorded();
         }
         if (layers.blends)
@@ -1821,6 +1820,25 @@ struct Painter : LayoutWalkVisitor {
         }
     }
 
+    // Writes the brush that draws a replaced box's image over `covered`: all of what it shows, upright if the content
+    // says so, at the content's limit and resampled as its rendering says. Returns false if the image's texture has not
+    // arrived.
+    bool imageBrush(const LayoutReplaced& n, PrRect covered, PrDrawBrush* out) const {
+        PrTextureRegion region{};
+        if (!layoutTextureOf(tree->textures, n.image, &region))
+            return false;
+        const PrTextureDesc& desc = *prTextureSourceDesc(n.image);
+        PrUVec2 texels = n.upright ? prTextureDescDisplayedExtent(&desc) : desc.extent;
+        PrDrawBrush brush =
+            prDrawBrushImage(prDrawSourceRegion(&region, PrRect{0, 0, float(texels.x), float(texels.y)}),
+                covered, n.rendering == PrLayoutImageRendering_Auto ? PrDrawSampling_Linear : PrDrawSampling_Nearest);
+        brush.image.limit = n.limit;
+        if (n.upright)
+            prDrawBrushImageUpright(&brush, desc.orientation, region.rect);
+        *out = brush;
+        return true;
+    }
+
     // Returns the drawing of a replaced box's image over its natural size, or over `box` in an axis that has none, at
     // the content's limit, with a reference the caller holds. The node caches the drawing for one size. A fresh
     // recording draws again and bypasses the cache.
@@ -1834,15 +1852,21 @@ struct Painter : LayoutWalkVisitor {
             prDrawListRetain(n.content);
             return n.content;
         }
-        PrUVec2 texels = prDrawImageExtent(n.image);
         PrRect covered{0, 0, prLayoutUnitToPx(extent.x), prLayoutUnitToPx(extent.y)};
-        PrDrawBrush brush = prDrawBrushImage(prDrawSourceImage(n.image, PrRect{0, 0, float(texels.x), float(texels.y)}), covered,
-            n.rendering == PrLayoutImageRendering_Auto ? PrDrawSampling_Linear : PrDrawSampling_Nearest);
-        brush.image.limit = n.limit;
+        PrDrawBrush brush{};
+        bool arrived = imageBrush(n, covered, &brush);
         PrDrawList* drawing = prDrawListCreate();
-        prDrawListRect(drawing, covered, {.brush = &brush});
+        if (arrived)
+            prDrawListRect(drawing, covered, {.brush = &brush});
         prDrawListFreeze(drawing);
-        if (cached) {
+        // A drawing of an image whose texture is on its way is not kept. One that draws nothing because the image
+        // failed, or the tree has no cache, is.
+        bool waiting = false;
+        if (!arrived && tree->textures->cache != nullptr) {
+            PrTextureRegion region{};
+            waiting = prTextureCacheRealize(tree->textures->cache, n.image, 0, &region) == PrTextureCacheState_Pending;
+        }
+        if (cached && !waiting) {
             prDrawListRelease(n.content);
             prDrawListRetain(drawing);
             n.content = drawing;
@@ -1918,12 +1942,9 @@ struct Painter : LayoutWalkVisitor {
         if (n.contentKind == PrLayoutContentKind_Image) {
             PrVec2 extent = prLayoutVecToPx(space);
             PrRect drawn{placed.e, placed.f, placed.e + extent.x * placed.a, placed.f + extent.y * placed.d};
-            PrUVec2 texels = prDrawImageExtent(n.image);
-            PrDrawBrush brush = prDrawBrushImage(
-                prDrawSourceImage(n.image, PrRect{0, 0, float(texels.x), float(texels.y)}), drawn,
-                n.rendering == PrLayoutImageRendering_Auto ? PrDrawSampling_Linear : PrDrawSampling_Nearest);
-            brush.image.limit = n.limit;
-            prDrawListRect(into, drawn, {.brush = &brush, .edges = PrDrawEdges_Snapped});
+            PrDrawBrush brush{};
+            if (imageBrush(n, drawn, &brush))
+                prDrawListRect(into, drawn, {.brush = &brush, .edges = PrDrawEdges_Snapped});
         } else if (n.contentKind == PrLayoutContentKind_Path) {
             // The view box is scaled over the natural space as an image is.
             PrVec2 extent = prLayoutVecToPx(space);
@@ -2566,6 +2587,20 @@ bool sameRecording(const LayoutPaintChunk& a, const LayoutPaintChunk& b) {
 }
 
 } // namespace
+
+void layoutTreeForgetTextures(LayoutTree* tree) {
+    for (LayoutReplaced& r : tree->replaced.span()) {
+        if (r.contentKind == PrLayoutContentKind_Image && r.content != nullptr) {
+            prDrawListRelease(r.content);
+            r.content = nullptr;
+        }
+    }
+    layoutPaintCacheReset(tree->paint);
+    tree->pendingPaint |= LayoutInputFlag_Layout | LayoutInputFlag_Effects;
+    tree->textures->pending = false;
+    if (tree->textures->cache != nullptr)
+        tree->textures->generation = prTextureCacheGeneration(tree->textures->cache);
+}
 
 void layoutPaintCacheReset(LayoutPaintCache& cache) {
     for (uint32_t i = 0; i < cache.chunks.count; ++i)

@@ -134,7 +134,7 @@ is written over `lib/ui` and `lib/layout`, with Studio Kit as its example.
 A component library is opinionated, and its vocabulary is its own. `lib/layout` uses the web's names because it is the
 substrate. A library built on it chooses the concepts it exposes, as each web component library does, and is not
 expected to match another library or CSS. An application reaches past its library to `lib/layout` and `lib/ui`
-directly for content the library does not provide, such as a 3D viewport.
+directly for content the library does not provide, such as a 3D viewport (GPU content).
 
 ## Elements
 
@@ -192,3 +192,23 @@ widget is a function that memoizes itself, so its callers call a function and se
 The word guess and crossword examples (`examples/word_guess`, `examples/crossword`) are built with elements. The editor benchmark
 (`tools/bench/editor_bench`) builds one editor with Studio Kit's widgets and again with elements and memos, over one
 model, and measures both.
+
+## GPU content
+
+GPU-rendered content, such as a 3D view, is a texture that the UI composes like an image. The tree shows it in an
+embed slot (Studio Kit's `prKitEmbed`), and the host that plays the scene fills the slot: a Studio window renders the
+content as a GPU view (`prStudioWindowGpuViewCreate`) into the frame's render graph as the scene plays, which is after the
+round's layout, at the slot's laid-out size in target pixels (layout.md, Replaced elements). The content renders into a
+texture of its own, which it keeps, and the window draws that texture over the slot as any texture of the host's
+(`PrDrawSourceKind_Texture`). So the texture is one more thing that the tree paints: it is clipped by every box that
+clips it, scrolled with its scroll container, layered under and over its neighbors, and covered by whatever floats over
+it, as menus and tooltips do, with no rule of its own.
+
+- **The content renders before the UI's pass, never inside it.** The window adds the content's passes to the frame's
+  graph before the pass that draws the tree, which reads the texture as an image. So the content's clip, its layering
+  and its blending are lib/draw's, and the backends' own passes, which lib/draw splits and batches, need nothing from
+  it. lib/layout and lib/draw know no render graph: only the window holds the device and the graph.
+- **An idle view costs no render.** A view renders in a frame only when the application invalidates it or its size
+  changes, and otherwise the window draws the texture that it rendered last, which the window holds a reference to.
+- **A resize renders in the frame that lays it out.** The slot's size comes from that frame's layout, so the view
+  renders at its new size before the frame draws it.

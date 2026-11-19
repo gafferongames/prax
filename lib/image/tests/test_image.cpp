@@ -67,7 +67,7 @@ struct FakeCodec {
     mutable uint32_t decodes = 0;
     bool rereadPrefix = false;
     PrStatus openResult = PrStatus_Ok;
-    PrImageInfo info = {{2, 2}, rgbaFormat(), PrImageOrientation_Identity, {0, 0}, 1, 1, 0, false};
+    PrImageInfo info = {.extent = {2, 2}, .format = rgbaFormat(), .frameCount = 1, .playCount = 1};
 
     PrImageCodecSet* set = nullptr;
 

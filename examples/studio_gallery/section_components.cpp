@@ -342,7 +342,7 @@ void sectionTables(PrKit* kit, PrLayoutNode parent, GalleryState& state) {
     uint32_t count = 0;
     const AssetRow* assets = galleryAssets(&count);
     const PrKitTableColumn columns[] = {
-        {.label = "NAME", .width = 140, .flex = PrKitFlex_Fill, .sortable = true},
+        {.label = "NAME", .width = 140, .size = PrKitColumnSize_Fill, .sortable = true},
         {.label = "TYPE", .width = 110, .sortable = true},
         {.label = "SIZE", .width = 90, .align = PrKitTextAlign_End, .sortable = true},
         {.label = "MODIFIED", .width = 110, .sortable = true},

@@ -144,7 +144,7 @@ String provenanceSerialize(const ProvenanceRecord& record) {
 
 bool provenanceParse(PrStringView text, ProvenanceRecord* out) {
     PrJson* d = prJsonCreate();
-    bool parsed = prJsonParse(d, text, nullptr);
+    bool parsed = prJsonParse(d, text, 0, nullptr);
     PrJsonValueIndex operations = parsed ? prJsonMember(d, 0, "operations") : kPrJsonMissing;
     bool ok = prJsonKind(d, operations) == PrJsonKind_Array;
     if (ok) {

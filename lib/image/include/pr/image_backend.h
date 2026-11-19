@@ -16,7 +16,7 @@ extern "C" {
 // creates. `closeFn` implements prImageDecoderClose and frees the reader, `frameInfoFn` implements
 // prImageDecoderFrameInfo, and `readFn` implements prImageDecoderReadLevel, decoding into pixels of the format that the
 // reader reported and of the extent of the level. A reader may keep the source and the limits that it was opened with
-// until it is closed, and it enforces the limits. A reader that reports no levels has one.
+// until it is closed, and it enforces the limits. A reader that reports no levels or faces has one of each.
 //
 // `levelExtentFn` gives the extent of each level of a reader whose levels do not each halve the one before, rounded
 // down, and is null for any other.

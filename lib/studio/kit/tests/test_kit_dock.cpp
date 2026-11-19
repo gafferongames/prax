@@ -1,6 +1,9 @@
 #include "pr/array.h"
 #include "pr/kit_dock.h"
+#include "pr/kit_menu.h"
 #include "pr/kit_text.h"
+#include "pr/layout_query.h"
+#include "pr/string.h"
 
 #include "tools/harness/kit_fixture.h"
 
@@ -40,6 +43,7 @@ void seed(PrKitDock* dock) {
 // A fixture whose frames declare a seeded dock and fill each pane with a label.
 struct DockFixture : KitFixture {
     PrKitDock* dock = prKitDockCreate();
+    PrLayoutNode item = kPrLayoutNodeNone;  // the item of a tab's context menu, while it is open
     PrLayoutNode area = kPrLayoutNodeNone;
     Array<PrKitDockPane> panes;
 
@@ -91,6 +95,48 @@ float height(const PrRect& r) {
 PrKitDockTab describeLeaf(void*, PrKitDockPanelId) {
     return PrKitDockTab{.title = "Tab"};
 }
+
+// Titles each panel by its id, as "Tab 7", from the titles that `context` holds.
+PrKitDockTab describeNumbered(void* context, PrKitDockPanelId panel) {
+    const Array<String>& titles = *static_cast<const Array<String>*>(context);
+    return PrKitDockTab{.title = titles[uint32_t(panel)]};
+}
+
+// Returns the innermost node under `node` whose text, as the last layout shows it, is `text`, or none.
+PrLayoutNode findText(KitFixture& f, PrStringView text, PrLayoutNode node) {
+    for (PrLayoutNode child = prLayoutNodeFirstChild(f.tree, node); child != kPrLayoutNodeNone;
+            child = prLayoutNodeNextSibling(f.tree, child)) {
+        if (PrLayoutNode found = findText(f, text, child); found != kPrLayoutNodeNone)
+            return found;
+    }
+    String shown = String::adopt(prLayoutNodeRenderedText(f.tree, node, nullptr));
+    return shown == text ? node : kPrLayoutNodeNone;
+}
+
+// A dock of one leaf of numbered panels, in a box of `width` px.
+struct StripFixture : KitFixture {
+    PrKitDock* dock = prKitDockCreate();
+    Array<String> titles;
+    PrLayoutNode area = kPrLayoutNodeNone;
+    PrLayoutNode overlay = kPrLayoutNodeNone;   // the overlay of the last round, which the strip's list shows in
+
+    explicit StripFixture(float width = 400) {
+        for (uint32_t i = 0; i < 64; ++i)
+            titles.push(format("Tab {}", i));
+        build = [this, width](PrLayoutNode root) {
+            PrKitBoxStyle box{.place = {.width = prKitPx(width), .height = prKitPx(200), .flex = PrKitFlex_Fixed}};
+            area = prKitDockBuild(kit, prKitBox(kit, root, {}, box), {
+                .dock = dock,
+                .describe = describeNumbered,
+                .context = &titles,
+            });
+            overlay = prUiOverlay(ui);
+        };
+    }
+    ~StripFixture() { prKitDockDestroy(dock); }
+
+    PrLayoutNode tab(uint32_t panel) { return findText(*this, format("Tab {}", panel), area); }
+};
 
 } // namespace
 
@@ -270,6 +316,57 @@ TEST_CASE("clicking a tab opens its panel") {
     CHECK(kitVerified(f.tree));
 }
 
+TEST_CASE("a tab's secondary click opens the menu that the view fills, whose item closes the panel at the next build") {
+    DockFixture f;
+    f.build = [&](PrLayoutNode root) {
+        auto fill = [](void* context, PrKitDockPanelId panel, PrLayoutNode menu) {
+            DockFixture& fixture = *static_cast<DockFixture*>(context);
+            fixture.item = prKitMenuItem(fixture.kit, menu, {.text = "Close"}, {});
+            if (prKitActivated(fixture.kit, fixture.item))
+                prKitDockClosePanel(fixture.dock, panel);
+        };
+        f.item = kPrLayoutNodeNone;
+        auto tipped = [](void*, PrKitDockPanelId panel) {
+            PrKitDockTab tab = describeLeaf(nullptr, panel);
+            tab.tooltip = "the panel's place";
+            return tab;
+        };
+        prKitDockBuild(f.kit, root, {.dock = f.dock, .describe = tipped, .menu = fill, .context = &f});
+    };
+    f.frame();
+    PrLayoutNode inspector = kPrLayoutNodeNone;
+    for (uint32_t i = 0; i < prKitDockPaneCount(f.dock); ++i) {
+        if (prKitDockPane(f.dock, i).panel == kInspector)
+            inspector = prKitDockPane(f.dock, i).content;
+    }
+    PrRect content = f.bounds(inspector);
+    PrVec2 tab{content.left + 10, content.top - 11};
+    // The tab's tooltip floats over the root once the pointer rests on the tab.
+    auto children = [&] {
+        uint32_t count = 0;
+        for (PrLayoutNode c = prLayoutNodeFirstChild(f.tree, f.root); c != kPrLayoutNodeNone;
+                c = prLayoutNodeNextSibling(f.tree, c))
+            ++count;
+        return count;
+    };
+    uint32_t bare = children();
+    f.move(tab);
+    f.frame(0.1);
+    f.frame(0.6);
+    f.frame();
+    CHECK(children() == bare + 1);
+    f.push(PrAppEvent{.kind = PrAppEventKind_PointerDown, .pointer = {.position = tab, .button = 1}});
+    f.push(PrAppEvent{.kind = PrAppEventKind_PointerUp, .pointer = {.position = tab, .button = 1}});
+    f.frame();
+    f.frame();
+    REQUIRE(f.item != kPrLayoutNodeNone);
+    f.click(f.center(f.item));
+    f.frame();
+    f.frame();
+    CHECK(prKitDockPanelLeaf(f.dock, kInspector) == kPrKitDockNodeNone);
+    CHECK(kitVerified(f.tree));
+}
+
 TEST_CASE("closing a tab removes its panel at the next build") {
     DockFixture f;
     f.frame();
@@ -297,6 +394,9 @@ TEST_CASE("closing a tab removes its panel at the next build") {
     f.click(close);
     f.frame();
     CHECK(prKitDockPanelLeaf(f.dock, kInspector) == kPrKitDockNodeNone);
+    // The build that removed the panel reports it, so that the application frees what it held.
+    REQUIRE(prKitDockRemovedCount(f.dock) == 1);
+    CHECK(prKitDockRemoved(f.dock, 0) == kInspector);
     CHECK(prKitDockSplitChildCount(f.dock, prKitDockRoot(f.dock)) == 2);
     CHECK(f.panes.count() == 4);
     CHECK(kitVerified(f.tree));
@@ -433,6 +533,85 @@ TEST_CASE("a split's panes divide its box by weight, and its band moves weight b
     CHECK(height(f.bounds(panes[0])) == doctest::Approx(free / 10).epsilon(0.01));
     f.frame();
     CHECK(prLayoutTreeStats(f.tree).blocksLaidOut == 0);
+    CHECK(kitVerified(f.tree));
+}
+
+TEST_CASE("a preview gives its tab to the next preview, and a double click on its tab keeps it") {
+    StripFixture f;
+    PrKitDockNode leaf = prKitDockPrimary(f.dock);
+    prKitDockAddPanel(f.dock, leaf, 1);
+    prKitDockAddPanel(f.dock, leaf, 2);
+    CHECK(prKitDockAddPreview(f.dock, leaf, 3) == 0);
+    prKitDockOpenPanel(f.dock, 1);
+    CHECK(prKitDockLeafActiveTab(f.dock, leaf) == 0);
+    // The next preview takes the place of the last, which leaves the dock, and opens.
+    CHECK(prKitDockAddPreview(f.dock, leaf, 4) == 3);
+    CHECK(prKitDockPanelLeaf(f.dock, 3) == kPrKitDockNodeNone);
+    CHECK(prKitDockLeafTab(f.dock, leaf, 2) == 4);
+    CHECK(prKitDockLeafActiveTab(f.dock, leaf) == 2);
+    CHECK(prKitDockIsPreview(f.dock, 4));
+    CHECK_FALSE(prKitDockIsPreview(f.dock, 2));
+    f.frame();
+    f.frame();
+    PrLayoutNode tab = f.tab(4);
+    REQUIRE(tab != kPrLayoutNodeNone);
+    f.click(f.center(tab), 0, 1);
+    f.frame();
+    CHECK(prKitDockIsPreview(f.dock, 4));
+    f.click(f.center(tab), 0, 2);
+    f.frame();
+    CHECK_FALSE(prKitDockIsPreview(f.dock, 4));
+    // A kept tab is not replaced: the next preview has a tab of its own.
+    CHECK(prKitDockAddPreview(f.dock, leaf, 5) == 0);
+    CHECK(prKitDockLeafTabCount(f.dock, leaf) == 4);
+    prKitDockKeep(f.dock, 5);
+    CHECK_FALSE(prKitDockIsPreview(f.dock, 5));
+}
+
+TEST_CASE("a strip of more tabs than fit scrolls them by the wheel and to show the open tab, and lists them") {
+    StripFixture f;
+    PrKitDockNode leaf = prKitDockPrimary(f.dock);
+    for (PrKitDockPanelId panel = 1; panel <= 30; ++panel)
+        prKitDockAddPanel(f.dock, leaf, panel);
+    for (uint32_t i = 0; i < 4; ++i)
+        f.frame();
+    // The last tab is open, and shows within the dock, while the first has scrolled out of it.
+    PrRect area = f.bounds(f.area);
+    PrRect last = f.bounds(f.tab(30));
+    CHECK(last.right <= area.right);
+    CHECK(last.left >= area.left);
+    CHECK(f.bounds(f.tab(1)).right <= area.left);
+
+    // The wheel over the strip scrolls the tabs back.
+    PrVec2 over{(last.left + last.right) / 2, (last.top + last.bottom) / 2};
+    f.push(PrAppEvent{.kind = PrAppEventKind_Scroll, .scroll = {.position = over, .delta = PrVec2{0, -100000}}});
+    f.frame();
+    f.frame();
+    CHECK(f.bounds(f.tab(1)).left == doctest::Approx(double(area.left)));
+    CHECK(prKitDockLeafActiveTab(f.dock, leaf) == 29);
+
+    // The list at the strip's end opens a tab, which scrolls into view.
+    PrLayoutNode list = kPrLayoutNodeNone;
+    Array<PrLayoutNode> hits(32);
+    PrLayoutVec at{prLayoutUnitFromPx(area.right - 8), prLayoutUnitFromPx(over.y)};
+    uint32_t count = prLayoutTreeHitTest(f.tree, at, hits.data(), hits.count());
+    for (uint32_t i = 0; i < count && list == kPrLayoutNodeNone; ++i) {
+        if ((prUiFlags(f.ui, hits[i]) & PrUiFlag_Focusable) != 0)
+            list = hits[i];
+    }
+    REQUIRE(list != kPrLayoutNodeNone);
+    f.click(f.center(list));
+    f.frame();
+    f.frame();
+    PrLayoutNode item = findText(f, "Tab 20", f.overlay);
+    REQUIRE(item != kPrLayoutNodeNone);
+    f.click(f.center(item));
+    for (uint32_t i = 0; i < 4; ++i)
+        f.frame();
+    CHECK(prKitDockLeafActiveTab(f.dock, leaf) == 19);
+    PrRect twenty = f.bounds(f.tab(20));
+    CHECK(twenty.left >= area.left);
+    CHECK(twenty.right <= area.right);
     CHECK(kitVerified(f.tree));
 }
 

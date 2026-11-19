@@ -197,6 +197,13 @@ typedef struct PrHtmlHost {
     // its parent's renderer, and any other page has no such content. The renderer must outlive the page.
     PrDrawRenderer* PR_NULLABLE renderer;
 
+    // The cache that the documents' images realize in, on the device of the renderer that presents the documents (a
+    // memory device for one that renders in memory), which must outlive the page. A document's image starts realizing
+    // as it loads, and draws once it has arrived; one that fails to decode is broken. The host draws again as the cache
+    // reports arrivals, and trims the cache after its frames. If null, images draw nothing, and an iframe's page uses
+    // its parent's cache.
+    PrTextureCache* PR_NULLABLE textures;
+
     // The codec that decompresses fonts that the documents load in compressed form, such as WOFF files. It must outlive
     // the page. If null, such fonts are not loaded. If null, an iframe's page uses its parent's codec.
     const PrCompressCodecSet* PR_NULLABLE compress;

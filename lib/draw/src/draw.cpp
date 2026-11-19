@@ -17,6 +17,13 @@ PrDrawBrush gradient(PrDrawBrushKind kind, const PrDrawColorStop* stops, uint32_
     return brush;
 }
 
+// Returns the affine map that places `from` onto `to`.
+PrAffine2 rectToRect(PrRect from, PrRect to) {
+    float sx = (to.right - to.left) / (from.right - from.left);
+    float sy = (to.bottom - to.top) / (from.bottom - from.top);
+    return PrAffine2{sx, 0, 0, sy, to.left - from.left * sx, to.top - from.top * sy};
+}
+
 } // namespace
 
 } // namespace pr_impl
@@ -37,14 +44,6 @@ bool prDrawCompositeIsUnbounded(PrDrawComposite composite) {
     }
 }
 
-PrDrawSource prDrawSourceImage(const PrDrawImage* image, PrRect rect) {
-    PrDrawSource source{};
-    source.kind = PrDrawSourceKind_Image;
-    source.rect = rect;
-    source.image = image;
-    return source;
-}
-
 PrDrawSource prDrawSourceList(PrDrawList* list, PrRect rect) {
     PrDrawSource source{};
     drawListFreeze(list);
@@ -54,25 +53,36 @@ PrDrawSource prDrawSourceList(PrDrawList* list, PrRect rect) {
     return source;
 }
 
-PrDrawSource prDrawSourceTexture(PrDrawTextureId texture, PrUVec2 extent, PrRect rect, PrDrawAlpha alpha) {
+PrDrawSource prDrawSourceTexture(PrTexture texture, PrUVec2 extent, PrRect rect) {
     PrDrawSource source{};
     source.kind = PrDrawSourceKind_Texture;
-    source.alpha = alpha;
+    source.alpha = texture.alpha;
     source.rect = rect;
     source.extent = extent;
-    source.texture = texture;
+    source.texture = texture.texture;
     return source;
+}
+
+PrDrawSource prDrawSourceRegion(const PrTextureRegion* region, PrRect rect) {
+    PrVec2 at{region->rect.left, region->rect.top};
+    return prDrawSourceTexture(region->texture, region->extent,
+        PrRect{rect.left + at.x, rect.top + at.y, rect.right + at.x, rect.bottom + at.y});
 }
 
 bool prDrawSourceIsValid(PrDrawSource source) {
     if (prRectIsEmpty(source.rect))
         return false;
     switch (source.kind) {
-        case PrDrawSourceKind_Image: return source.image != nullptr;
         case PrDrawSourceKind_List: return source.list != nullptr;
-        case PrDrawSourceKind_Texture: return source.texture != 0;
+        case PrDrawSourceKind_Texture: return source.texture.id != 0;
     }
     return false;
+}
+
+PrUVec2 prDrawSourceTexels(PrDrawSource source) {
+    float width = prF32Round(source.rect.right - source.rect.left);
+    float height = prF32Round(source.rect.bottom - source.rect.top);
+    return PrUVec2{width > 0 ? uint32_t(width) : 0, height > 0 ? uint32_t(height) : 0};
 }
 
 PrDrawBrush prDrawBrushDefault(PrDrawBrushKind kind) {
@@ -98,6 +108,48 @@ PrDrawBrush prDrawBrushImage(PrDrawSource source, PrRect destination, PrDrawSamp
     brush.image.tiles.tile = destination;
     brush.image.sampling = sampling;
     return brush;
+}
+
+void prDrawBrushImageUpright(PrDrawBrush* brush, PrTextureOrientationFlags orientation, PrRect region) {
+    if (brush->kind != PrDrawBrushKind_Image || orientation == 0)
+        return;
+    bool transposed = (orientation & PrTextureOrientationFlag_Transpose) != 0;
+    bool flipX = (orientation & PrTextureOrientationFlag_FlipX) != 0;
+    bool flipY = (orientation & PrTextureOrientationFlag_FlipY) != 0;
+    float regionWidth = region.right - region.left;
+    float regionHeight = region.bottom - region.top;
+    PrVec2 displayed = transposed ? PrVec2{regionHeight, regionWidth} : PrVec2{regionWidth, regionHeight};
+    // The displayed rect, within the region, unmirrored, then transposed, is the stored rect.
+    PrRect rect = brush->image.source.rect;
+    rect = PrRect{rect.left - region.left, rect.top - region.top, rect.right - region.left, rect.bottom - region.top};
+    if (flipX)
+        rect = PrRect{displayed.x - rect.right, rect.top, displayed.x - rect.left, rect.bottom};
+    if (flipY)
+        rect = PrRect{rect.left, displayed.y - rect.bottom, rect.right, displayed.y - rect.top};
+    if (transposed)
+        rect = PrRect{rect.top, rect.left, rect.bottom, rect.right};
+    brush->image.source.rect =
+        PrRect{rect.left + region.left, rect.top + region.top, rect.right + region.left, rect.bottom + region.top};
+    // The stored texels span a tile of the tile's size, transposed if the orientation transposes, at the same origin. A
+    // point of it lands on the displayed tile as the orientation moves it: transposed, then mirrored within the tile.
+    PrDrawTiles& tiles = brush->image.tiles;
+    PrRect tile = tiles.tile;
+    float width = tile.right - tile.left;
+    float height = tile.bottom - tile.top;
+    PrRect stored = transposed ? PrRect{tile.left, tile.top, tile.left + height, tile.top + width} : tile;
+    PrAffine2 local = rectToRect(stored, PrRect{0, 0, transposed ? height : width, transposed ? width : height});
+    PrAffine2 swap = transposed ? PrAffine2{0, 1, 1, 0, 0, 0} : PrAffine2{1, 0, 0, 1, 0, 0};
+    PrAffine2 mirror{flipX ? -1.0f : 1.0f, 0, 0, flipY ? -1.0f : 1.0f, flipX ? width : 0, flipY ? height : 0};
+    PrAffine2 place{1, 0, 0, 1, tile.left, tile.top};
+    PrAffine2 toTile = prAffine2Concat(prAffine2Concat(prAffine2Concat(local, swap), mirror), place);
+    brush->transform = prAffine2Concat(toTile, brush->transform);
+    tiles.tile = stored;
+    if (transposed) {
+        PrDrawExtend x = tiles.x;
+        tiles.x = tiles.y;
+        tiles.y = x;
+        tiles.spacing = PrVec2{tiles.spacing.y, tiles.spacing.x};
+    }
 }
 
 PrDrawBrush prDrawBrushLinear(PrVec2 start, PrVec2 end, const PrDrawColorStop* stops, uint32_t stopCount) {

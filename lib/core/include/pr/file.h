@@ -141,6 +141,11 @@ PrStringView prFilePathExtension(PrStringView path);
 // Appends `part` to the path in `path`, after a separator unless the path is empty or already ends in one.
 void prFilePathAppend(PrTextBuffer* path, PrStringView part);
 
+// Returns the size of the root that begins `path`, or zero if `path` has no root. A root is a separator. On Windows and
+// the web, it may also be two separators, which begin a UNC path, or a drive letter and a colon with an optional
+// separator after them. A path with a root names the same file for every base on the same drive.
+size_t prFilePathRootSize(PrStringView path);
+
 // Returns true if prFilePathAbsolute ignores the base for `path`. On Windows, `path` begins with a drive letter and a
 // colon, or with two separators. Elsewhere, it begins with a separator.
 bool prFilePathIsAbsolute(PrStringView path);

@@ -79,14 +79,10 @@ struct CssPresentationImage {
     // The nodes whose records named it while it loaded.
     RawArray<const PrDomNode*> waiting;
 
-    // The decoded image, arranged as its orientation displays it, and how it was arranged from its stored pixels. The
-    // presentation holds a reference.
-    const PrDrawImage* PR_NULLABLE image;
+    // The decoded image, in its stored orientation, and the orientation that displays it, which an element applies as
+    // its image-orientation says. The presentation holds a reference.
+    const PrTextureSource* PR_NULLABLE image;
     PrImageOrientation orientation;
-
-    // The decoded image as it is stored, made the first time that image-orientation asks for it. The presentation holds
-    // a reference.
-    const PrDrawImage* PR_NULLABLE stored;
 
     PrLayoutPainter vector;                     // an SVG image, whose context the presentation holds a reference to
     PrLayoutNaturalSize natural;                // as the image's orientation displays it
@@ -433,8 +429,10 @@ struct CssPresentation {
     uint64_t unloadedFacesVersion;
 
     PrLayoutTree* tree;
-    PrLayoutNode root;               // the box of the document's root, which the viewport lays out, or none
-    PrTextShaper* shaper;            // what the tree shapes with, which the content of svg elements shapes with too
+    PrLayoutNode root;                    // the box of the document's root, which the viewport lays out, or none
+    PrTextShaper* shaper;                 // what the tree shapes with, which the content of svg elements shapes with
+                                          // too
+    PrTextureCache* PR_NULLABLE textures; // what the tree's images, and the rasters of svg content, realize in
     RawArray<CssParsedUserAgentSheet> userAgent;
     PrCssSheetConditions conditions; // the document's conditions when the rule set was last built
     CssRuleSet userAgentRules;       // the rules of the user agent's sheets that apply, which `rules` builds on

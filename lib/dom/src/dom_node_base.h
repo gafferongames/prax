@@ -5,12 +5,12 @@
 #pragma once
 
 #include "pr/dom.h"
-#include "pr/draw_image.h"
 #include "pr/hash_index.h"
 #include "pr/image.h"
 #include "pr/layout_tree.h"
 #include "pr/name_table.h"
 #include "pr/raw_array.h"
+#include "pr/texture.h"
 #include "pr/url.h"
 
 #include "dom/src/dom_class.h"
@@ -84,13 +84,12 @@ struct DomElementState {
     uint32_t naturalHeight;
 
     double density;                       // html/#current-pixel-density of the current request, or 0 for 1
+    bool imageFetching;                   // the current request's fetch has not answered
 
-    // The image of the current request, if the host decodes images. `picture` is arranged as the image's orientation
-    // displays it, and `orientation` is how it was arranged from the stored pixels. `storedPicture` is the stored
-    // arrangement, made the first time that image-orientation asks for it.
-    const PrDrawImage* PR_NULLABLE picture;
+    // The image of the current request, if the host decodes images, in its stored orientation, and the orientation that
+    // displays it, which the element applies as its image-orientation says.
+    const PrTextureSource* PR_NULLABLE picture;
     PrImageOrientation orientation;
-    const PrDrawImage* PR_NULLABLE storedPicture;
 
     // What draws the element's content at the size shown, in place of `picture`: an SVG image of the current request,
     // or a canvas's bitmap; and the revision of what it draws (PrLayoutContent::revision).

@@ -667,7 +667,7 @@ void publishDiagnostics(LspClient* client, const PrJson* json, PrJsonValueIndex 
 
 void handleMessage(LspClient* client, PrStringView body) {
     PrJson* json = client->json;
-    if (!prJsonParse(json, body, nullptr) || prJsonKind(json, 0) != PrJsonKind_Object) {
+    if (!prJsonParse(json, body, 0, nullptr) || prJsonKind(json, 0) != PrJsonKind_Object) {
         fail(client);
         return;
     }
@@ -917,7 +917,7 @@ PrLspRequest prLspClientRequest(PrLspClient* client, PrStringView method, PrStri
         void* PR_NULLABLE context) {
     if (client->state != PrLspClientState_Running)
         return kPrLspRequestNone;
-    if (params.data != nullptr && !prJsonParse(client->params, params, nullptr))
+    if (params.data != nullptr && !prJsonParse(client->params, params, 0, nullptr))
         return kPrLspRequestNone;
     PrLspRequest request = beginCall(client, method, true);
     if (params.data != nullptr)
@@ -932,7 +932,7 @@ PrLspRequest prLspClientRequest(PrLspClient* client, PrStringView method, PrStri
 bool prLspClientNotify(PrLspClient* client, PrStringView method, PrStringView params) {
     if (client->state != PrLspClientState_Running)
         return false;
-    if (params.data != nullptr && !prJsonParse(client->params, params, nullptr))
+    if (params.data != nullptr && !prJsonParse(client->params, params, 0, nullptr))
         return false;
     beginCall(client, method, false);
     if (params.data != nullptr)

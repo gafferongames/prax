@@ -1,10 +1,10 @@
 #include "pr/array.h"
-#include "pr/draw_image.h"
 #include "pr/kit_box.h"
 #include "pr/kit_button.h"
 #include "pr/kit_collection.h"
 #include "pr/layout_unit.h"
 #include "pr/mem.h"
+#include "pr/texture.h"
 
 #include "tools/harness/kit_fixture.h"
 
@@ -15,6 +15,13 @@ using namespace harness;
 namespace pr_impl {
 
 namespace {
+
+// True where a click with Control is the platform's secondary click, as on macOS.
+#if defined(__APPLE__)
+constexpr bool kControlClickIsContext = true;
+#else
+constexpr bool kControlClickIsContext = false;
+#endif
 
 // The row height, and the height of the views that the tests show, which is ten rows.
 constexpr float kRowHeight = 22;
@@ -52,6 +59,7 @@ struct ListScene {
     uint32_t count = kMaxRows;
     bool bound = true;
     bool focus = false;
+    bool reveals = false;           // the next round reveals the lead
     bool selected[kMaxRows] = {};
     PrKitSelection selection{};
     Rows rows{};
@@ -62,7 +70,8 @@ struct ListScene {
     }
 
     void build(PrLayoutNode root) {
-        PrKitListView list{.count = count, .selection = bound ? &selection : nullptr};
+        PrKitListView list{.count = count, .selection = bound ? &selection : nullptr, .revealsLead = reveals};
+        reveals = false;
         PrLayoutNode view = prKitListView(f.kit, root, list,
             {.rowHeight = kRowHeight, .place = {.height = prKitPx(kViewHeight), .flex = PrKitFlex_Fixed}});
         rows = rowsOf(f, view);
@@ -115,6 +124,9 @@ struct TreeScene {
     PrKitTreeFold fold{.row = kPrKitRowNone};
     PrKitTreeDrop drop{};
     uint32_t toggled = 0;
+    bool opens = false;
+    bool clickFolds = false;
+    uint32_t opened = kPrKitRowNone;
 
     explicit TreeScene(KitFixture& fixture) : f(fixture) {
         f.build = [this](PrLayoutNode root) { build(root); };
@@ -142,6 +154,8 @@ struct TreeScene {
             .selection = &selection,
             .items = items.data(),
             .dragKind = kRowKind,
+            .opens = opens,
+            .clickFolds = clickFolds,
         };
         PrLayoutNode view = prKitTreeView(f.kit, root, tree,
             {.rowHeight = kRowHeight, .place = {.height = prKitPx(kViewHeight), .flex = PrKitFlex_Fixed}});
@@ -178,6 +192,9 @@ struct TreeScene {
         PrKitTreeDrop dropped{};
         if (prKitRowDropped(f.kit, view, &dropped))
             drop = dropped;
+        uint32_t row = kPrKitRowNone;
+        if (prKitRowOpened(f.kit, view, &row))
+            opened = row;
     }
 
     // Returns the index of the row of `id` in the last order.
@@ -212,7 +229,7 @@ struct TableScene {
 
     void build(PrLayoutNode root) {
         const PrKitTableColumn columns[] = {
-            {.label = "NAME", .width = nameWidth, .flex = PrKitFlex_Fill, .sortable = true},
+            {.label = "NAME", .width = nameWidth, .size = PrKitColumnSize_Fill, .sortable = true},
             {.label = "TYPE", .width = 80, .sortable = true},
             {.label = "SIZE", .width = 60, .align = PrKitTextAlign_End},
         };
@@ -364,8 +381,9 @@ TEST_CASE("a click selects a row, Shift extends from the anchor, and Command tog
     scene.clickRow(3, PrAppModifierFlag_Super);
     CHECK(scene.selectedCount() == 3);
     CHECK_FALSE(scene.selected[3]);
+    // Control toggles too, except on macOS, where a click with Control is the secondary click.
     scene.clickRow(8, PrAppModifierFlag_Control);
-    CHECK(scene.selectedCount() == 4);
+    CHECK(scene.selectedCount() == (kControlClickIsContext ? 1u : 4u));
     CHECK(scene.selected[8]);
     scene.clickRow(0);
     CHECK(scene.selectedCount() == 1);
@@ -442,6 +460,31 @@ TEST_CASE("a key that moves the lead past the view scrolls it into view and decl
     CHECK(scene.selection.lead == 0);
     CHECK(scene.scrollY() == 0.0f);
     CHECK(scene.rows.first == 0);
+    CHECK(kitVerified(f.tree));
+}
+
+TEST_CASE("a view that reveals its lead scrolls the lead that the application moved into view") {
+    KitFixture f;
+    ListScene scene(f);
+    f.frame();
+    f.frame();
+    // The application moves the lead far below the view, which shows it at the bottom of the scrollport.
+    scene.selection = PrKitSelection{.anchor = 500, .lead = 500};
+    scene.reveals = true;
+    f.frame();
+    f.frame();
+    CHECK(scene.scrollY() == doctest::Approx(501 * double(kRowHeight) - double(kViewHeight)));
+    PrRect view = f.bounds(scene.rows.view);
+    CHECK(f.bounds(scene.cells[500]).bottom == doctest::Approx(double(view.bottom)));
+    // A lead above the view shows at its top, and a lead in the view moves nothing.
+    scene.selection = PrKitSelection{.anchor = 20, .lead = 20};
+    scene.reveals = true;
+    f.frame();
+    CHECK(scene.scrollY() == doctest::Approx(20 * double(kRowHeight)));
+    scene.selection = PrKitSelection{.anchor = 22, .lead = 22};
+    scene.reveals = true;
+    f.frame();
+    CHECK(scene.scrollY() == doctest::Approx(20 * double(kRowHeight)));
     CHECK(kitVerified(f.tree));
 }
 
@@ -533,6 +576,61 @@ TEST_CASE("a click of a disclosure opens its row and selects nothing") {
     CHECK_FALSE(scene.open[1]);
     CHECK(scene.items.count() == 3);
     CHECK(kitVerified(f.tree));
+}
+
+TEST_CASE("Up and Down move through a tree's rows without folding them, and Enter opens the lead") {
+    KitFixture f;
+    TreeScene scene(f);
+    scene.opens = true;
+    scene.open[0] = true;
+    f.frame();
+    f.frame();
+    f.click(f.center(scene.nodes[0]));
+    f.frame();
+    REQUIRE(scene.selectedId == 10);
+    for (uint32_t i = 0; i < 3; ++i) {
+        f.key(PrAppKey_Down);
+        f.frame();
+    }
+    CHECK(scene.selectedId == 20);
+    CHECK(scene.open[0]);
+    CHECK_FALSE(scene.open[1]);
+    CHECK(scene.fold.row == kPrKitRowNone);
+    CHECK(scene.opened == kPrKitRowNone);
+    f.key(PrAppKey_Enter);
+    f.frame();
+    CHECK(scene.opened == 3);
+    CHECK_FALSE(scene.open[1]);
+}
+
+TEST_CASE("a double click opens its row, and a click folds a row of a tree that folds on a click") {
+    KitFixture f;
+    TreeScene scene(f);
+    scene.opens = true;
+    scene.clickFolds = true;
+    scene.open[0] = true;
+    f.frame();
+    f.frame();
+    // A click on a leaf selects it and opens nothing.
+    f.click(f.center(scene.nodes[1]));
+    f.frame();
+    CHECK(scene.selectedId == 11);
+    CHECK(scene.opened == kPrKitRowNone);
+    // A double click selects it and opens it.
+    f.click(f.center(scene.nodes[2]), 0, 1);
+    f.frame();
+    f.click(f.center(scene.nodes[2]), 0, 2);
+    f.frame();
+    CHECK(scene.selectedId == 12);
+    CHECK(scene.opened == 2);
+    // A click on a group selects and folds it.
+    f.click(f.center(scene.nodes[3]));
+    f.frame();
+    CHECK(scene.selectedId == 20);
+    CHECK(scene.open[1]);
+    f.click(f.center(scene.nodes[0]));
+    f.frame();
+    CHECK_FALSE(scene.open[0]);
 }
 
 TEST_CASE("a tree indents its rows by depth, and lines up leaves with their parents' cells") {
@@ -731,6 +829,110 @@ TEST_CASE("columns wider than a table scroll it sideways, and the header scrolls
     CHECK(kitVerified(f.tree));
 }
 
+// A table of two rows whose first two columns fit their cells, the second up to 100 px, before a column that fills.
+struct FitScene {
+    KitFixture& f;
+    PrLayoutNode view = kPrLayoutNodeNone;
+    PrLayoutNode cells[2][3] = {};
+    PrLayoutNode labels[2] = {};
+    uint32_t count = 2;
+
+    explicit FitScene(KitFixture& fixture) : f(fixture) {
+        f.build = [this](PrLayoutNode root) {
+            const PrKitTableColumn columns[] = {
+                {.label = "KEY", .width = 20, .size = PrKitColumnSize_Fit},
+                {.label = "VALUE", .width = 20, .maxWidth = 100, .size = PrKitColumnSize_Fit},
+                {.label = "REST", .width = 40, .size = PrKitColumnSize_Fill},
+            };
+            PrKitListViewStyle style{
+                .rowHeight = kRowHeight,
+                .place = {.width = prKitPx(600), .height = prKitPx(kViewHeight), .flex = PrKitFlex_Fixed},
+            };
+            view = prKitTable(f.kit, root, {.count = count, .columns = columns, .columnCount = 3}, style);
+            const char* keys[] = {"a", "a much longer key"};
+            for (uint32_t i = 0; i < count && i < 2; ++i) {
+                PrLayoutNode row = prKitTableRow(f.kit, view, {.index = i, .item = i});
+                cells[i][0] = prKitTableCell(f.kit, row, {.column = 0, .text = keys[i]});
+                cells[i][1] = prKitTableCell(f.kit, row, {.column = 1, .text = "a value far wider than its column's most"});
+                cells[i][2] = prKitTableCell(f.kit, row, {.column = 2, .text = "x"});
+                labels[i] = prLayoutNodeFirstChild(f.tree, cells[i][0]);
+            }
+        };
+    }
+
+    // Returns the grip at the end of a column's heading.
+    PrLayoutNode grip(uint32_t column) const {
+        PrLayoutNode header = prLayoutNodeFirstChild(f.tree, view);
+        PrLayoutNode heading = prLayoutNodeFirstChild(f.tree, prLayoutNodeFirstChild(f.tree, header));
+        for (uint32_t i = 0; i < column; ++i)
+            heading = prLayoutNodeNextSibling(f.tree, heading);
+        return prLayoutNodeLastChild(f.tree, heading);
+    }
+};
+
+TEST_CASE("a Fit column is as wide as its widest cell, up to its most, and a Fill column takes the rest") {
+    KitFixture f;
+    FitScene scene(f);
+    // The first frame lays the cells out, the second measures them, and the third lays the columns out to fit.
+    f.frame();
+    f.frame();
+    f.frame();
+    float key = prRectWidth(f.bounds(scene.labels[1]));
+    CHECK(key > 40.0f);
+    CHECK(prRectWidth(f.bounds(scene.cells[0][0])) == doctest::Approx(key).epsilon(0.01));
+    CHECK(prRectWidth(f.bounds(scene.cells[1][1])) == doctest::Approx(100.0));
+    CHECK(prRectWidth(f.bounds(scene.cells[0][2])) > 300.0f);
+    CHECK(kitVerified(f.tree));
+}
+
+TEST_CASE("a cell that its column clips shows its whole text in a tooltip") {
+    KitFixture f;
+    FitScene scene(f);
+    f.frame();
+    f.frame();
+    f.frame();
+    uint32_t bare = 0;
+    for (PrLayoutNode c = prLayoutNodeFirstChild(f.tree, f.root); c != kPrLayoutNodeNone;
+            c = prLayoutNodeNextSibling(f.tree, c))
+        ++bare;
+    f.move(f.center(scene.cells[0][1]));
+    f.frame(0.1);
+    f.frame(0.6);
+    f.frame();
+    uint32_t shown = 0;
+    for (PrLayoutNode c = prLayoutNodeFirstChild(f.tree, f.root); c != kPrLayoutNodeNone;
+            c = prLayoutNodeNextSibling(f.tree, c))
+        ++shown;
+    CHECK(shown == bare + 1);
+    CHECK(kitVerified(f.tree));
+}
+
+TEST_CASE("a drag of a heading's grip sets its column's width, and a double click gives the column its own again") {
+    KitFixture f;
+    FitScene scene(f);
+    // The first frame lays the cells out, the second measures them, and the third lays the columns out to fit.
+    f.frame();
+    f.frame();
+    f.frame();
+    float fitted = prRectWidth(f.bounds(scene.cells[0][0]));
+    PrVec2 at = f.center(scene.grip(0));
+    f.push(PrAppEvent{.kind = PrAppEventKind_PointerDown, .pointer = {.position = at}});
+    f.frame();
+    f.push(PrAppEvent{.kind = PrAppEventKind_PointerMove, .pointer = {.position = PrVec2{at.x + 50, at.y}}});
+    f.frame();
+    f.push(PrAppEvent{.kind = PrAppEventKind_PointerUp, .pointer = {.position = PrVec2{at.x + 50, at.y}}});
+    f.frame();
+    f.frame();
+    CHECK(prRectWidth(f.bounds(scene.cells[0][0])) == doctest::Approx(fitted + 50).epsilon(0.01));
+    f.click(f.center(scene.grip(0)), 0, 1);
+    f.frame();
+    f.click(f.center(scene.grip(0)), 0, 2);
+    f.frame();
+    f.frame();
+    CHECK(prRectWidth(f.bounds(scene.cells[0][0])) == doctest::Approx(fitted).epsilon(0.01));
+    CHECK(kitVerified(f.tree));
+}
+
 TEST_CASE("a table's window holds the rows that its scrollport shows under its header") {
     KitFixture f;
     TableScene scene(f);
@@ -766,12 +968,9 @@ TEST_CASE("a tile's image fills its thumbnail in place of its icon") {
     KitFixture f;
     Array<uint8_t> pixels(16 * 8 * 4);
     prMemFill(pixels.data(), 255, pixels.count());
-    PrDrawImageDesc desc{
-        PrPixelView{pixels.data(), 16 * 4, {16, 8}}, PrPixelFormat_Rgba8, PrDrawAlpha_Straight,
-        PrColorSpace_Srgb,
-    };
-    const PrDrawImage* image = nullptr;
-    REQUIRE(prDrawImageCreate(&desc, &image) == PrStatus_Ok);
+    const PrTextureSource* image =
+        prTextureSourceCreateCopy(PrPixelView{pixels.data(), 16 * 4, {16, 8}}, PrPixelFormat_Rgba8,
+            PrTextureAlpha_Straight);
     PrLayoutNode tile = kPrLayoutNodeNone;
     f.build = [&](PrLayoutNode root) {
         PrKitListViewStyle style{
@@ -798,20 +997,14 @@ TEST_CASE("a tile's image fills its thumbnail in place of its icon") {
     CHECK(kitVerified(f.tree));
     f.build = {};
     f.frame();
-    prDrawImageRelease(image);
+    prTextureSourceRelease(image);
 }
 
 TEST_CASE("a tile's image grows inside its thumbnail under the pointer, and a tile answers a secondary click") {
     KitFixture f;
     uint8_t pixels[4] = {255, 0, 0, 255};
-    PrDrawImageDesc desc{
-        .pixels = {pixels, 4, {1, 1}},
-        .format = PrPixelFormat_Rgba8,
-        .alpha = PrDrawAlpha_Straight,
-        .space = PrColorSpace_Srgb,
-    };
-    const PrDrawImage* image = nullptr;
-    REQUIRE(prDrawImageCreate(&desc, &image) == PrStatus_Ok);
+    const PrTextureSource* image =
+        prTextureSourceCreateCopy({pixels, 4, {1, 1}}, PrPixelFormat_Rgba8, PrTextureAlpha_Straight);
     PrLayoutNode tile = kPrLayoutNodeNone;
     bool secondary = false;
     f.build = [&](PrLayoutNode root) {
@@ -849,7 +1042,7 @@ TEST_CASE("a tile's image grows inside its thumbnail under the pointer, and a ti
 
     f.build = {};
     f.frame();
-    prDrawImageRelease(image);
+    prTextureSourceRelease(image);
 }
 
 TEST_CASE("in a grid, Up and Down move the lead by a row of tiles, and Left and Right by a tile") {

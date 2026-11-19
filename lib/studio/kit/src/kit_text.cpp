@@ -2,6 +2,9 @@
 
 #include "pr/kit_text.h"
 
+#include "pr/kit_menu.h"
+#include "pr/layout_query.h"
+
 #include "studio/kit/src/kit.h"
 
 namespace pr_impl {
@@ -42,7 +45,23 @@ using namespace pr_impl;
 PrLayoutNode prKitLabel(PrKit* kit, PrLayoutNode parent, PrKitLabel label, PrKitTextStyle style) {
     PrLayoutNode node = prLayoutTreeFrameElement(kit->tree, parent, kitKey(*kit, parent, label.key), labelStyle(*kit, style));
     prLayoutTreeFrameText(kit->tree, node, 0, label.text);
+    // A label that clips its text shows the whole of it in a tooltip.
+    if (kitTextWrap(*kit, style.role, style.wrap) == PrKitWrap_Clip && prKitIsClipped(kit, node, node))
+        prKitTooltip(kit, node, {.text = label.text});
     return node;
+}
+
+bool prKitIsClipped(PrKit* kit, PrLayoutNode node, PrLayoutNode clip) {
+    if (!prUiIsHovered(kit->ui, node))
+        return false;
+    PrLayoutScrollInfo info{};
+    if (!prLayoutNodeScrollInfo(kit->tree, node, &info))
+        return false;
+    // The text's extent, from the start of the node's box, against the box of the node that clips it.
+    PrLayoutRect box = prLayoutNodeBounds(kit->tree, node, PrLayoutCoordinates_Layout);
+    PrLayoutRect clipBox = prLayoutNodeBounds(kit->tree, clip, PrLayoutCoordinates_Layout);
+    float end = prLayoutUnitToPx(box.left) + prLayoutUnitToPx(info.content.right);
+    return end > prLayoutUnitToPx(clipBox.right) + 0.5f;
 }
 
 PrLayoutNode prKitText(PrKit* kit, PrLayoutNode parent, PrKitText text, PrKitTextStyle style) {

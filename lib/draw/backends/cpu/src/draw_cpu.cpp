@@ -439,10 +439,7 @@ bool makePaint(Renderer& r, const PrDrawBrush* PR_NULLABLE brush, PrColor color,
     if (prRectIsEmpty(source.tiles.tile) || !prDrawSourceIsValid(image))
         return false;
     CpuTexture* texture = nullptr;
-    if (image.kind == PrDrawSourceKind_Image) {
-        texture = cpuTextureFromImage(r.cpu->textures, image.image);
-        source.texels = image.rect;
-    } else if (image.kind == PrDrawSourceKind_Texture) {
+    if (image.kind == PrDrawSourceKind_Texture) {
         texture = sourceTexture(r, image, PrVec2{1, 1}, &source.texels);
         if (texture == nullptr)
             return false;
@@ -687,21 +684,34 @@ void drawShapeWith(Renderer& r, const PrDrawCommand& c, const CpuPaint& paint) {
 CpuTexture* PR_NULLABLE sourceTexture(Renderer& r, const PrDrawSource& source, PrVec2 scale, PrRect* texels) {
     if (!prDrawSourceIsValid(source))
         return nullptr;
-    if (source.kind == PrDrawSourceKind_Image) {
-        *texels = source.rect;
-        return cpuTextureFromImage(r.cpu->textures, source.image);
-    }
     if (source.kind == PrDrawSourceKind_Texture) {
-        // A texture of the caller's on the device, read in place while the render runs. Its key never equals an image's
-        // id.
+        // A texture of the caller's on the device, read in place while the render runs, with its mip levels where the
+        // backend samples them as they are: each level's pixels are those of a view of it. Its key never equals a
+        // list's id.
         PrGpuNativePixels native{};
         PrPixelFormat format{};
-        PrGpuTexture texture{uint32_t(source.texture)};
-        if (!prGpuTextureNative(r.cpu->device, texture, PrGpuNativeKind_Pixels, &native) ||
-                !prGpuFormatToPixelFormat(native.format, &format))
+        if (!prGpuTextureNative(r.cpu->device, source.texture, PrGpuNativeKind_Pixels, &native) ||
+                !prGpuFormatToPixelFormat(prGpuFormatPlain(native.format), &format))
             return nullptr;
+        PrPixelView levels[16] = {prPixelsView(native.pixels)};
+        uint32_t levelCount = 1;
+        PrGpuTextureDesc desc = prGpuTextureDesc(r.cpu->device, source.texture);
+        if (desc.levels > 1 && cpuSamplesInPlace(levels[0], format, source.alpha)) {
+            for (uint8_t i = 1; i < desc.levels && i < 16; ++i) {
+                PrGpuTexture view{};
+                if (prGpuTextureCreateView(r.cpu->device, source.texture, PrGpuTextureKind_2d,
+                        PrGpuSubresources{.firstLevel = i, .levels = 1, .layers = 1}, &view) != PrStatus_Ok)
+                    break;
+                PrGpuNativePixels level{};
+                bool read = prGpuTextureNative(r.cpu->device, view, PrGpuNativeKind_Pixels, &level);
+                prGpuTextureRelease(r.cpu->device, view);
+                if (!read || !cpuSamplesInPlace(prPixelsView(level.pixels), format, source.alpha))
+                    break;
+                levels[levelCount++] = prPixelsView(level.pixels);
+            }
+        }
         *texels = source.rect;
-        return cpuTextureFromPixels(r.cpu->textures, source.texture | (uint64_t(1) << 63), prPixelsView(native.pixels),
+        return cpuTextureFromPixels(r.cpu->textures, source.texture.id | (uint64_t(1) << 63), levels, levelCount,
             format, source.alpha);
     }
     if (source.kind != PrDrawSourceKind_List)
@@ -769,19 +779,33 @@ void drawNineSlice(Renderer& r, const PrDrawCommand& c) {
     composite(r, shape, paint, c.composite, c.blendMode);
 }
 
-// Replaces the target's pixels at the device point with the image's, ignoring all state.
+// Replaces the target's pixels at the device point with the source's texels, ignoring all state.
 void writePixels(Renderer& r, const PrDrawCommand& c) {
     const CpuTarget& t = r.target;
-    const PrDrawImage* image = c.writePixels.image;
-    PrIRect written{
-        c.writePixels.origin.x, c.writePixels.origin.y,
-        c.writePixels.origin.x + int32_t(prDrawImageExtent(image).x),
-        c.writePixels.origin.y + int32_t(prDrawImageExtent(image).y),
-    };
-    r.target.drawn = prIRectUnion(r.target.drawn, prIRectIntersect(written, t.box));
-    PrPixels pixels{t.data, t.stride, {prIRectWidth(t.box), prIRectHeight(t.box)}};
-    prDrawImageWritePixels(image, pixels, t.format,
-        PrIVec2{c.writePixels.origin.x - t.box.left, c.writePixels.origin.y - t.box.top});
+    const PrDrawSource& source = c.writePixels.source;
+    PrRect rect{};
+    CpuTexture* texture = sourceTexture(r, source, PrVec2{1, 1}, &rect);
+    if (texture == nullptr)
+        return;
+    PrUVec2 extent = prDrawSourceTexels(source);
+    PrIRect written = prIRectAt(c.writePixels.origin, extent);
+    PrIRect landed = prIRectIntersect(written, t.box);
+    r.target.drawn = prIRectUnion(r.target.drawn, landed);
+    const CpuTextureLevel& level = texture->levels.data[0];
+    uint32_t from = cpuPixelBytes(level.format);
+    uint32_t to = cpuPixelBytes(t.format);
+    int32_t left = int32_t(rect.left) - c.writePixels.origin.x;
+    int32_t top = int32_t(rect.top) - c.writePixels.origin.y;
+    for (int32_t y = landed.top; y < landed.bottom; ++y) {
+        const uint8_t* row = level.data + size_t(y + top) * level.width * from;
+        uint8_t* target = t.data + size_t(y - t.box.top) * t.stride;
+        for (int32_t x = landed.left; x < landed.right; ++x) {
+            const uint8_t* texel = row + size_t(x + left) * from;
+            float rgba[4];
+            cpuReadPixel(texel, level.format, rgba);
+            cpuWritePixel(target + size_t(x - t.box.left) * to, t.format, rgba);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1086,8 +1110,8 @@ void pushHostGroup(Renderer& r, Frame& frame) {
     // The layer is a texture on the device, whose texels the renderer reads and writes in place.
     PrPixels texels{};
     PrPixelFormat format = r.target.format;
-    if (g->layer->texture != 0) {
-        PrGpuTexture texture{uint32_t(g->layer->texture)};
+    if (g->layer->texture.id != 0) {
+        PrGpuTexture texture = g->layer->texture;
         PrPixelFormat held{};
         if (prGpuFormatToPixelFormat(prGpuTextureDesc(r.cpu->device, texture).format, &held)) {
             PrGpuNativePixels native{};

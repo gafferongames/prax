@@ -10,6 +10,7 @@
 #include "pr/string.h"
 
 #include "tools/harness/harness_gpu.h"
+#include "tools/harness/harness_textures.h"
 
 #include "tools/harness/test.h"
 
@@ -27,20 +28,28 @@ namespace {
 struct MemoryCanvas {
     PrGpuDevice* device = nullptr;
     PrDrawRenderer* renderer = nullptr;    // the CPU renderer on `device`, which presents the context
+    PrTextureCache* textures = nullptr;    // on `device`, which the images that the context draws realize in
     PrCanvas* handle;
 
     explicit MemoryCanvas(uint32_t width = 100, uint32_t height = 50,
             PrCanvasSettings settings = prCanvasSettingsDefault()) {
         REQUIRE(gpuDeviceCreate(PrGpuBackend_Memory, nullptr, &device) == PrStatus_Ok);
+        textures = harnessTextureCacheCreate(device);
         PrDrawCpuOptions cpu = prDrawCpuOptionsDefault();
         cpu.device = device;
         renderer = prDrawCpuCreate(&cpu);
-        PrCanvasDesc desc{.extent = PrUVec2{width, height}, .settings = settings, .renderer = renderer};
+        PrCanvasDesc desc{
+            .extent = PrUVec2{width, height},
+            .settings = settings,
+            .renderer = renderer,
+            .textures = textures,
+        };
         handle = prCanvasCreate(&desc);
     }
     ~MemoryCanvas() {
         prCanvasDestroy(handle);
         prDrawRendererDestroy(renderer);
+        prTextureCacheDestroy(textures);
         prGpuDeviceDestroy(device);
     }
 
@@ -296,7 +305,7 @@ TEST_CASE("drawImage draws a source rectangle into a destination rectangle") {
     MemoryCanvas source(10, 10);
     prCanvasSetStyleColor(source.handle, PrCanvasStyleRole_Fill, "#0f0");
     prCanvasFillRect(source.handle, 0, 0, 5, 10);
-    const PrDrawImage* image = prCanvasSnapshot(source.handle);
+    const PrTextureSource* image = prCanvasSnapshot(source.handle);
     REQUIRE(image != nullptr);
     MemoryCanvas canvas;
     prCanvasSetImageSmoothingEnabled(canvas.handle, false);
@@ -308,7 +317,7 @@ TEST_CASE("drawImage draws a source rectangle into a destination rectangle") {
     PrCanvasImageSource tainted{.image = image, .extent = PrVec2{10, 10}, .originClean = false};
     prCanvasDrawImage(canvas.handle, &tainted, 0, 0, 10, 10, 0, 0, 10, 10);
     CHECK(!prCanvasIsOriginClean(canvas.handle));
-    prDrawImageRelease(image);
+    prTextureSourceRelease(image);
 }
 
 TEST_CASE("setting the extent clears the bitmap and resets the state") {

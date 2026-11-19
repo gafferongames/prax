@@ -1,7 +1,7 @@
-# The files that the tests read: fonts, and html5lib's encoding tests. Each is fetched by pr_dependency, pinned and
-# checked against its hash, into the download cache that the rest of the build's dependencies share, and linked into a
-# directory of the build (pr_dependency_link). A test reads them there by name, so a build has everything its tests
-# read, and nothing a suite or a benchmark reads.
+# The files that the tests read: fonts, html5lib's encoding tests, glTF sample assets, and MaterialX's documents. Each
+# is fetched by pr_dependency, pinned and checked against its hash, into the download cache that the rest of the build's
+# dependencies share, and linked into a directory of the build (pr_dependency_link). A test reads them there by name, so
+# a build has everything its tests read, and nothing a suite or a benchmark reads.
 #
 # A font that a font bundle carries (font_bundle.cmake) is the bundle's file, so a build that fetches the bundle fetches
 # it once.
@@ -11,6 +11,9 @@ set(_pr_test_ofl https://raw.githubusercontent.com/google/fonts/23e54b51ddffbc77
 set(_pr_test_color https://raw.githubusercontent.com/googlefonts/color-fonts/0046ea4c3b69e9fbbe464c2594816894e3aa5e4b/fonts)
 set(_pr_test_wpt https://raw.githubusercontent.com/web-platform-tests/wpt/269bca0dd35c303639f3c9cf1d8bcb3d911bdb60)
 set(_pr_test_html5lib https://raw.githubusercontent.com/html5lib/html5lib-tests/224991ec10db04f056a89eed8b0bd8695fd2950e)
+set(_pr_test_materialx https://raw.githubusercontent.com/AcademySoftwareFoundation/MaterialX/270b5cf2ae2be24a3b6ef4b0569f1c93038dda1d/resources)
+# The commit of the gltf suite's corpus (GLTF_SAMPLE_ASSETS_COMMIT, tools/fetch/checkouts.py).
+set(_pr_test_gltf https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/8f492390ddc7a2ae221a1369ef560589cf8c70fb/Models)
 
 # Fonts each chosen for what they carry: color glyphs (COLRv1, sbix and CBDT), CFF2, variation axes, WOFF and WOFF2, and
 # Ahem, whose glyphs are boxes of the em. WPT gives its WOFF2 tests, valid and invalid, and the fonts the valid ones
@@ -256,9 +259,66 @@ set(PR_TEST_HTML5LIB
     "test_html5lib_tests2/tests2.dat"
     "test_html5lib_testyahoojp/test-yahoo-jp.dat")
 
+# Khronos's sample assets, each a document and its buffer: AnimatedMorphCube, whose animation plays its two morph
+# targets.
+pr_dependency(test_gltf_AnimatedMorphCube
+    URL ${_pr_test_gltf}/AnimatedMorphCube/glTF/AnimatedMorphCube.gltf
+    URL_HASH SHA256=0b910ed4b52fd9fbb565911fc7f9f285edb0f30fa4913a93143466d439d1092e
+    DOWNLOAD_NO_EXTRACT ON
+    DOWNLOAD_NAME AnimatedMorphCube.gltf)
+pr_dependency(test_gltf_AnimatedMorphCubeBin
+    URL ${_pr_test_gltf}/AnimatedMorphCube/glTF/AnimatedMorphCube.bin
+    URL_HASH SHA256=4aba93918adba56c1cc688a38c527bc647e26f2c386802e119b4d01b7250dd23
+    DOWNLOAD_NO_EXTRACT ON
+    DOWNLOAD_NAME AnimatedMorphCube.bin)
+
+set(PR_TEST_GLTF
+    "test_gltf_AnimatedMorphCube/AnimatedMorphCube.gltf"
+    "test_gltf_AnimatedMorphCubeBin/AnimatedMorphCube.bin")
+
+# MaterialX's own documents, at a release, and the images that they read: placements of an image with a rotation in
+# both orders (image_transform), a placement that scales and moves an image (greysphere_calibration), and a brushed
+# metal of Standard Surface with an anisotropy and its rotation (metal_brushed).
+pr_dependency(test_materialx_image_transform
+    URL ${_pr_test_materialx}/Materials/TestSuite/stdlib/texture/image_transform.mtlx
+    URL_HASH SHA256=e47a405b0c984151ac62b994d2fc23e70e95069dc1266983215ead1d66cbe080
+    DOWNLOAD_NO_EXTRACT ON
+    DOWNLOAD_NAME image_transform.mtlx)
+pr_dependency(test_materialx_greysphere
+    URL ${_pr_test_materialx}/Materials/Examples/StandardSurface/standard_surface_greysphere_calibration.mtlx
+    URL_HASH SHA256=a1904bf9bcf98dde83181c7c69456e294db708692639fce7ee8542fb60a547ca
+    DOWNLOAD_NO_EXTRACT ON
+    DOWNLOAD_NAME standard_surface_greysphere_calibration.mtlx)
+pr_dependency(test_materialx_metal_brushed
+    URL ${_pr_test_materialx}/Materials/Examples/StandardSurface/standard_surface_metal_brushed.mtlx
+    URL_HASH SHA256=03c0a45c86c1aebd8a59fcecdc8985c4983f54224c3ac161ca88ce638571ee38
+    DOWNLOAD_NO_EXTRACT ON
+    DOWNLOAD_NAME standard_surface_metal_brushed.mtlx)
+pr_dependency(test_materialx_grid
+    URL ${_pr_test_materialx}/Images/grid.png
+    URL_HASH SHA256=1a629e293e98d336f7d6b0a3061d3a600bb9dffddd07b5089f678a4e2817991f
+    DOWNLOAD_NO_EXTRACT ON
+    DOWNLOAD_NAME grid.png)
+pr_dependency(test_materialx_greysphere_png
+    URL ${_pr_test_materialx}/Images/greysphere_calibration.png
+    URL_HASH SHA256=d38b00fcb4a10c8c7ca75186bfc673a19aa796df11f9320604185466e4327bf5
+    DOWNLOAD_NO_EXTRACT ON
+    DOWNLOAD_NAME greysphere_calibration.png)
+
+set(PR_TEST_MATERIALX
+    "test_materialx_image_transform/image_transform.mtlx"
+    "test_materialx_greysphere/standard_surface_greysphere_calibration.mtlx"
+    "test_materialx_metal_brushed/standard_surface_metal_brushed.mtlx"
+    "test_materialx_grid/grid.png"
+    "test_materialx_greysphere_png/greysphere_calibration.png")
+
 # The directories that the tests read the files from.
 set(PR_TEST_FONTS_DIR "${PROJECT_BINARY_DIR}/test_data/fonts")
 set(PR_TEST_HTML5LIB_DIR "${PROJECT_BINARY_DIR}/test_data/html5lib")
+set(PR_TEST_GLTF_DIR "${PROJECT_BINARY_DIR}/test_data/gltf")
+set(PR_TEST_MATERIALX_DIR "${PROJECT_BINARY_DIR}/test_data/materialx")
 pr_dependency_link("${PR_TEST_FONTS_DIR}" ${PR_TEST_FONTS})
 pr_dependency_link("${PR_TEST_FONTS_DIR}/math" ${PR_TEST_MATH_FONTS})
 pr_dependency_link("${PR_TEST_HTML5LIB_DIR}/encoding" ${PR_TEST_HTML5LIB})
+pr_dependency_link("${PR_TEST_GLTF_DIR}" ${PR_TEST_GLTF})
+pr_dependency_link("${PR_TEST_MATERIALX_DIR}" ${PR_TEST_MATERIALX})

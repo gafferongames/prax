@@ -44,6 +44,11 @@ uint32_t prTextEditBufferSize(const PrTextEditBuffer* buffer);
 // The version of the text, which every transaction that changes the text increases.
 uint64_t prTextEditBufferVersion(const PrTextEditBuffer* buffer);
 
+// The version of the edits to the text. Every transaction that changes the text increases it except a load
+// (PrTextEditOrigin_Load), which appends the source's own text. A text is unedited while this version equals the value
+// recorded when the text last matched its source.
+uint64_t prTextEditBufferEditVersion(const PrTextEditBuffer* buffer);
+
 // Returns the contiguous bytes that start at `offset`, which may end before the end of the text. A reader continues
 // from the end of the result. The result is empty at the end of the text. It is valid until the text changes.
 PrStringView prTextEditBufferChunk(const PrTextEditBuffer* buffer, uint32_t offset);

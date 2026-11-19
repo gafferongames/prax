@@ -376,3 +376,39 @@ def format_strings(args):
     """Each row is one engine's cost of one call in a case: pr/format.h's rows are filed as prax, beside those of the
     standard library's <format>, filed as std."""
     return by_engine(args, "format_bench", args.cases), []
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# render
+
+# The assets that the render benchmark draws by default: a small model with every texture of glTF's core material, and a
+# scene of many draws with masked materials.
+RENDER_ASSETS = ("DamagedHelmet", "Sponza")
+SAMPLE_ASSETS = os.path.join(common.ROOT, "third_party", "glTF-Sample-Assets", "Models")
+
+
+def render_options(parser):
+    parser.add_argument("--gpu", default=None, metavar="NAME", help="the backend of lib/gpu to draw with")
+    parser.add_argument("assets", nargs="*", help="sample assets by name, or paths of assets of any format of the "
+                        "model host, such as a USD stage; %s by default" % ", ".join(RENDER_ASSETS))
+
+
+def render_asset(name):
+    """The path of an asset that the render benchmark draws: a path as it is given, relative to the root, or the glTF of
+    the sample asset of that name."""
+    if os.sep in name or "." in os.path.basename(name):
+        return name if os.path.isabs(name) else os.path.join(common.ROOT, name)
+    return os.path.join(SAMPLE_ASSETS, name, "glTF", name + ".gltf")
+
+
+def render(args):
+    """Each row is an asset drawn by one technique on one binding tier. It holds the cost of a frame, with the device's
+    time, and the pipelines that the case's first frame made, with the time that making them took."""
+    paths = [render_asset(name) for name in args.assets or RENDER_ASSETS]
+    missing = [path for path in paths if not os.path.exists(path)]
+    if missing:
+        sys.exit("no asset at %s; run ./dev.sh fetch gltf_sample_assets" % ", ".join(missing))
+    command = [common.binary(args.bin, "render_bench")]
+    if args.gpu:
+        command += ["--gpu", args.gpu]
+    return {"prax": common.run_json(command + paths, "render_bench")}, paths

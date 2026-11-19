@@ -137,11 +137,12 @@ typedef struct PrTextEditorDocumentDesc {
     PrStringView mediaType;
 
     bool readOnly;                              // the document refuses its user's edits
+    bool keepFocus;                             // showing the document leaves focus where it is
 } PrTextEditorDocumentDesc;
 
 // Creates a document, which shows if the editor shows none, and writes it to `*out`. Returns NotFound if the file
 // cannot be read, and Limit if it is past what a buffer holds. On failure, `*out` is null. Destroying a document shows
-// another if it showed.
+// another if it showed, leaving focus where it is.
 PrStatus prTextEditorDocumentCreate(PrTextEditor* editor, const PrTextEditorDocumentDesc* desc,
     PrTextEditorDocument* PR_NULLABLE* PR_NONNULL out);
 void prTextEditorDocumentDestroy(PrTextEditorDocument* PR_NULLABLE document);
@@ -153,15 +154,21 @@ PrTextEditorDocument* prTextEditorDocument(const PrTextEditor* editor, uint32_t 
 // Returns the document of the file at `path`, or null.
 PrTextEditorDocument* PR_NULLABLE prTextEditorDocumentFromPath(const PrTextEditor* editor, PrStringView path);
 
-// The document that shows, or null if the editor has none. Showing a document gives its text focus.
+// The document that shows, or null if the editor has none. Showing a document gives its text focus if `focus` is set,
+// and leaves focus where it is otherwise, as for a preview that the user browses to from a list.
 PrTextEditorDocument* PR_NULLABLE prTextEditorShown(const PrTextEditor* editor);
-void prTextEditorShow(PrTextEditor* editor, PrTextEditorDocument* document);
+void prTextEditorShow(PrTextEditor* editor, PrTextEditorDocument* document, bool focus);
 
-// Shows the document with a single caret at `line` and `column`, and scrolls the caret into view. Both count from 0,
-// and `column` counts code points. If the document is still loading, the caret moves once that line has loaded. A
-// column past the end of its line puts the caret at the end of the line. A line past the last line puts it at the end
-// of the text.
-void prTextEditorShowAt(PrTextEditor* editor, PrTextEditorDocument* document, uint32_t line, uint32_t column);
+// Shows the document, as prTextEditorShow does, with a single caret at `line` and `column`, and scrolls the caret into
+// view. Both count from 0, and `column` counts code points. If the document is still loading, the caret moves once that
+// line has loaded. A column past the end of its line puts the caret at the end of the line. A line past the last line
+// puts it at the end of the text.
+void prTextEditorShowAt(PrTextEditor* editor, PrTextEditorDocument* document, uint32_t line, uint32_t column, bool focus);
+
+// Shows the document, as prTextEditorShow does, with one selection of the bytes from `begin` to `end`, its caret at
+// `begin`, and scrolls the caret into view. A range past the end of the text is cut at the end. If the document is
+// still loading, the selection is made once the buffer holds `end` bytes.
+void prTextEditorShowRange(PrTextEditor* editor, PrTextEditorDocument* document, uint32_t begin, uint32_t end, bool focus);
 
 // The parts of a document. Its view's selections are the document's own, and its history is its local edits'.
 PrTextEditBuffer* prTextEditorDocumentBuffer(const PrTextEditorDocument* document);

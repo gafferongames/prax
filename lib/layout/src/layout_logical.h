@@ -237,6 +237,7 @@ struct LayoutLogicalBox {
     PrLayoutLength minBlockSize;
     PrLayoutLength maxInlineSize;
     PrLayoutLength maxBlockSize;
+    PrLayoutLength containIntrinsicBlockSize;   // the content's block size under size containment (containBlock)
     PrLayoutLength margin[LayoutSide_Count];
     PrLayoutLength padding[LayoutSide_Count];
     PrLayoutLength inset[LayoutSide_Count];

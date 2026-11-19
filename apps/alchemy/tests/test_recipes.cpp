@@ -15,7 +15,7 @@ struct Graph {
     PrJson* d = prJsonCreate();
 
     explicit Graph(PrStringView text) {
-        REQUIRE(prJsonParse(d, text, nullptr));
+        REQUIRE(prJsonParse(d, text, 0, nullptr));
     }
     ~Graph() {
         prJsonDestroy(d);

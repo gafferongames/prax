@@ -45,6 +45,7 @@ enum {
     PrImageSample_I16,   // -32767 through 32767 map to [-1, 1], and -32768 to -1
     PrImageSample_F16,
     PrImageSample_F32,
+    PrImageSample_U32,
 };
 typedef uint8_t PrImageSample;
 
@@ -109,9 +110,12 @@ typedef uint8_t PrImageLevels;
 // The frame index that reads the still image that an animation may carry apart from its frames.
 enum { kPrImageFrameCover = 0xffffffffu };
 
-// An image as a reader reports it, in its stored orientation. Each frame has `levelCount` mip levels, the first of the
-// image's extent, laid out as `levels` says, and each of the extent that prImageDecoderLevelExtent gives. A mip chain's
-// levels are each half the one before, rounded down, unless the reader reports their extents itself.
+// An image as a reader reports it, in its stored orientation.
+//
+// A texture's layers and faces are its frames: the faces of each layer in turn, in the order +X, -X, +Y, -Y, +Z, -Z.
+// Each frame has `levelCount` mip levels, the first of the image's extent, laid out as `levels` says, and each of the
+// extent that prImageDecoderLevelExtent gives. A mip chain's levels are each half the one before, rounded down, unless
+// the reader reports their extents itself.
 typedef struct PrImageInfo {
     PrUVec2 extent;
     PrImageFormat format;
@@ -119,6 +123,7 @@ typedef struct PrImageInfo {
     PrVec2 pixelsPerMeter;  // the physical resolution, or zero if the image has none
     uint32_t frameCount;
     uint32_t levelCount;    // the mip levels of each frame, at least one
+    uint32_t faceCount;     // one, or six if the frames are the faces of cubes
     uint32_t playCount;     // the number of times the frames play, or zero for forever
     uint64_t workingBytes;  // the most bytes that a reader allocates, including the input that it keeps
     bool hasCover;          // true if kPrImageFrameCover reads a still image apart from the frames

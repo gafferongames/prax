@@ -13,7 +13,6 @@
 #include "pr/assert.h"
 #include "pr/draw_commands.h"
 #include "pr/draw_filter.h"
-#include "pr/draw_image.h"
 #include "pr/draw_lower.h"
 #include "pr/draw_renderer_backend.h"
 #include "pr/draw_transform.h"
@@ -22,6 +21,7 @@
 #include "pr/memory.h"
 #include "pr/path_polyline.h"
 #include "pr/raw_array.h"
+#include "pr/texture.h"
 
 // The page's side of the backend (draw_canvas.js). The page keeps a renderer's caches between plays. A play draws into
 // one canvas between Begin and End. Each call draws on the play's top surface: the canvas itself, or a layer, mask or
@@ -35,6 +35,7 @@ extern "C" uint32_t prDrawCanvasOpen(void);
 extern "C" void prDrawCanvasClose(uint32_t renderer);
 extern "C" void prDrawCanvasBegin(uint32_t renderer, PrGpuCanvas canvas, int32_t originX, int32_t originY);
 extern "C" void prDrawCanvasEnd(void);
+extern "C" bool prDrawCanvasHasImage(uint32_t low, uint32_t high);
 extern "C" void prDrawCanvasSave(void);
 extern "C" void prDrawCanvasRestore(void);
 extern "C" void prDrawCanvasTransform(float a, float b, float c, float d, float e, float f);
@@ -292,37 +293,6 @@ uint8_t* scratchTexelsFor(CanvasBackend* backend, size_t size) {
     return backend->scratchTexels.data;
 }
 
-// Resolves an image to its own texels if they have 8 bits a channel, or else to a copy of them in Rgba8.
-void imageSource(CanvasBackend* backend, const PrDrawImage* image, Source* out) {
-    PrPixelView pixels = prDrawImagePixels(image);
-    PrPixelFormat format = prDrawImageFormat(image);
-    PrDrawAlpha alpha = prDrawImageAlpha(image);
-    uint64_t id = prDrawImageId(image);
-    CanvasPixels flags = 0;
-    if (alpha == PrDrawAlpha_Straight)
-        flags = CanvasPixels_Straight;
-    else if (alpha == PrDrawAlpha_Opaque)
-        flags = CanvasPixels_Opaque;
-    const uint8_t* texels = pixels.data;
-    size_t stride = pixels.stride;
-    if (format == PrPixelFormat_Bgra8) {
-        flags |= CanvasPixels_Bgra;
-    } else if (format != PrPixelFormat_Rgba8) {
-        stride = size_t(pixels.extent.x) * 4;
-        uint8_t* copy = scratchTexelsFor(backend, stride * pixels.extent.y);
-        prDrawImageWritePixels(image, PrPixels{copy, stride, pixels.extent}, PrPixelFormat_Rgba8, PrIVec2{0, 0});
-        texels = copy;
-        flags = 0;
-    }
-    *out = Source{
-        .words = {
-            CanvasSource_Image, uint32_t(id), uint32_t(id >> 32), uint32_t(uintptr_t(texels)), uint32_t(stride),
-            pixels.extent.x, pixels.extent.y, flags,
-        },
-        .extent = pixels.extent,
-    };
-}
-
 // Draws an area of a list into a surface of the play, at `scale` target pixels per unit of `tile` along each axis. A
 // play draws each area and size once. Returns the list's index, or ~0 for an area with no pixels.
 uint32_t drawList(Walk& w, const PrDrawList* list, PrRect area, PrRect tile, PrVec2 scale, PrUVec2* size) {
@@ -357,13 +327,9 @@ bool resolveSource(Walk& w, const PrDrawSource& source, PrRect tile, PrVec2 scal
     if (!prDrawSourceIsValid(source))
         return false;
     switch (source.kind) {
-        case PrDrawSourceKind_Image:
-            imageSource(w.backend, source.image, out);
-            out->texels = source.rect;
-            return true;
         case PrDrawSourceKind_Texture: {
             PrGpuCanvas canvas = 0;
-            if (!prGpuTextureNative(w.backend->device, PrGpuTexture{uint32_t(source.texture)}, PrGpuNativeKind_Canvas2d, &canvas))
+            if (!prGpuTextureNative(w.backend->device, source.texture, PrGpuNativeKind_Canvas2d, &canvas))
                 return false;
             *out = Source{.words = {CanvasSource_Texture, canvas}, .texels = source.rect, .extent = source.extent};
             return true;
@@ -952,12 +918,17 @@ void drawNineSlice(Walk& w, const PrDrawCommand& c) {
     }
 }
 
+// Draws the texels of the command's texture at its device point, blended over the target, regardless of the transforms
+// and clips.
 void writePixels(Walk& w, const PrDrawCommand& c) {
     Source source{};
-    imageSource(w.backend, c.writePixels.image, &source);
-    // The words of the image's source after its kind and id: pointer, stride, width, height and flags.
-    prDrawCanvasPutPixels(reinterpret_cast<const uint8_t*>(uintptr_t(source.words[3])), source.words[4],
-        source.words[5], source.words[6], c.writePixels.origin.x, c.writePixels.origin.y, source.words[7]);
+    const PrDrawSource& texels = c.writePixels.source;
+    PrUVec2 extent = prDrawSourceTexels(texels);
+    if (!resolveSource(w, texels, texels.rect, PrVec2{1, 1}, &source))
+        return;
+    prDrawCanvasDrawImage(source.words, source.texels.left, source.texels.top, float(extent.x), float(extent.y),
+        float(c.writePixels.origin.x), float(c.writePixels.origin.y), float(extent.x), float(extent.y),
+        canvasSampling(PrDrawSampling_Nearest));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

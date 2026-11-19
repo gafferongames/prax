@@ -2,8 +2,9 @@
 
 Each runner's docstring (`tools/suite/wpt/wpt.py`, `tools/suite/css_parsing.py`, `tools/suite/html_tokens.py`,
 `tools/suite/html_tree.py`, `tools/suite/markdown/markdown_spec.py`, `tools/suite/markdown/markdown_dom.py`,
-`tools/suite/reftest.py`, `tools/suite/esctest.py`, `tools/suite/unicode.py`) documents its selection, counting and
-exclusions.
+`tools/suite/reftest.py`, `tools/suite/esctest.py`, `tools/suite/unicode.py`, `tools/suite/gltf.py`,
+`tools/suite/draco.py`, `tools/suite/model.py`, `tools/suite/tangents.py`, `tools/suite/usd.py`) documents its
+selection, counting and exclusions.
 
 ## Running
 
@@ -36,6 +37,10 @@ What tests a runner against a corpus is a suite. Then run the suites for the are
 | shell, runner, anything every page uses | every `*-wpt` suite, `wpt-runner` |
 | font bundles | `font-coverage` |
 | SVG, Lottie rendering | `resvg`, `lottie-web`, `skottie`, `rlottie`, `lottie-ios` |
+| glTF (`lib/gltf`) | `gltf` |
+| Draco (`lib/draco`) | `draco`, and `gltf` and `model` for the assets that it compresses |
+| USD layers and stages (`lib/usd`) | `usd` |
+| models and 3D rendering (`lib/model`, `lib/render`, `lib/mesh`) | `model`, and `tangents` for `lib/mesh`'s tangents |
 | the build, a library's public headers or its links | `./dev.sh package` |
 | invalidation, caching, rendering cost | the `*-wpt` suites with `--verify`, and `./dev.sh pages invalidation` |
 
@@ -48,6 +53,16 @@ difference, in `tools/suite/reftest.py` and `tools/suite/wpt/wpt.py` alike.
 from the base, and lists the cases that pass more or fewer tests than there. Every runner writes its cases' outcomes
 with `--json` and compares them with another run's with `--against` (`tools/suite/corpus.py`), which is all the A/B asks
 of it.
+
+A suite's reference may be another implementation that its project publishes built, which the suite runs and never
+builds or links. The `usd` suite compares `lib/usd` with Pixar's OpenUSD this way: `./dev.sh fetch usd_core` installs
+the `usd-core` wheel, at a pinned version, into a Python environment of its own under `third_party`
+(`checkouts.Wheel`), and the runner starts that environment's Python on `tools/suite/usd_reference.py`. Nothing is
+installed into the system's Python or the user's. A wheel exists for the versions of Python that its release names,
+so the environment is made with the first of them that the machine has. A case that the reference cannot answer is
+skipped rather than failed: the wheel is built without OpenUSD's usdMtlx plugin and reads no MaterialX document, so the
+runner skips each comparison of a stage that reaches one, and the scoreboard counts the skipped cases apart from every
+part.
 
 ## A suite's data
 
@@ -236,6 +251,19 @@ source tree as FetchContent adds it, and runs each.
 - `editor` is a level editor of Studio Kit's widgets and a HUD library of its own, composed in one tree.
 - `perspective` stands Kit panels in 3D over a background that it draws with its own pipeline, as a 3D engine would.
 - `incremental` renders Markdown and HTML as they arrive in pieces.
+- `render_features` shows a page for each feature of `lib/render`, in a frame of its own, labeled by `lib/draw` over
+  the view, with material types and a shading model of its own. `--page NAME --capture FILE` writes a page at a fixed
+  time, which is how a change that should not alter the picture is checked. `render_features_tests` draws every page
+  offscreen and compares binding tiers and techniques, on each backend and in a page on WebGPU.
+- `model_viewer` browses glTF files through `lib/model`: the files and directories that its arguments name, each shown
+  as it loads, with its animations and its cameras. `./dev.sh example model_viewer
+  third_party/glTF-Sample-Assets/Models` browses Khronos's sample assets, which the command fetches. With `--cycle 2`
+  it steps through them twice by itself, and reports after each pass what the renderer and the process still hold,
+  which is the check that a model's switch frees everything the model made.
+
+`render_features` and `model_viewer` take `--slots` and `--visibility`, which choose a device of slots alone and the
+visibility technique. `--stats` prints, every couple of seconds, the average frame times on the CPU and the GPU and the
+pipelines that the renderer has made.
 
 The environment chooses the backends of an example or an app, never its arguments: `PR_BACKEND_RENDERER=triangles`
 chooses lib/draw's renderer, as each selector reads `PR_BACKEND_<NAME>` (`pr/backend.h`). On the web, the page's query

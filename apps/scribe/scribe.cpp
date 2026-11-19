@@ -6,18 +6,23 @@
 #include "pr/color.h"
 #include "pr/command_kit.h"
 #include "pr/count_of.h"
+#include "pr/file.h"
 #include "pr/float.h"
 #include "pr/hash.h"
 #if defined(SCRIBE_HAS_TREESITTER)
 #include "pr/syntax_treesitter_languages.h"
 #endif
 #include "pr/kit_menu.h"
+#include "pr/kit_panel.h"
 #include "pr/kit_text.h"
 #include "pr/kit_theme.h"
 #include "pr/layout_frame.h"
 #include "pr/layout_query.h"
 #include "pr/layout_tree.h"
 #include "pr/string.h"
+#include "pr/url_file.h"
+
+#include "apps/scribe/workspace.h"
 
 namespace scribe {
 
@@ -25,9 +30,8 @@ using namespace pr;
 
 namespace {
 
-// The heights of the status line and of the terminal panel's header line, in px.
+// The height of the status line, in px.
 constexpr float kStatusHeight = 24;
-constexpr float kTerminalHeaderHeight = 24;
 
 Scribe& scribeOf(void* context) {
     return *static_cast<Scribe*>(context);
@@ -104,7 +108,7 @@ void openTerminalFile(void* context, const PrTerminalFileLink* link) {
     // The link counts from 1, and the editor from 0.
     uint32_t line = link->line > 0 ? link->line - 1 : 0;
     uint32_t column = link->column > 0 ? link->column - 1 : 0;
-    prTextEditorShowAt(s.editor, document, line, column);
+    prTextEditorShowAt(s.editor, document, line, column, true);
 }
 
 // Adds the commands of the terminal panel.
@@ -168,20 +172,10 @@ uint32_t alertingTerminals(Scribe& s) {
     return count;
 }
 
-// Returns the style of a block of `extent` px.
-PrLayoutStyleIndex blockStyle(PrLayoutTree* tree, PrVec2 extent) {
-    PrLayoutBoxStyle box = prLayoutBoxStyleDefault();
-    box.display = PrLayoutDisplay_Block;
-    box.width = prLayoutLengthPx(extent.x);
-    box.height = prLayoutLengthPx(extent.y);
-    PrLayoutStyle style = prLayoutStyleDefault();
-    style.groups[PrLayoutGroup_Box] = prLayoutBoxStyleIntern(tree, &box);
-    return prLayoutStyleIntern(tree, &style);
-}
-
 // Declares the terminal panel: a header line and the terminal that shows below it. The header names the terminal and
-// counts the other terminals that need attention.
-void buildTerminalPanel(Scribe& s, PrLayoutNode root, PrVec2 extent) {
+// counts the other terminals that need attention. The panel takes its preferred height, but leaves at least a third of
+// the window to the text.
+void buildTerminalPanel(Scribe& s, PrLayoutNode root) {
     PrTerminal* terminal = shownTerminal(s);
     if (!s.terminalShown || terminal == nullptr)
         return;
@@ -197,11 +191,19 @@ void buildTerminalPanel(Scribe& s, PrLayoutNode root, PrVec2 extent) {
     uint32_t alerting = alertingTerminals(s);
     if (alerting != 0)
         formatTo(header, "   {} more {} attention", alerting, alerting == 1 ? "needs" : "need");
-    prKitLabel(s.kit, root, {.text = header}, {.role = PrKitTextRole_BodySmall, .tone = PrKitTone_Muted});
-    PrVec2 screen{extent.x, prF32Max(extent.y - kTerminalHeaderHeight, 0)};
-    // The terminal's view paints its own background, below the header.
-    PrLayoutTree* tree = prUiTree(s.ui);
-    PrLayoutNode box = prUiElement(s.ui, root, prHashString("terminal", 0), blockStyle(tree, screen), 0);
+    PrKitBoxStyle panelStyle{
+        .place = {
+            .width = prKitPercent(100),
+            .height = prKitPx(s.terminalHeight),
+            .maxHeight = prKitPercent(66),
+            .flex = PrKitFlex_Fixed,
+        },
+    };
+    PrLayoutNode panel = prKitBox(s.kit, root, {}, panelStyle);
+    prKitLabel(s.kit, panel, {.text = header}, {.role = PrKitTextRole_BodySmall, .tone = PrKitTone_Muted});
+    // The terminal's view paints its own background, below the header, in the rest of the panel.
+    PrKitBoxStyle screen{.place = {.width = prKitPercent(100), .flex = PrKitFlex_Fill}};
+    PrLayoutNode box = prKitBox(s.kit, panel, {}, screen);
     prTerminalFrame(terminal, s.kit, box, PrTerminalBackground_View);
 }
 
@@ -214,17 +216,20 @@ Menu menuOf(PrStringView title, const PrStringView (&items)[N]) {
 // Scribe's menus.
 Array<Menu> scribeMenus() {
     Array<Menu> menus;
-    menus.push(menuOf("File", {"file.save", "", "view.palette", "", "app.quit"}));
+    menus.push(menuOf("File", {
+        "file.openFolder", "file.openFile", "", "file.save", "", "tab.close", "", "view.palette", "", "app.quit",
+    }));
     menus.push(menuOf("Edit", {
         "edit.undo", "edit.redo", "", "edit.cut", "edit.copy", "edit.paste", "", "edit.selectAll",
     }));
     menus.push(menuOf("Selection", {"cursor.addAbove", "cursor.addBelow", "cursor.single"}));
     menus.push(menuOf("View", {
-        "view.toggleWrap", "view.lineNumbers", "", "view.directionLtr", "view.directionRtl", "view.directionAuto", "",
-        "view.horizontal", "view.verticalRl", "view.verticalLr",
+        "view.toggleProject", "view.toggleOutline", "", "view.toggleWrap", "view.lineNumbers", "", "view.directionLtr",
+        "view.directionRtl", "view.directionAuto", "", "view.horizontal", "view.verticalRl", "view.verticalLr",
     }));
     menus.push(menuOf("Go", {
-        "language.definition", "language.hover", "", "language.nextProblem", "language.previousProblem",
+        "go.back", "go.forward", "", "language.definition", "language.hover", "", "language.nextProblem",
+        "language.previousProblem",
     }));
     menus.push(menuOf("Compare", {
         "diff.compareSaved", "diff.nextChange", "diff.previousChange", "", "diff.toggleSync", "diff.clearSyncs", "",
@@ -237,12 +242,12 @@ Array<Menu> scribeMenus() {
     return menus;
 }
 
-// Declares the menu bar, whose height afterLayout keeps for the text below it. Returns true if a menu is open.
+// Declares the menu bar: the menus, and the buttons of the history after them. Returns true if a menu is open.
 bool buildMenus(Scribe& s, PrLayoutNode root) {
-    s.menuBar = prKitMenuBar(s.kit, root, {});
+    PrLayoutNode menuBar = prKitMenuBar(s.kit, root, {});
     bool open = false;
     for (const Menu& menu : s.menus) {
-        PrLayoutNode title = prKitMenuBarItem(s.kit, s.menuBar, {.text = menu.title});
+        PrLayoutNode title = prKitMenuBarItem(s.kit, menuBar, {.text = menu.title});
         PrLayoutNode popover = prKitPopover(s.kit, title, {}, {});
         if (popover == kPrLayoutNodeNone)
             continue;
@@ -255,11 +260,25 @@ bool buildMenus(Scribe& s, PrLayoutNode root) {
                 prCommandMenuItem(s.kit, list, s.commands, s.keymap, id, {});
         }
     }
+    // The bar stretches its children to its height, and the row centers the buttons in it.
+    PrKitBoxStyle row{.direction = PrKitDirection_Row, .align = PrKitAlign_Center, .padding = prKitEdgesXY(0, 4)};
+    PrLayoutNode history = prKitBox(s.kit, menuBar, {}, row);
+    PrKitButtonStyle ghost{.variant = PrKitButtonVariant_Ghost, .size = PrKitControlSize_Sm};
+    prCommandButton(s.kit, history, s.commands, s.keymap, "go.back", {.icon = PrStudioIconKind_ArrowLeft}, ghost);
+    prCommandButton(s.kit, history, s.commands, s.keymap, "go.forward", {.icon = PrStudioIconKind_ArrowRight}, ghost);
     return open;
 }
 
 // The status line: the document's file and state, the caret, and what the editor last had to say.
 String statusLine(Scribe& s) {
+    // A tab that does not show its text says what it shows.
+    ViewTab* tab = shownTab(s);
+    if (tab != nullptr && tab->mode != ViewMode_Source) {
+        String line = format("{}   {}", displayAddress(s, tab->address), prMimeFormatInfo(tab->format).name);
+        if (!tab->selection.isEmpty())
+            formatTo(line, "   selected {}", tab->selection);
+        return line;
+    }
     PrTextEditorDocument* document = prTextEditorShown(s.editor);
     if (document == nullptr)
         return "no document";
@@ -279,9 +298,18 @@ String statusLine(Scribe& s) {
     language.append(servers[info.server]);
     if (info.errors != 0 || info.warnings != 0)
         formatTo(language, "  {} errors, {} warnings", info.errors, info.warnings);
-    PrStringView path = prTextEditorDocumentPath(document);
-    if (path.isEmpty())
+    String path = prTextEditorDocumentPath(document);
+    if (path.isEmpty() && tab != nullptr && tab->document == document) {
+        // A nested resource's text has no file, and its tab's address says where it is.
+        path = displayAddress(s, tab->address);
+    } else if (path.isEmpty()) {
         path = "untitled";
+    } else {
+        String url = String::adopt(prUrlFromFilePath(path));
+        String shown = displayAddress(s, url);
+        if (shown != url)
+            path = shown;
+    }
     PrStringView wrap = options.wrap ? "wrap" : "no wrap";
     PrStringView endings = info.crlf ? "  CRLF" : "  LF";
     String line = format("{}   {}  Ln {}, Col {}  {} lines  {}{}  {}", path, state, view.caret.line + 1,
@@ -334,6 +362,7 @@ void openEditor(Scribe& s) {
             prAppStop(scribeOf(c).app);
     });
     addTerminalCommands(s);
+    openWorkspace(s);
 }
 
 bool openDocument(Scribe& s, PrStringView path) {
@@ -422,7 +451,17 @@ void openTerminal(Scribe& s) {
     prTerminalFocus(terminal);
 }
 
+String defaultStatePath() {
+    PrRawString data = prFileUserDirectory(PrFileUserDirectory_Data);
+    String path;
+    if (!prRawStringIsEmpty(&data))
+        path = format("{}/Prax/Scribe/Last Project", prRawStringView(&data));
+    prRawStringReset(&data);
+    return path;
+}
+
 void closeEditor(Scribe& s) {
+    closeWorkspace(s);
     for (PrTerminal* terminal : s.terminals)
         prTerminalDestroy(terminal);
     s.terminals.clear();
@@ -434,23 +473,15 @@ void closeEditor(Scribe& s) {
     prTextFontRelease(s.font);
 }
 
-void buildScribe(Scribe& s, PrLayoutNode root, PrVec2 extent) {
+void buildScribe(Scribe& s, PrLayoutNode root) {
     prCommandScope(s.ui, root, s.commands, s.keymap, "");
     // The terminals' programs see the color scheme that the window's theme follows.
     PrAppColorScheme scheme = prUiUserPreferences(s.ui).colorScheme;
     for (PrTerminal* terminal : s.terminals)
         prTerminalSetColorScheme(terminal, scheme);
     bool menuOpen = buildMenus(s, root);
-    float height = extent.y - kStatusHeight - s.menuHeight;
-    float panel = 0;
-    if (s.terminalShown && shownTerminal(s) != nullptr) {
-        // The panel takes its preferred height, but leaves at least a third of the space to the text.
-        panel = s.terminalHeight < height * 2 / 3 ? s.terminalHeight : height * 2 / 3;
-        panel = panel > 0 ? panel : 0;
-    }
-    float text = height - panel;
-    prTextEditorFrame(s.editor, root, PrVec2{extent.x, text > 0 ? text : 0});
-    buildTerminalPanel(s, root, PrVec2{extent.x, panel});
+    buildWorkspace(s, root);
+    buildTerminalPanel(s, root);
 
     if (s.paletteRequested) {
         prKitSetOpen(s.kit, root, true);
@@ -470,17 +501,29 @@ void buildScribe(Scribe& s, PrLayoutNode root, PrVec2 extent) {
         prUiSetFocus(s.ui, textNode);
     s.paletteOpen = list != kPrLayoutNodeNone;
     s.menuOpen = menuOpen;
-    prKitLabel(s.kit, root, {.text = statusLine(s)}, {.role = PrKitTextRole_BodySmall, .tone = PrKitTone_Muted});
+    // The status line is a bar of its own, which clips what does not fit.
+    PrKitPanelStyle bar{.background = PrKitBackground_Header, .rules = PrKitRuleFlag_Top};
+    bar.box.direction = PrKitDirection_Row;
+    bar.box.align = PrKitAlign_Center;
+    bar.box.overflow = PrKitOverflow_Clip;
+    bar.box.padding = prKitEdgesXY(0, 8);
+    bar.box.place = {.height = prKitPx(kStatusHeight), .flex = PrKitFlex_Fixed};
+    PrLayoutNode status = prKitPanel(s.kit, root, {}, bar);
+    PrKitTextStyle muted{.role = PrKitTextRole_BodySmall, .tone = PrKitTone_Muted, .wrap = PrKitWrap_Clip};
+    prKitPlace(s.kit, prKitLabel(s.kit, status, {.text = statusLine(s)}, muted), {.flex = PrKitFlex_Fill});
 }
 
 bool afterLayout(Scribe& s) {
-    bool again = prTextEditorLaidOut(s.editor);
-    PrRect bar = prLayoutRectToPx(prLayoutNodeBounds(prUiTree(s.ui), s.menuBar, PrLayoutCoordinates_Viewport));
-    if (bar.bottom - bar.top != s.menuHeight) {
-        s.menuHeight = bar.bottom - bar.top;
-        again = true;
-    }
-    return again;
+    return prTextEditorLaidOut(s.editor);
+}
+
+bool handleWindowEvent(Scribe& s, const PrAppEvent& event) {
+    PrAppNavigation navigation = prAppEventNavigation(&event);
+    if (navigation == PrAppNavigation_None)
+        return false;
+    PrStringView command = navigation == PrAppNavigation_Back ? "go.back" : "go.forward";
+    prCommandRegistryRun(s.commands, command, nullptr, nullptr);
+    return true;
 }
 
 bool handleEvent(Scribe& s, const PrAppEvent& event) {

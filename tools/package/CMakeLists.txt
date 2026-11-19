@@ -12,8 +12,20 @@ if (PRAX_SOURCE_DIR)
     FetchContent_Declare(prax SOURCE_DIR ${PRAX_SOURCE_DIR})
     FetchContent_MakeAvailable(prax)
 else()
-    find_package(prax 0.1 REQUIRED COMPONENTS draw text font html_quickjs)
+    find_package(prax 0.1 REQUIRED COMPONENTS draw text font html_quickjs render)
 endif()
 
 add_executable(consumer consumer.cpp)
-target_link_libraries(consumer PRIVATE prax::draw prax::text prax::font prax::html_quickjs)
+target_link_libraries(consumer PRIVATE prax::draw prax::text prax::font prax::html_quickjs prax::render)
+# A shader set with a material type of the consumer's own, of an attribute of the vertices that only it knows, which
+# compiles lib/render's passes with the consumer's Slang source as an application's build does. The set is a library,
+# which the consumer links.
+pr_render_shaders(consumer_shaders Consumer
+    SOURCES consumer/consumer_materials.slang
+    MATERIAL Stripes STRUCT ConsumerStripes)
+target_link_libraries(consumer PRIVATE consumer_shaders)
+# A build with a GPU backend compiles shaders for it, and the consumer checks that its set holds them.
+get_property(shader_targets GLOBAL PROPERTY PR_SHADER_TARGETS)
+if (shader_targets)
+    target_compile_definitions(consumer PRIVATE CONSUMER_HAS_SHADER_TARGETS)
+endif()

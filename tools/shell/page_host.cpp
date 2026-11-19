@@ -87,8 +87,9 @@ struct HostState {
     PrMediaCodec* PR_NULLABLE media = nullptr; // reads the media resources of every page, or null
     PrAudioMixer* PR_NULLABLE mixer = nullptr; // plays the audio of every page, or null
 
-    // The renderer that presents the pages, or null if they have no content that a renderer draws into.
+    // The renderer that presents the pages, or null, and the cache on its device that the pages' images realize in.
     PrDrawRenderer* PR_NULLABLE renderer = nullptr;
+    PrTextureCache* PR_NULLABLE textures = nullptr;
 
     float pageGap = 0;          // the space between the pages of a paint for print media, in CSS pixels
 
@@ -628,6 +629,7 @@ PrHtmlHost startPage(HostState& state, const std::string& name, const std::strin
     host.media = state.media;
     host.mixer = state.mixer;
     host.renderer = state.renderer;
+    host.textures = state.textures;
     host.compress = state.compress;
     host.fetcher = state.fetcher;
     host.localStorage = state.localStorage;
@@ -1034,7 +1036,7 @@ void PageHost::reset() {
 bool PageHost::addCapture(const std::filesystem::path& capture, std::string* pageUrl, const std::filesystem::path& page) {
     PrTextBuffer text = {};
     PrJson* json = prJsonCreate();
-    bool ok = harnessReadFile(&text, capture.string().c_str()) && prJsonParse(json, prTextBufferView(&text), nullptr);
+    bool ok = harnessReadFile(&text, capture.string().c_str()) && prJsonParse(json, prTextBufferView(&text), 0, nullptr);
     if (!ok) {
         fprintf(stderr, "%s: not a capture\n", capture.string().c_str());
         prTextBufferReset(&text);
@@ -1097,6 +1099,10 @@ void PageHost::setHinting(PrFontHinting hinting, PrFontHinter* PR_NULLABLE hinte
 
 void PageHost::setRenderer(PrDrawRenderer* PR_NULLABLE renderer) {
     state_->renderer = renderer;
+}
+
+void PageHost::setTextures(PrTextureCache* PR_NULLABLE textures) {
+    state_->textures = textures;
 }
 
 void PageHost::setPageGap(float gap) {
@@ -1497,6 +1503,8 @@ bool PageHost::writeDocument(Page* page, Media media, const PrLayoutPageBox& pag
     PrDrawWriterOptions options = prDrawWriterOptionsDefault();
     options.compress = state_->compress;
     options.images = state_->images;
+    // The pages' textures are on the device that they are presented on, which the writer reads them from.
+    options.device = state_->renderer != nullptr ? prDrawRendererDevice(state_->renderer) : nullptr;
     options.tasks = state_->workers;
     PrDrawWriter* writer = nullptr;
     ok = ok && prDrawWriterCreate(backend, &options, &writer) == PrStatus_Ok;

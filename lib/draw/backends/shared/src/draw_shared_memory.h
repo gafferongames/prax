@@ -37,6 +37,16 @@ struct DrawMemoryFrame : PrDrawFrame {
 // `device` is null and the build has no memory device.
 PrGpuDevice* PR_NULLABLE drawMemoryDevice(PrGpuDevice* PR_NULLABLE device, bool* owned);
 
+// Writes the texels of `rect` of a Texture source, whose texture is on the memory device `device`, into `out`, of the
+// rect's extent rounded to whole texels, in `format` (Rgba8, Bgra8 or RgbaF16), premultiplied. Returns false if the
+// texture is not one of the device's that holds texels in memory.
+bool drawMemoryReadSource(PrGpuDevice* device, const PrDrawSource& source, PrPixelFormat format, PrPixels out);
+
+// Replaces the pixels of `target`, in `format`, with the texels of a Texture source as drawMemoryReadSource reads them,
+// with the top left of the source's rect at `origin`. Pixels past the target are dropped.
+void drawMemoryWriteSource(PrGpuDevice* device, const PrDrawSource& source, PrPixels target, PrPixelFormat format,
+    PrIVec2 origin);
+
 // Creates a frame that renders with `render`. `halfFloat` is true if `render` draws RgbaF16 itself. The frame's prepare
 // keeps the part of the list, which renders when the frame's passes run.
 DrawMemoryFrame* drawMemoryFrameCreate(PrDrawRenderer* renderer, DrawMemoryRenderFn render, bool halfFloat);

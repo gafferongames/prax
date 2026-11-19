@@ -17,6 +17,7 @@
 #include "pr/font_bundle.h"
 #include "pr/font_set.h"
 #include "pr/function.h"
+#include "pr/gpu_memory.h"
 #include "pr/image.h"
 #include "pr/image_select.h"
 #include "pr/kit.h"
@@ -27,7 +28,9 @@
 #include "pr/layout_tree.h"
 #include "pr/string.h"
 #include "pr/string_view.h"
+#include "pr/svg_glyph.h"
 #include "pr/text_harfbuzz.h"
+#include "pr/texture_cache.h"
 #include "pr/ui.h"
 
 #include "tools/harness/harness_png.h"
@@ -76,10 +79,21 @@ struct KitFixture {
     PrUi* ui;
     PrKit* kit;
 
-    // The decoder for glyphs that are images, as a Studio window's renderer has, and the codecs that it uses.
+    // The memory device that the fixture renders on, the cache on it that the kit's images and glyphs' images realize
+    // in, as each is first asked for, and the decoder for glyphs that are images, as a Studio window's renderer has,
+    // and the codecs that it uses.
+    PrGpuDevice* memory = prGpuMemoryCreate(nullptr);
+    PrTextureCache* textures = cacheOn(memory);
     PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
     PrImageCodecSet* images = prImageCodecSetCreateDefault(compress);
-    PrDrawGlyphDecoder* glyphs = prDrawGlyphBitmapCreate(images);
+    PrDrawGlyphDecoder* glyphs = prSvgGlyphDecoderCreate(images, compress, textures);
+
+    // Returns a cache on `device` of lib/draw's colors, which realizes in the call that asks.
+    static PrTextureCache* cacheOn(PrGpuDevice* device) {
+        PrTextureCacheDesc desc = prTextureCacheDescDefault(device);
+        desc.values = PrTextureCacheValues_Encoded;
+        return prTextureCacheCreate(&desc);
+    }
 
     PrLayoutNode root = kPrLayoutNodeNone;            // a panel that fills the viewport and holds the build's widgets
     PrKitBackground background = PrKitBackground_App; // what the root is drawn on
@@ -102,6 +116,7 @@ struct KitFixture {
         ui = prUiCreate(tree);
         PrKitTheme theme = prKitThemeStudio(PrKitThemeVariant_Dark, fonts);
         kit = prKitCreate(ui, &theme);
+        prKitSetTextures(kit, textures);
     }
 
     ~KitFixture() {
@@ -111,6 +126,8 @@ struct KitFixture {
         prTextShaperDestroy(shaper);
         prFontSetDestroy(fonts);
         prDrawGlyphDecoderDestroy(glyphs);
+        prTextureCacheDestroy(textures);
+        prGpuDeviceDestroy(memory);
         prImageCodecSetDestroy(images);
         prCompressCodecSetDestroy(compress);
     }
@@ -206,7 +223,7 @@ struct KitFixture {
         PrDrawRenderer* renderer = nullptr;
         PrDrawRendererOptions rendererOptions = prDrawRendererOptionsDefault();
         rendererOptions.glyphDecoder = glyphs;
-        if (prDrawRendererCreate(PrDrawRendererBackend_Cpu, nullptr, &rendererOptions, &renderer) != PrStatus_Ok)
+        if (prDrawRendererCreate(PrDrawRendererBackend_Cpu, memory, &rendererOptions, &renderer) != PrStatus_Ok)
             return false;
         PrDrawList* list = prDrawListCreate();
         const PrLayoutScene* scene = prLayoutTreeScene(tree);

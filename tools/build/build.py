@@ -27,6 +27,10 @@ from tools.fetch import checkouts
 # The checkouts that an example reads: at run time on the host, and packaged into its page when the web build links it.
 EXAMPLE_CHECKOUTS = {"video": ["videos"]}
 
+# The checkouts that an example reads on the host alone, which a run of it there fetches: a corpus that the example
+# browses when its arguments name it, and that is too large to package into a page.
+EXAMPLE_HOST_CHECKOUTS = {"model_viewer": ["gltf_sample_assets"]}
+
 # The build directories, under the root. PR_BUILD_DIR names the default build's directory in place of build, for a
 # second checkout's work beside the first's, or work that must not share a build with another running at the same time.
 DEFAULT = os.path.join(dev.ROOT, os.environ.get("PR_BUILD_DIR", "build"))

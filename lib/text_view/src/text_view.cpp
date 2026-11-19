@@ -503,9 +503,19 @@ void setScroll(TextViewState* v, double y) {
     v->into = float(y - top);
 }
 
+// Returns true if the nodes that the view last declared are still in the tree. A frame that does not declare the view
+// erases them at its commit, and their handles may then name other nodes, so the view reads and writes them only while
+// they are valid.
+bool inTree(const TextViewState* v) {
+    if (!v->framed || !prLayoutNodeIsValid(v->frame.tree, v->frame.parent))
+        return false;
+    return v->rows.count == 0 || (prLayoutNodeIsValid(v->frame.tree, v->rows.data[0].box) &&
+        prLayoutNodeIsValid(v->frame.tree, v->pieces.data[v->rows.data[0].pieceStart].node));
+}
+
 // Places the tree's scroll offset for the rows that it holds.
 void placeScroll(TextViewState* v) {
-    if (!v->framed || v->rows.count == 0)
+    if (!inTree(v) || v->rows.count == 0)
         return;
     double y = scrollTop(v) - v->heights.topOf(v->rows.data[0].line);
     float block = float(y > 0 ? y : 0);
@@ -528,7 +538,7 @@ uint32_t offsetOf(const TextViewState* v, PrTextEditPosition position) {
 // scroll past the longest line in the window leaves nothing to take back.
 void clampInline(TextViewState* v) {
     PrLayoutScrollInfo info{};
-    if (v->wrap || !prLayoutNodeScrollInfo(v->frame.tree, v->frame.parent, &info))
+    if (v->wrap || !inTree(v) || !prLayoutNodeScrollInfo(v->frame.tree, v->frame.parent, &info))
         return;
     PrRect range = prLayoutRectToPx(info.range);
     double low = double(v->vertical ? range.top : range.left);
@@ -560,7 +570,7 @@ PrStringView lineTextOf(TextViewState* v, uint32_t line) {
 
 // Returns the row of `line` if it shows the text as it stands, or null.
 const Row* PR_NULLABLE rowOf(const TextViewState* v, uint32_t line) {
-    if (v->rows.count == 0 || v->rowsVersion != prTextEditBufferVersion(v->buffer))
+    if (v->rows.count == 0 || v->rowsVersion != prTextEditBufferVersion(v->buffer) || !inTree(v))
         return nullptr;
     uint32_t first = v->rows.data[0].line;
     return line >= first && line - first < v->rows.count ? &v->rows.data[line - first] : nullptr;
@@ -595,7 +605,7 @@ const RowPiece* PR_NULLABLE pieceOfNode(TextViewState* v, PrLayoutNode node) {
 // Answers for a line outside the window: the clusters of its bytes as one line, at the advance of the view.
 bool estimatedLine(TextViewState* v, uint32_t line, PrTextEditLine* out) {
     PrLayoutLineInfo info{};
-    if (v->rows.count != 0)
+    if (v->rows.count != 0 && inTree(v))
         prLayoutNodeLineInfo(v->frame.tree, v->pieces.data[0].node, 0, &info);
     PrStringView text = lineTextOf(v, line);
     PrTextEditGeometry own = prTextEditGeometryFromText(text, info.direction);
@@ -1103,7 +1113,7 @@ void prTextViewFrame(PrTextView* view, const PrTextViewFrameDesc* desc) {
 
 bool prTextViewLaidOut(PrTextView* view) {
     PrTextView* v = view;
-    if (!v->framed)
+    if (!inTree(v))
         return false;
     bool corrected = false;
     float wrappedLineHeight = 0;    // from a row of several visual lines, if no row of one has given the line height
@@ -1417,7 +1427,7 @@ void prTextViewKeepPrimary(PrTextView* view) {
 
 bool prTextViewOffsetFromPoint(PrTextView* view, PrVec2 point, uint32_t* offset, PrTextEditAffinity* affinity) {
     PrTextView* v = view;
-    if (!v->framed)
+    if (!inTree(v))
         return false;
     if (v->frame.gutter != nullptr) {
         // A point over the gutter stands for the start of its line's text, past the gutter.
@@ -1471,7 +1481,7 @@ bool prTextViewCaretRect(PrTextView* view, PrRect* out) {
     PrTextView* v = view;
     PrTextEditSelection s = prTextEditViewPrimary(v->edit);
     PrTextEditPoint point = prTextEditBufferPointFromOffset(v->buffer, s.caret);
-    if (v->rows.count == 0)
+    if (v->rows.count == 0 || !inTree(v))
         return false;
     uint32_t first = v->rows.data[0].line;
     if (point.line < first || point.line - first >= v->rows.count)

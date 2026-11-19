@@ -1,6 +1,9 @@
 # The CMake package of Prax, which find_package(prax) reads. Each library is the target prax::<name>, and a component
 # of the package by its name: find_package(prax REQUIRED COMPONENTS draw layout) fails unless both were installed.
 # pr_font_bundle_fetch (font_bundle.cmake) fetches the files of the font bundles that prax::font_bundle installs.
+# pr_render_shaders (render_shaders.cmake) compiles a shader set of the consumer's material types and shading models
+# for prax::render, for the backends that this package was built with, with the Slang compiler that slang.cmake
+# fetches.
 
 @PACKAGE_INIT@
 
@@ -9,6 +12,12 @@ include(CMakeFindDependencyMacro)
 include(${CMAKE_CURRENT_LIST_DIR}/prax-targets.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/pr_dependency.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/font_bundle.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/slang.cmake)
+set_property(GLOBAL PROPERTY PR_SHADER_TARGETS "@PR_SHADER_TARGETS@")
+set_property(GLOBAL PROPERTY PR_SHADER_METAL_SDK "@PR_METAL_SDK@")
+include(${CMAKE_CURRENT_LIST_DIR}/render_shaders.cmake)
+set_property(GLOBAL PROPERTY PR_RENDER_SHADER_INCLUDES "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+set_property(GLOBAL PROPERTY PR_RENDER_SHADER_PASSES "@PACKAGE_CMAKE_INSTALL_DATADIR@/prax/shaders")
 
 foreach (_prax_component IN LISTS prax_FIND_COMPONENTS)
     if (TARGET prax::${_prax_component})

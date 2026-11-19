@@ -1,4 +1,4 @@
-// Commands in an interface: scopes of key bindings, and Studio Kit's menu items and command palette.
+// Commands in an interface: scopes of key bindings, and Studio Kit's menu items, buttons and command palette.
 
 #include "pr/command_kit.h"
 
@@ -76,6 +76,21 @@ PrLayoutNode prCommandMenuItem(PrKit* kit, PrLayoutNode menu, const PrCommandReg
     };
     PrLayoutNode node = prKitMenuItem(kit, menu, item, style);
     prRawStringReset(&shortcut);
+    if (prKitActivated(kit, node))
+        runFromEntryPoint(registry, index);
+    return node;
+}
+
+PrLayoutNode prCommandButton(PrKit* kit, PrLayoutNode parent, const PrCommandRegistry* registry,
+        const PrCommandKeymap* keymap, PrStringView commandId, PrKitButton button, PrKitButtonStyle style) {
+    PrCommandIndex index = prCommandRegistryFind(registry, commandId);
+    if (index == kPrCommandMissing)
+        return kPrLayoutNodeNone;
+    PrCommandStateFlags state = prCommandRegistryState(registry, index);
+    button.selected = (state & PrCommandStateFlag_Checked) != 0;
+    button.disabled = (state & PrCommandStateFlag_Disabled) != 0 || !isOffered(registry, index);
+    PrLayoutNode node = prKitButton(kit, parent, button, style);
+    prCommandTooltip(kit, node, registry, keymap, commandId);
     if (prKitActivated(kit, node))
         runFromEntryPoint(registry, index);
     return node;

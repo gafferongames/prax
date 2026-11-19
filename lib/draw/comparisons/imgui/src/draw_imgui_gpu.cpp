@@ -3,11 +3,11 @@
 #include "draw/comparisons/imgui/src/draw_imgui_gpu.h"
 
 #include "pr/alloc.h"
-#include "pr/draw_image.h"
 #include "pr/draw_renderer_backend.h"
 #include "pr/mem.h"
 #include "pr/pixels.h"
 #include "pr/raw_array.h"
+#include "pr/texture.h"
 
 #include "draw/comparisons/imgui/config/imgui_gpu.h"
 
@@ -105,38 +105,8 @@ void destroyBackend(PrDrawRenderer* renderer) {
 
 } // namespace
 
-// The texture is written by an upload, which the frame's commands, submitted after it, see. It is created once and kept
-// for as long as renders use it.
-ImTextureID imguiImageTexture(ImGuiBackend* imgui, const PrDrawImage* image, PrUVec2* extent) {
-    ImGuiGpu* g = static_cast<ImGuiGpu*>(imgui);
-    uint64_t key = prDrawImageId(image);
-    for (uint32_t i = 0; i < g->textures.count; ++i) {
-        if (g->textures.data[i].id == key) {
-            g->textures.data[i].lastUsed = g->render;
-            *extent = g->textures.data[i].extent;
-            return imguiGpuTexture(g->textures.data[i].texture);
-        }
-    }
-    PrUVec2 size = prDrawImageExtent(image);
-    if (size.x == 0 || size.y == 0)
-        return ImTextureID_Invalid;
-    PrGpuTextureDesc desc = prGpuTextureDesc2d(PrGpuFormat_Rgba8, size, PrGpuTextureUsageFlag_Sampled);
-    desc.name = "imgui image";
-    PrGpuTexture texture{};
-    if (prGpuTextureCreate(g->device, &desc, &texture) != PrStatus_Ok)
-        return ImTextureID_Invalid;
-    size_t row = size_t(size.x) * 4;
-    uint8_t* pixels = static_cast<uint8_t*>(prMemoryAlloc(row * size.y));
-    imguiImagePixels(image, PrPixels{pixels, row, size});
-    prGpuTextureWrite(g->device, texture, PrIVec2{0, 0}, PrPixelView{pixels, row, size});
-    prMemoryFree(pixels);
-    g->textures.push(CachedTexture{key, texture, size, g->render});
-    *extent = size;
-    return imguiGpuTexture(texture);
-}
-
-ImTextureID imguiHostTexture(ImGuiBackend*, PrDrawTextureId texture) {
-    return ImTextureID(texture);
+ImTextureID imguiHostTexture(ImGuiBackend*, PrGpuTexture texture) {
+    return ImTextureID(texture.id);
 }
 
 ImGuiBackend* PR_NULLABLE imguiDeviceCreate(PrGpuDevice* device) {

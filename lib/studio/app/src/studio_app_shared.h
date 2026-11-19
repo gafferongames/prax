@@ -9,6 +9,7 @@
 #include "pr/draw_list.h"
 #include "pr/draw_renderer.h"
 #include "pr/gpu.h"
+#include "pr/gpu_graph.h"
 #include "pr/image.h"
 #include "pr/kit.h"
 #include "pr/layout_scene.h"
@@ -35,8 +36,14 @@ struct StudioAppState {
     // The paths of the kits' icons, which every window's kit draws (PrKitTheme::paths).
     PrPathCache* paths;
 
-    // The decoder for glyphs that are images, such as those of a bitmap emoji font, over the description's image
-    // codecs.
+    // The description's codecs, of the glyphs that are pictures, such as those of a bitmap emoji font or an SVG font.
+    const PrCompressCodecSet* PR_NULLABLE compress;
+    const PrImageCodecSet* PR_NULLABLE images;
+
+    // The cache that the windows' images realize in, made with the first device, and moved to each device after it,
+    // which realizes on the description's pool and wakes the application as an image arrives. The glyph decoder
+    // realizes its images in it.
+    PrTextureCache* PR_NULLABLE textures;
     PrDrawGlyphDecoder* PR_NULLABLE glyphs;
 
     // The device that every window renders on, the renderer on it, and how many times the renderer has been made. A
@@ -53,17 +60,33 @@ struct StudioAppState {
 };
 
 // What a platform window renders with on its application's device, made on the device of `generation`: its swap chain,
-// which presents alpha if `transparent`, the frame of the renderer, and, where the swap chain holds more than 8-bit
-// sRGB, the texture of half floats that the list renders into.
+// which presents alpha if `transparent`, the frame of the renderer, the graph of each frame, which records the passes
+// of the GPU views that render in the frame and then the list, and, where the swap chain holds more than 8-bit sRGB,
+// the texture of half floats that the list renders into.
 struct StudioWindowTarget {
     PrGpuSwapChain* PR_NULLABLE swapChain;
     PrDrawFrame* PR_NULLABLE frame;
+    PrGpuGraph* PR_NULLABLE graph;
     uint32_t generation;
     bool transparent;
     PrGpuTexture rendered;
 };
 
 struct StudioWindowState;
+
+// A GPU view of a window (prStudioWindowGpuViewCreate): its window, the function that renders it and its context, the
+// alpha of what it renders, the embed slot that shows it, whether it renders again in the next frame that draws it, and
+// the texture that it shows, which it holds a reference to, at the extent in target pixels that it rendered at.
+struct StudioWindowGpuView {
+    PrStudioWindow* window;
+    PrStudioWindowGpuRenderFn render;
+    PrStudioWindowGpuLostFn PR_NULLABLE lost;
+    void* PR_NULLABLE context;
+    uint64_t embed;
+    bool invalid;
+    PrTexture shown;
+    PrUVec2 extent;
+};
 
 // A portal of a window's context that shows in a platform window of its own (prUiSetHost), as the context reported it
 // at the window's last frame.
@@ -92,6 +115,7 @@ struct StudioWindowState {
     PrVec2 extent;                  // of the viewport, in px
     PrAppTitleBar titleBar;         // as the frame that runs reports it
     PrAppInsets safeArea;           // as the frame that runs reports it
+    float pixelRatio;               // the display's target pixels to a px, as the frame that runs reports it
     PrAppWindowBackdrop backdrop;   // as the frame that runs reports it
     bool transparent;               // the swap chain presents alpha, for a transparent window
     PrAppWindow* appWindow;
@@ -116,6 +140,12 @@ struct StudioWindowState {
     RawArray<StudioWindowPortal*> portals;
     RawArray<PrUiViewportInfo> viewports;
     PrAppOutput output;
+
+    // The GPU views of the window, the last embed slot that one took, and the textures of the frame's graph that the
+    // views that rendered in the frame write.
+    RawArray<PrStudioWindowGpuView*> gpuViews;
+    uint64_t nextEmbed;
+    RawArray<PrGpuGraphTexture> rendered;
 
     // A capture that the application requested (prStudioWindowCapture): the function that takes it and its context, and
     // whether the next frame takes it.
@@ -153,5 +183,6 @@ void studioWindowCloseDevice(StudioWindowState* window);
 // C opaque types
 struct PrStudioApp : pr_impl::StudioAppState {};
 struct PrStudioWindow : pr_impl::StudioWindowState {};
+struct PrStudioWindowGpuView : pr_impl::StudioWindowGpuView {};
 
 PR_ASSUME_NONNULL_END

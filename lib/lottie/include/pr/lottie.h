@@ -15,6 +15,7 @@
 #include "pr/status.h"
 #include "pr/string_view.h"
 #include "pr/text.h"
+#include "pr/texture_cache.h"
 #include "pr/vec.h"
 
 PR_ASSUME_NONNULL_BEGIN
@@ -42,8 +43,13 @@ typedef bool (*PrLottieLoadFn)(void* PR_NULLABLE context, PrStringView path, PrB
 
 // The host services that reading uses.
 typedef struct PrLottieOptions {
-    const PrImageCodecSet* PR_NULLABLE codec; // decodes image assets; without it, no images draw
-    PrLottieLoadFn PR_NULLABLE load;          // loads the files that assets name; without it, nothing loads
+    const PrImageCodecSet* PR_NULLABLE codec;        // decodes image assets; without it, no images draw
+
+    // The cache that image assets realize in, on the device of the renderer that draws the frames, which outlives the
+    // animation. Without it, no images draw. Each asset's realization starts as the animation loads, and a frame waits
+    // for what has not arrived by then, since a frame of an animation is drawn whole.
+    PrTextureCache* PR_NULLABLE textures;
+    PrLottieLoadFn PR_NULLABLE load;        // loads the files that assets name; without it, nothing loads
     void* PR_NULLABLE loadContext;
 
     // The families that text is set in, with the set's aliases and default family. Unused for text whose glyphs the

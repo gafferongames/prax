@@ -148,8 +148,8 @@ typedef void (*DomFetchFn)(void* PR_NULLABLE data, const DomFetchResult* result)
 // An image that a document's browsing context decodes for a style (DomDocumentHost::decodeImage). One of `image` and
 // `vector` is set.
 struct DomDecodedImage {
-    // The decoded image, arranged as its orientation displays it, and how it was arranged from its stored pixels.
-    const PrDrawImage* PR_NULLABLE image;
+    // The decoded image, in its stored orientation, and the orientation that displays it.
+    const PrTextureSource* PR_NULLABLE image;
     PrImageOrientation orientation;
 
     PrLayoutPainter vector;                     // an SVG image, which draws at the size it is shown; or no paint

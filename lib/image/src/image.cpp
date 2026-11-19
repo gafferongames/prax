@@ -75,6 +75,7 @@ PrStatus validateInfo(const PrImageInfo& info, const PrImageLimits& limits, bool
     if (info.orientation > PrImageOrientation_Rotate270 || info.frameCount == 0 || info.levelCount == 0 ||
             info.levelCount > kMaxLevels || info.levels > PrImageLevels_Rip || (!levelExtents && !halving) ||
             (info.levels == PrImageLevels_Rip && !rip) || (info.levels == PrImageLevels_Mip && info.levelColumns != 1) ||
+            (info.faceCount != 1 && info.faceCount != 6) || info.frameCount % info.faceCount != 0 ||
             !(info.pixelsPerMeter.x >= 0 && info.pixelsPerMeter.x <= 1e30f) ||
             !(info.pixelsPerMeter.y >= 0 && info.pixelsPerMeter.y <= 1e30f) ||
             !packedBytes(info.format, info.extent.x, info.extent.y, &bytes))
@@ -240,11 +241,13 @@ PrStatus prImageDecoderOpen(PrImageDecoder* decoder, PrImageSource source, const
     data->source.stream.size = size;
     status = codec->decoderOpenFn(codec, set, &data->source, &data->limits, &data->reader, &data->info);
     if (usable(status)) {
-        // A reader that reports no levels has one, a mip chain of itself.
+        // A reader that reports no levels or faces has one of each: a mip chain of itself, and no cube.
         if (data->info.levelCount == 0)
             data->info.levelCount = 1;
         if (data->info.levelColumns == 0)
             data->info.levelColumns = 1;
+        if (data->info.faceCount == 0)
+            data->info.faceCount = 1;
         PrStatus validation = PrStatus_InvalidData;
         if (data->reader != nullptr)
             validation = validateInfo(data->info, data->limits, data->reader->levelExtentFn != nullptr);

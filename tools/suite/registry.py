@@ -68,11 +68,31 @@ SUITES = [
           ("markdown_spec",)),
     Suite("markdown-dom", ("commonmark", "cmark_gfm"), ("commonmark-spec/spec.txt", "cmark-gfm/test/spec.txt"),
           ("tools.suite.markdown.markdown_dom",), ("markdown_dom",)),
-    # libwebp's test data, decoded by lib/webp beside libwebp.
-    Suite("webp", ("libwebp_test_data",), ("libwebp-test-data/.git",), ("tools.suite.webp",), ("webp_compare",)),
-    # OpenEXR's test images, and images that OpenEXR's encoder writes in every compression, decoded by lib/exr beside
-    # OpenEXR's core library.
-    Suite("exr", ("openexr_images",), ("openexr-images/.git",), ("tools.suite.exr",), ("exr_compare",)),
+    # Khronos's glTF sample assets, read by lib/gltf.
+    Suite("gltf", ("gltf_sample_assets",), ("glTF-Sample-Assets/Models",), ("tools.suite.gltf",), ("gltf_corpus",)),
+    # The same assets, loaded by lib/model and rendered by lib/render.
+    Suite("model", ("gltf_sample_assets",), ("glTF-Sample-Assets/Models",), ("tools.suite.model",),
+          ("model_corpus", "gltf_corpus")),
+    # The same assets' tangents, from lib/mesh beside MikkTSpace's reference implementation and meshoptimizer.
+    Suite("tangents", ("gltf_sample_assets",), ("glTF-Sample-Assets/Models",), ("tools.suite.tangents",),
+          ("tangents_compare", "gltf_corpus")),
+    # libwebp's test data and the WebP images of the same assets, decoded by lib/webp beside libwebp.
+    Suite("webp", ("libwebp_test_data", "gltf_sample_assets"), ("libwebp-test-data/.git", "glTF-Sample-Assets/Models"),
+          ("tools.suite.webp",), ("webp_compare",)),
+    # OpenEXR's test images, the StandardShaderBall's textures, and images that OpenEXR's encoder writes in every
+    # compression, decoded by lib/exr beside OpenEXR's core library.
+    Suite("exr", ("openexr_images", "usd_assets"), ("openexr-images/.git", "usd-assets/full_assets"),
+          ("tools.suite.exr",), ("exr_compare",)),
+    # The Draco streams of the same assets, decoded by lib/draco beside the reference decoder.
+    Suite("draco", ("gltf_sample_assets",), ("glTF-Sample-Assets/Models",), ("tools.suite.draco",), ("draco_compare",)),
+    # The USD working group's assets and the core specification's supplement, read by lib/usd and compared with
+    # Pixar's OpenUSD, which runs from its wheel in a Python environment of its own.
+    Suite("usd", ("usd_assets", "usd_spec_supplemental", "usd_core"), ("usd-assets/full_assets",), ("tools.suite.usd",),
+          ("usd_corpus",)),
+    # Every file of the corpora above, classified by lib/mime.
+    Suite("classify", ("gltf_sample_assets", "usd_assets", "libwebp_test_data"),
+          ("glTF-Sample-Assets/Models", "usd-assets/full_assets", "libwebp-test-data/.git"), ("tools.suite.classify",),
+          ("mime_corpus",)),
     # esctest needs termios, and a Windows pseudoconsole would rewrite the sequences that it tests.
     Suite("esctest", ("esctest",), ("esctest2/esctest",), ("tools.suite.esctest",), ("vterm_esctest",),
           "esctest runs on a POSIX pseudoterminal" if sys.platform == "win32" else None),

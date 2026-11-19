@@ -55,7 +55,7 @@ String stringOf(PrRawString* string) {
 PrStatus runWith(const PrCommandRegistry* registry, const char* id, const char* text, String* error = nullptr,
         PrJsonWriter* result = nullptr) {
     PrJson* document = prJsonCreate();
-    REQUIRE(prJsonParse(document, text, nullptr));
+    REQUIRE(prJsonParse(document, text, 0, nullptr));
     PrCommandArgs args{.document = document, .object = 0, .result = result};
     PrRawString why = prRawStringNull();
     PrStatus status = prCommandRegistryRun(registry, id, &args, &why);

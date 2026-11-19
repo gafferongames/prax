@@ -65,7 +65,8 @@ pr_example(draw_gallery
     draw_gallery/scenes.cpp
     FONT_FILES "NotoSans[wdth,wght].ttf" "NotoSerif[wdth,wght].ttf" "NotoSansJP-VF.otf"
 )
-target_link_libraries(draw_gallery PRIVATE prax::app_select prax::draw_select prax::gpu_select prax::app prax::draw
+target_link_libraries(draw_gallery PRIVATE prax::gpu_select prax::texture prax::app prax::draw prax::draw_select
+                                           prax::app_select
                                            prax::gpu prax::task
                                    prax::font prax::locale prax::text prax::core_cpp)
 
@@ -75,8 +76,10 @@ pr_example(video
     video/main.cpp
     DATA ${PROJECT_SOURCE_DIR}/third_party/videos/cat.mp4
 )
-target_link_libraries(video PRIVATE prax::app_select prax::draw_select prax::gpu_select prax::app prax::draw prax::gpu
-                                    prax::media prax::task prax::core_cpp)
+target_link_libraries(video PRIVATE prax::gpu_select prax::texture prax::app prax::draw prax::draw_select
+                                    prax::app_select prax::gpu
+                                    prax::media
+                                    prax::task prax::core_cpp)
 
 # The feature drawings: a captioned drawing of each feature of lib/draw's list, and dense workloads that measure its
 # renderers. They are a library of their own, which the application and draw_bench link. Their fonts are the files of
@@ -95,17 +98,19 @@ add_library(draw_features_drawings STATIC
 )
 target_include_directories(draw_features_drawings PUBLIC ${PROJECT_SOURCE_DIR})
 pr_resources(draw_features_drawings ${PROJECT_SOURCE_DIR}/third_party/fonts@fonts)
-target_link_libraries(draw_features_drawings PUBLIC prax::compress_select prax::image_select prax::app prax::draw
-                                                    prax::font prax::text prax::core_cpp
+target_link_libraries(draw_features_drawings PUBLIC prax::compress_select prax::image_select prax::texture prax::app
+                                                    prax::draw prax::font prax::text
+                                                    prax::core_cpp
                                              PRIVATE prax::color prax::compress prax::image prax::path prax::svg
                                                      pr_warnings)
 
 # The feature drawings in a window, rendered on the GPU and mapped to the display, with the glyphs that are pictures
 # decoded by lib/svg's decoder.
 pr_example(draw_features draw_features/main.cpp)
-target_link_libraries(draw_features PRIVATE prax::compress_select prax::image_select prax::app_select prax::draw_select
-                                            prax::gpu_select draw_features_drawings
-                                            prax::app prax::draw prax::gpu
+target_link_libraries(draw_features PRIVATE prax::compress_select prax::image_select prax::gpu_select prax::texture
+                                            draw_features_drawings prax::app
+                                            prax::draw
+                                            prax::draw_select prax::app_select prax::gpu
                                             prax::svg prax::task prax::text prax::core_cpp)
 
 # The editor example: Studio Kit's widgets and a HUD library of its own over an editor's model, composed in one tree.
@@ -155,8 +160,8 @@ pr_example(studio_gallery
     FONT_BUNDLES Complete
 )
 target_link_libraries(studio_gallery PRIVATE prax::compress_select prax::image_select prax::studio_app prax::font_bundle
-                                             prax::text_edit prax::studio_kit
-                                             prax::draw
+                                             prax::text_edit
+                                             prax::studio_kit prax::texture
                                              prax::layout prax::ui prax::color prax::core_cpp)
 
 # The perspective example: Kit panels standing in 3D over a background that the application draws with its own
@@ -168,9 +173,10 @@ pr_example(perspective
     DATA ${CMAKE_CURRENT_SOURCE_DIR}/perspective/picture.png
 )
 pr_slang(perspective perspective/perspective_gpu.slang VARIABLE kPerspectiveShaders)
-target_link_libraries(perspective PRIVATE prax::compress_select prax::image_select prax::app_select prax::draw_select
-                                          prax::gpu_select prax::app prax::studio_kit
-                                          prax::draw
+target_link_libraries(perspective PRIVATE prax::compress_select prax::image_select prax::gpu_select prax::texture
+                                          prax::app prax::studio_kit prax::draw
+                                          prax::draw_select
+                                          prax::app_select
                                           prax::gpu prax::layout prax::task prax::text prax::font_bundle
                                           prax::image prax::compress prax::core_cpp)
 
@@ -219,3 +225,59 @@ target_link_libraries(crossword PRIVATE prax::compress_select prax::image_select
 if (PR_DEVELOP)
     pr_module_tests(crossword_game crossword/tests/test_crossword_game.cpp)
 endif()
+# The render features: a page for each feature of lib/render, as procedural scenes that sweep its parameters, with
+# lib/draw's label of each page over the view. The pages are a library of their own, which the example and its tests
+# link, with a shader set that lists the library's OpenPBR type beside the example's own material types and its toon
+# shading model.
+pr_render_shaders(render_features_shaders RenderFeatures
+    SOURCES render_features/features_materials.slang
+    MATERIAL OpenPbr STRUCT RenderMaterialOpenPbr
+    MATERIAL Checker STRUCT FeaturesChecker
+    MATERIAL Pulse STRUCT FeaturesPulse
+    MATERIAL Toon STRUCT FeaturesToon)
+add_library(render_features_pages STATIC render_features/features.cpp)
+target_include_directories(render_features_pages PUBLIC ${PROJECT_SOURCE_DIR})
+target_link_libraries(render_features_pages PUBLIC render_features_shaders prax::mesh prax::render prax::core_cpp
+                                            PRIVATE prax::color prax::gpu pr_warnings)
+pr_example(render_features render_features/main.cpp FONT_FILES "NotoSans[wdth,wght].ttf")
+target_link_libraries(render_features PRIVATE prax::compress_select prax::image_select prax::gpu_select
+                                              render_features_pages prax::app prax::draw
+                                              prax::draw_select
+                                              prax::app_select prax::font
+                                              prax::gpu prax::render prax::task prax::text prax::image
+                                              prax::core_cpp)
+# Every page, offscreen, alike with slots and with handles and by both techniques: on each backend that the system has a
+# device for, and on the web in a page, on its WebGPU.
+if (PR_DEVELOP)
+    add_executable(render_features_tests render_features/test_render_features.cpp)
+    target_link_libraries(render_features_tests PRIVATE prax::gpu_select render_features_pages prax::gpu prax::render
+                                                        prax::core_cpp
+                                                        test_main pr_warnings)
+    if (PR_GPU_VULKAN)
+        target_compile_definitions(render_features_tests PRIVATE PR_RENDER_TEST_VULKAN)
+    endif()
+    pr_add_tests(render_features_tests)
+    if (PR_GPU_WEBGPU)
+        pr_page_tests(render_features render_features/test_render_features.cpp)
+        target_link_libraries(render_features_page_tests PRIVATE render_features_pages prax::gpu prax::render)
+        target_compile_definitions(render_features_page_tests PRIVATE PR_RENDER_TEST_WEBGPU)
+    endif()
+endif()
+
+# The model viewer: a browser of glTF files, each loaded by lib/model and drawn by lib/render, with lib/draw's text over
+# it.
+pr_example(model_viewer
+    model_viewer/main.cpp
+    model_viewer/viewer_list.cpp
+    model_viewer/viewer_overlay.cpp
+    model_viewer/viewer_stage.cpp
+    FONT_FILES "NotoSans[wdth,wght].ttf"
+)
+target_link_libraries(model_viewer PRIVATE prax::compress_select prax::image_select prax::gpu_select prax::app
+                                           prax::color prax::draw prax::draw_select
+                                           prax::app_select
+                                           prax::font prax::geom
+                                           prax::gpu
+                                           prax::model prax::model_host prax::render prax::task prax::text prax::texture
+                                           prax::image
+                                           prax::core_cpp)

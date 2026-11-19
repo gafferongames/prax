@@ -1,0 +1,89 @@
+# Layers that lib/usd reads as the USD Core Specification has them and the reference, Pixar's OpenUSD, does not. An
+# entry lists its layers, a key per line, followed by the indented reason: what the reference does and why it loses.
+
+usd-assets/test_assets/foundation/stage_configuration/timeCodesPerSecond/timeCodesPerSecond_-1.usda#stage
+    The root layer's `timeCodesPerSecond` is -1. The reference scales its sublayers' times by -1/24, which reverses
+    time. The specification has a scale that is not positive be a composition error that leaves the retiming as it
+    is (usd-core/#sublayer-offset-adjustment), which is what lib/usd does.
+
+usd-assets/test_assets/foundation/stage_configuration/timeCodesPerSecond/timeCodesPerSecond_0.usda#stage
+usd-assets/test_assets/foundation/stage_configuration/timeCodesPerSecond/timeCodesPerSecond_0.usda#geometry
+    The reference crashes on this file. The root layer's `timeCodesPerSecond` is 0, and the reference ends with
+    signal 11 as it opens the stage, so the suite does not ask it to. The
+    specification has a time scale that is not positive be a composition error that leaves the retiming as it is
+    (usd-core/#sublayer-offset-adjustment), which is what lib/usd does.
+
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ErrorArcCycle_root/A.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ErrorArcCycle_root/B.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ErrorArcCycle_root/model.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ErrorArcCycle_root/root.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ErrorArcCycle_root/usda/A.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ErrorArcCycle_root/usda/B.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ErrorArcCycle_root/usda/model.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ErrorArcCycle_root/usda/root.usd#stage
+    These layers hold arcs that are cycles, as a prim that references its parent. The specification has such an arc
+    ignored (usd-core/#composition-errors), the results that the specification's own composition test expects of
+    these layers have no opinion from one, and the reference's composition agrees when it is asked for one prim
+    (Pcp.Cache.ComputePrimIndex): for </AnotherParent/AnotherChild> of root.usd it gives the prim's own spec and the
+    spec of the prim that it references in model.usd, and reports the cycle. The reference's stage (Usd.Stage.Open)
+    of the same layer gives that prim a third opinion, the spec of its parent, which the arc that it reported as a
+    cycle brings, and a child composed from it. lib/usd composes what the specification, its test and the reference's
+    own composition give.
+
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ErrorInvalidInstanceTargetPath_root/pcp.txt
+    The test's classes connect an attribute to a prim of each of their instances, and the expected results differ
+    from lib/usd's in the connections of four attributes. They are the results of the validation that OpenUSD's
+    composition applies when it is asked to (Pcp.Cache.ComputeAttributeConnectionPaths), which rejects a connection
+    that a class makes to an instance of the class. The specification states no such rule, and OpenUSD's stage does
+    not apply it: Usd.Attribute.GetConnections maps each path through its arcs and keeps those that map, which is
+    what lib/usd does, and the two agree on every one of these attributes (the stages of this test's layers pass).
+    For </ConnectionToLocalClass/Instance_1.x> the expected results and OpenUSD 26.11's composition give no
+    connection, and its stage and lib/usd give </ConnectionToLocalClass/Instance_2.y>. For
+    </FaceRig/BrowRig/LBrow/BrowInnUDPosBrowInnUDNeg_sculpt.amount> the three differ: the expected results give
+    </FaceRig/BrowRig/Anim/LBrow.InnUD>, a path that a relocate of the root layer has moved the prim from, OpenUSD
+    26.11's composition gives none and reports both authored paths, and its stage and lib/usd give
+    </FaceRig/Anim/Face/Eyes/RBrow.InnUD>. So the expected results are not those of the reference that the suite
+    runs either. lib/usd reports the paths that do not map, on each of the prims that the expected results report.
+
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ErrorOpinionAtRelocationSource_root/root.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ErrorOpinionAtRelocationSource_root/usda/root.usd#stage
+    The root layer has a spec at </VariantAtRelocateSource/Child/Child2>, the source of a relocate to
+    </VariantAtRelocateSource/Sibling>, and the spec lists a variant set, `child2`. The specification has a spec at
+    a relocate's source ignored (usd-core/#relocates), the results that the specification's own composition test
+    expects give </VariantAtRelocateSource/Sibling> no variant selection, and the reference agrees everywhere but in
+    one call: it reports the spec as "an invalid opinion at the relocation source path ... which will be ignored",
+    its prim stack for the prim leaves the spec out, and its resolved `variantSetNames` of the prim
+    (Usd.Prim.GetMetadata) is empty. Its list of the prim's variant sets (Usd.Prim.GetVariantSets().GetNames())
+    still names `child2`, with no selection, because that call reads the field at every node of the prim's index,
+    the placeholder at the relocate's source too. lib/usd lists the variant sets that the prim's opinions give.
+
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ExpressionsInPayloads_root/pcp.txt
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ExpressionsInReferences_root/pcp.txt
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ExpressionsInPayloads_root/ref2.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ExpressionsInPayloads_root/ref3.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ExpressionsInPayloads_root/root.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ExpressionsInPayloads_root/usda/ref2.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ExpressionsInPayloads_root/usda/ref3.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ExpressionsInPayloads_root/usda/root.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ExpressionsInReferences_root/ref2.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ExpressionsInReferences_root/ref3.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ExpressionsInReferences_root/root.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ExpressionsInReferences_root/usda/ref2.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ExpressionsInReferences_root/usda/ref3.usd#stage
+usd-spec-supplemental/releases/1.0.1/composition/tests/assets/ExpressionsInReferences_root/usda/root.usd#stage
+    The asset paths of these layers' references and payloads are variable expressions, as @`"${REF}.usd"`@, which the
+    reference evaluates against the layers' `expressionVariables`. The specification leaves variable expressions out:
+    its list of known issues says that they are "not yet covered" (usd-core/#correlation-with-openusd-version-and-
+    known-issues). lib/usd takes an asset path as it is written, finds no layer at the expression's text, and reports
+    the arc as an error, which is what the specification has an arc to a layer that cannot be read do.
+
+usd-spec-supplemental/releases/1.0.1/file_formats/tests/assets/text/usda/geometryattributes.usda
+    The layer's header is `#usda 1.0.123123123`. The specification's grammar gives a header's patch version any
+    number of digits (usd-core/#layer, LayerHeader), and the layer is one of the specification's own tests of the
+    text format. The reference refuses it: "Unable to parse layer version from '1.0.123123123'". It reads a patch
+    version of three digits, as `1.0.234`, so the bound is its own. lib/usd reads the layer, whose content is of
+    version 1.0.
+
+usd-spec-supplemental/releases/1.0.1/file_formats/tests/assets/text/usda/geometryattributes.usda#stage
+usd-spec-supplemental/releases/1.0.1/file_formats/tests/assets/text/usda/geometryattributes.usda#geometry
+    The stage of the layer above, which the reference refuses for its header's patch version and lib/usd reads.

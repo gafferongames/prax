@@ -93,7 +93,7 @@ String historyTimeLabel(PrTimeSystem time, int32_t offset) {
 
 bool historyParse(PrStringView text, Array<Visit>* out) {
     PrJson* json = prJsonCreate();
-    bool parsed = prJsonParse(json, text, nullptr) && prJsonValueCount(json) != 0 &&
+    bool parsed = prJsonParse(json, text, 0, nullptr) && prJsonValueCount(json) != 0 &&
         prJsonKind(json, 0) == PrJsonKind_Array;
     Array<Visit> history;
     for (PrJsonValueIndex item = parsed ? prJsonFirst(json, 0) : kPrJsonMissing; item != kPrJsonMissing;

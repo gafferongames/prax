@@ -842,15 +842,14 @@ void fragmentDevicePrepare(FragmentDevice* d, const FragmentFrame* frame, PrGpuC
     // The beneath layer is the host's texture.
     PrGpuTexture hostBeneath;
     if (beneath != nullptr && beneath->kind == PrDrawBeneathKind_Texture)
-        hostBeneath = PrGpuTexture{uint32_t(beneath->texture)};
+        hostBeneath = beneath->texture;
     else
         hostBeneath = PrGpuTexture{};
     uint32_t beneathId = frame->beneath != 0 ? frame->layers[frame->beneath - 1].texture : 0;
     state->hostLayers.clear();
     for (uint32_t i = 0; i < frame->layerCount; ++i) {
         const FragmentLayer& l = frame->layers[i];
-        PrGpuTexture hostLayer =
-            l.hostTexture != 0 ? PrGpuTexture{uint32_t(frame->hostTextures[l.hostTexture - 1])} : PrGpuTexture{};
+        PrGpuTexture hostLayer = l.hostTexture != 0 ? frame->hostTextures[l.hostTexture - 1] : PrGpuTexture{};
         bool host = (i + 1 == frame->beneath && hostBeneath.id != 0) || hostLayer.id != 0;
         state->layers.push(host ? kArrayMissing : takeLayer(d, l, layerFormat(frame, i, target)));
         state->hostLayers.push(hostLayer);
@@ -861,8 +860,7 @@ void fragmentDevicePrepare(FragmentDevice* d, const FragmentFrame* frame, PrGpuC
     for (uint32_t i = 0; i < frame->textureCount; ++i) {
         uint32_t id = frame->textures[i].texture;
         uint32_t hostIndex = frame->textures[i].hostTexture;
-        PrGpuTexture texture =
-            hostIndex != 0 ? PrGpuTexture{uint32_t(frame->hostTextures[hostIndex - 1])} : PrGpuTexture{};
+        PrGpuTexture texture = hostIndex != 0 ? frame->hostTextures[hostIndex - 1] : PrGpuTexture{};
         if (texture.id == 0 && id == beneathId && beneathId != 0)
             texture = hostBeneath;
         if (texture.id == 0) {

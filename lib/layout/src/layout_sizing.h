@@ -149,11 +149,11 @@ bool layoutBlockReadsBase(const LayoutLogicalBox& logical, LayoutAutoSize autoSi
 
 // Returns the block size of the border box of a box styled by `box`, given the block axis that its style and its
 // container decide before its content (`axis`) and the border-box size of its content, `content`. The size is the
-// axis's size if that is definite, and otherwise the content's. If `clamps` is true, the box's limits in `logical`,
-// resolved against `percentBlock`, clamp it, and a limit that is a keyword resolves to the content's size. A size that
-// comes from an aspect ratio grows to `grown`, clamped in the same way. The content was laid out against the size
-// before the clamp, and is not laid out again for it (css-sizing-3/#cyclic-percentage-contribution leaves this case
-// open).
+// axis's size if that is definite, and otherwise the content's. Under size containment in the block axis, the content's
+// size is its contain-intrinsic block size, or zero. If `clamps` is true, the box's limits in `logical`, resolved
+// against `percentBlock`, clamp it, and a limit that is a keyword resolves to the content's size. A size that comes
+// from an aspect ratio grows to `grown`, clamped in the same way. The content was laid out against the size before the
+// clamp, and is not laid out again for it (css-sizing-3/#cyclic-percentage-contribution leaves this case open).
 PrLayoutUnit layoutContentBlockSize(const LayoutStyles* styles, const PrLayoutBoxStyle& box,
     const LayoutLogicalBox& logical, const LayoutBlockAxis& axis,
     PrLayoutUnit percentBlock, bool clamps, PrLayoutUnit content, PrLayoutUnit grown);

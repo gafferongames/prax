@@ -138,6 +138,7 @@ struct FragmentTextureRequest {
 
     uint32_t texture;                       // the texture's number
     PrUVec2 origin;                         // Update: the region's top left
+
     PrPixelView texels;                     // Create: the size and the texels; Update: the region's texels
 };
 
@@ -150,7 +151,7 @@ struct FragmentFrame {
     uint32_t requestCount;
     const FragmentTexture* PR_NULLABLE textures;
     uint32_t textureCount;
-    const PrDrawTextureId* PR_NULLABLE hostTextures;  // the host's textures that the frame reads
+    const PrGpuTexture* PR_NULLABLE hostTextures;  // the host's textures that the frame reads
     uint32_t hostTextureCount;
 
     // The gradients' ramps. A ramp's table holds its colors at the kFragmentRampResolution + 1 even steps of the

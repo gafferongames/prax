@@ -1,5 +1,6 @@
 #include "pr/float.h"
 #include "pr/json.h"
+#include "pr/mem.h"
 #include "pr/string_ops.h"
 
 #include "tools/harness/test.h"
@@ -11,7 +12,7 @@ namespace pr_impl {
 namespace {
 
 bool parse(const char* text, PrJson* d) {
-    return prJsonParse(d, text, nullptr);
+    return prJsonParse(d, text, 0, nullptr);
 }
 
 } // namespace
@@ -83,8 +84,8 @@ TEST_CASE("what is not JSON fails where it stops") {
         "tru", "[1] x", "\"\\x\"",
     };
     for (const char* text : texts)
-        CHECK_FALSE(prJsonParse(d, text, &at));
-    CHECK_FALSE(prJsonParse(d, "[1, 2 x", &at));
+        CHECK_FALSE(prJsonParse(d, text, 0, &at));
+    CHECK_FALSE(prJsonParse(d, "[1, 2 x", 0, &at));
     CHECK(at == 6);
     CHECK(prJsonValueCount(d) == 0);
     prJsonDestroy(d);
@@ -97,8 +98,8 @@ TEST_CASE("nesting past the limit fails") {
         text[i] = '[';
         text[2 * kPrJsonMaxDepth + 1 - i] = ']';
     }
-    CHECK_FALSE(prJsonParse(d, PrStringView{text, sizeof(text)}, nullptr));
-    CHECK(prJsonParse(d, PrStringView{text + 1, sizeof(text) - 2}, nullptr));
+    CHECK_FALSE(prJsonParse(d, PrStringView{text, sizeof(text)}, 0, nullptr));
+    CHECK(prJsonParse(d, PrStringView{text + 1, sizeof(text) - 2}, 0, nullptr));
     prJsonDestroy(d);
 }
 
@@ -153,5 +154,100 @@ TEST_CASE("a document's value writes back as the text that reads to it") {
     prJsonWriterEndArray(w);
     CHECK(prJsonWriterText(w) == "[[1,\"\xC3\xA9\\n\",{\"b\":null}],true]");
     prJsonWriterDestroy(w);
+    prJsonDestroy(d);
+}
+
+TEST_CASE("a JSON Pointer names a value by its members and elements") {
+    // The example of RFC 6901, section 5.
+    PrJson* d = prJsonCreate();
+    REQUIRE(parse(R"({"foo": ["bar", "baz"], "": 0, "a/b": 1, "c%d": 2, "e^f": 3, "g|h": 4, "i\\j": 5,
+        "k\"l": 6, " ": 7, "m~n": 8})", d));
+    auto named = [&](const char* pointer) {
+        PrJsonValueIndex index = kPrJsonMissing;
+        PrStatus status = prJsonValueFromPointer(d, pointer, &index);
+        if (status != PrStatus_Ok)
+            return -1.0 - double(status);
+        if (prJsonKind(d, index) == PrJsonKind_String)
+            return prJsonString(d, index) == "baz" ? 100.0 : 101.0;
+        return prJsonNumber(d, index, 1000);
+    };
+    CHECK(named("") == 1000);
+    CHECK(named("/foo/1") == 100);
+    CHECK(named("/foo/0") == 101);
+    CHECK(named("/") == 0);
+    CHECK(named("/a~1b") == 1);
+    CHECK(named("/c%d") == 2);
+    CHECK(named("/i\\j") == 5);
+    CHECK(named("/ ") == 7);
+    CHECK(named("/m~0n") == 8);
+    CHECK(named("/foo/2") == -1.0 - double(PrStatus_NotFound));
+    CHECK(named("/foo/-") == -1.0 - double(PrStatus_NotFound));
+    CHECK(named("/missing") == -1.0 - double(PrStatus_NotFound));
+    CHECK(named("/foo/0/deeper") == -1.0 - double(PrStatus_NotFound));
+    CHECK(named("foo") == -1.0 - double(PrStatus_Syntax));
+    CHECK(named("/m~2n") == -1.0 - double(PrStatus_Syntax));
+    CHECK(named("/foo/01") == -1.0 - double(PrStatus_Syntax));
+    prJsonDestroy(d);
+}
+
+TEST_CASE("a parse with spans records where each value's text is, and finds the value at an offset") {
+    PrJson* d = prJsonCreate();
+    PrStringView text = "\xEF\xBB\xBF{\"a\": [1, \"two\", {}],\n \"b/c\": {\"d~\": null}} ";
+    REQUIRE(prJsonParse(d, text, 0, nullptr));
+    CHECK(!prJsonHasSpans(d));
+    REQUIRE(prJsonParse(d, text, PrJsonParseFlag_Spans, nullptr));
+    REQUIRE(prJsonHasSpans(d));
+    auto spanText = [&](PrJsonValueIndex index) {
+        PrJsonSpan span = prJsonSpan(d, index);
+        return prStringSlice(text, span.begin, span.end - span.begin);
+    };
+    // The pointer of a value, as text that the test owns.
+    char pointerText[64];
+    auto pointer = [&](PrJsonValueIndex index) {
+        PrRawString raw = prJsonPointer(d, index);
+        PrStringView view = prRawStringView(&raw);
+        REQUIRE(view.size < sizeof(pointerText));
+        prMemCopy(pointerText, view.data, view.size);
+        prRawStringReset(&raw);
+        return PrStringView{pointerText, view.size};
+    };
+    // The root's span runs from its brace, past the byte order mark, to its closing brace, without the space after it.
+    CHECK(prJsonSpan(d, 0).begin == 3);
+    CHECK(spanText(0) == prStringSlice(text, 3, text.size - 4));
+    PrJsonValueIndex a = prJsonMember(d, 0, "a");
+    CHECK(spanText(a) == "[1, \"two\", {}]");
+    CHECK(spanText(a - 1) == "\"a\"");
+    PrJsonValueIndex two = prJsonElement(d, a, 1);
+    CHECK(spanText(two) == "\"two\"");
+    CHECK(spanText(prJsonElement(d, a, 2)) == "{}");
+    PrJsonValueIndex bc = prJsonMember(d, 0, "b/c");
+    PrJsonValueIndex dt = prJsonMember(d, bc, "d~");
+    CHECK(spanText(dt) == "null");
+
+    // Each value's pointer reads back to it, a key's names its member, and a name escapes `/` and `~`.
+    CHECK(pointer(0) == "");
+    CHECK(pointer(a) == "/a");
+    CHECK(pointer(a - 1) == "/a");
+    CHECK(pointer(two) == "/a/1");
+    CHECK(pointer(dt) == "/b~1c/d~0");
+    for (PrJsonValueIndex i = 0; i < prJsonValueCount(d); ++i) {
+        PrJsonValueIndex found = kPrJsonMissing;
+        REQUIRE(prJsonValueFromPointer(d, pointer(i), &found) == PrStatus_Ok);
+        bool key = prJsonKind(d, i) == PrJsonKind_String && found == i + 1;
+        CHECK((found == i || key));
+    }
+
+    // An offset finds the innermost value that holds it: a scalar, a key, or the container around a separator.
+    auto at = [&](PrStringView needle, uint32_t past) {
+        return prJsonValueFromOffset(d, uint32_t(prStringFind(text, needle) + past));
+    };
+    CHECK(at("two", 1) == two);
+    CHECK(at("\"a\"", 0) == a - 1);
+    CHECK(at("1,", 1) == a);
+    CHECK(at("{}", 1) == prJsonElement(d, a, 2));
+    CHECK(at("\n", 0) == 0);
+    CHECK(at("null", 3) == dt);
+    CHECK(prJsonValueFromOffset(d, 0) == kPrJsonMissing);
+    CHECK(prJsonValueFromOffset(d, uint32_t(text.size - 1)) == kPrJsonMissing);
     prJsonDestroy(d);
 }

@@ -188,9 +188,10 @@ struct HtmlElementEvent {
     bool error;
 };
 
-// The codecs that an SVG image decodes the images that it names with.
+// The codecs that an SVG image decodes the images that it names with, and the cache that it realizes them in.
 struct HtmlSvgImageLoader {
     const PrImageCodecSet* PR_NULLABLE images;
+    PrTextureCache* PR_NULLABLE textures;
 };
 
 // A browsing context (html/#browsing-context), which hosts a window.
@@ -200,8 +201,8 @@ struct HtmlPage {
     DomXmlBuilder xml;          // the parse that an XML load runs, whose parser is null outside one
     PrHtmlHost host;
 
-    // What the SVG images that the page shows load their images with: the host's codecs, which outlive the images
-    // (loadSecureImage).
+    // What the SVG images that the page shows load their images with, and realize them in: the host's codecs and the
+    // window's textures, which outlive the images' builds (loadSecureImage).
     HtmlSvgImageLoader svgImages;
 
     DomDocumentHost documentHost;                 // the host through which the window's document fetches and queues
@@ -393,6 +394,22 @@ bool htmlPresentationUpdate(PrCssPresentation* presentation, PrLayoutVec extent,
 // Starts a load whose input arrives in pieces, as prHtmlPageBeginLoad does, without dropping the page's document load
 // (prHtmlPageNavigate), which calls it as its response arrives.
 PrStatus htmlPageBeginStreamedLoad(PrHtmlPage* page, PrStringView url, const PrHtmlResponseHeaders* PR_NULLABLE headers);
+
+// Settles the images that the window waits for: those whose realization has arrived decode, and resolve their decode()
+// promises, and those whose realization failed are broken and fire error, rejecting their promises. So do those whose
+// requests broke or changed. A rendering update runs it.
+void htmlImagesShow(PrHtmlWindow* window);
+
+// Waits for the decode of the element's current request, with `promise` if it is not null. The decode settles in a task
+// once the request has decoded or broke, or when a rendering update finds it so (htmlImagesShow).
+void htmlImageWaitDecode(PrHtmlWindow* window, PrDomElement* element, const PrHtmlPromise* PR_NULLABLE promise);
+
+// Queues a task that settles the decodes that the window waits for, if any wait and none is queued.
+void htmlImagesQueue(PrHtmlWindow* window);
+
+// Stops waiting for the decodes of a window whose document is discarded: their promises reject, and their requests fire
+// no event.
+void htmlImagesDrop(PrHtmlWindow* window);
 
 } // namespace pr_impl
 

@@ -19,7 +19,6 @@
 #include "pr/color.h"
 #include "pr/dom.h"
 #include "pr/draw.h"
-#include "pr/draw_image.h"
 #include "pr/draw_list.h"
 #include "pr/draw_renderer.h"
 #include "pr/font_set.h"
@@ -32,6 +31,7 @@
 #include "pr/status.h"
 #include "pr/string_view.h"
 #include "pr/text.h"
+#include "pr/texture_cache.h"
 #include "pr/vec.h"
 
 PR_ASSUME_NONNULL_BEGIN
@@ -76,7 +76,7 @@ PrCanvasSettings prCanvasSettingsDefault(void);
 // or an image bitmap. `extent` is the source's size in CSS pixels, which may differ from the image's pixels, as a
 // density-corrected image's does. A source that is not origin-clean taints the bitmap that it is drawn into.
 typedef struct PrCanvasImageSource {
-    const PrDrawImage* image;
+    const PrTextureSource* image;
     PrVec2 extent;
     bool originClean;
 } PrCanvasImageSource;
@@ -218,6 +218,11 @@ typedef struct PrCanvasDesc {
     // records commands, but draws and reads nothing. The renderer must outlive the context.
     PrDrawRenderer* PR_NULLABLE renderer;
 
+    // The cache on the renderer's device that loads the images that the context draws. Without a cache, images draw
+    // nothing. The context waits for each image's texture when it draws the image, because the bitmap keeps what was
+    // drawn. The cache must outlive the context.
+    PrTextureCache* PR_NULLABLE textures;
+
     // The canvas element that CSS values in the style resolve against, or null. It must outlive the context.
     const PrDomElement* PR_NULLABLE element;
 
@@ -254,7 +259,7 @@ uint64_t prCanvasVersion(const PrCanvas* canvas);
 
 // Returns the bitmap's pixels as an image, premultiplied in extended sRGB, with one reference for the caller. Returns
 // null for a bitmap without pixels. The image is the same until the bitmap changes.
-const PrDrawImage* PR_NULLABLE prCanvasSnapshot(PrCanvas* canvas);
+const PrTextureSource* PR_NULLABLE prCanvasSnapshot(PrCanvas* canvas);
 
 // What a context shows as of a presentation: a painter that draws the bitmap as it is then, scaled over the extent that
 // it is shown at and sampled as the presentation says, and the revision of what it draws. The painter holds what it

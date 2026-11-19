@@ -12,5 +12,12 @@ int prTestGeomCApi(void) {
     int result = mapped.right != 8 || mapped.bottom != 4;
     result |= prCornerRectFit(shape).corners[PrRectCorner_BottomLeft].radii.x != 1;
     result |= !prAffine2Invert(scale, &inverse) || inverse.a != 0.5f;
+    PrAffine3 same = prAffine3Identity();
+    PrMatrix4 view = prMatrix4LookAt((PrVec3){0, 0, 5}, (PrVec3){0, 0, 0});
+    PrAffine3 toView = prAffine3FromMatrix4(&view);
+    PrBox3 box = {{-1, -1, -1}, {1, 1, 1}};
+    PrSphere sphere = {{0, 0, 0}, 2};
+    result |= prAffine3MapPoint(&same, box.max).z != 1 || prAffine3MapPoint(&toView, sphere.center).z != -5;
+    result |= prAffine3MaxScale(&same) != sphere.radius - 1;
     return result;
 }

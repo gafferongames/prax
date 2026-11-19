@@ -1,0 +1,8 @@
+# The cases in which the modules are right and the asset is wrong. An entry is its cases, one on each line, then the
+# reason, indented: the rule that the asset breaks. A case's number is its check: 0 loads, 1 validation, 2 slots,
+# 3 techniques, 4 drawn.
+
+AnimationPointerUVs/glTF-Binary/AnimationPointerUVs.glb:0-4
+AnimationPointerUVs/glTF/AnimationPointerUVs.gltf:0-4
+    Its animation has two channels with one pointer, which KHR_animation_pointer forbids, so lib/gltf refuses it as
+    InvalidData (suites/gltf/errata.txt).

@@ -10,6 +10,7 @@
 #include "pr/kit.h"
 #include "pr/process.h"
 #include "pr/string.h"
+#include "pr/studio_window.h"
 #include "pr/syntax.h"
 #include "pr/terminal.h"
 #include "pr/text_editor.h"
@@ -20,6 +21,8 @@ PR_ASSUME_NONNULL_BEGIN
 namespace scribe {
 
 using namespace pr;
+
+struct Workspace;
 
 // A menu of the menu bar: the ids of its commands in order, with an empty id for a separator.
 struct Menu {
@@ -32,8 +35,10 @@ struct Scribe {
     PrKit* PR_NULLABLE kit = nullptr;
     PrUi* PR_NULLABLE ui = nullptr;
     PrApp* PR_NULLABLE app = nullptr;
-    PrTextFont* PR_NULLABLE font = nullptr;    // what the text is set in
-    PrFontSet* PR_NULLABLE fonts = nullptr;    // provides the terminals' monospaced faces
+    PrStudioWindow* PR_NULLABLE window = nullptr; // which renders the GPU views, as a model's preview
+    PrTextFont* PR_NULLABLE font = nullptr;       // what the text is set in
+    PrFontSet* PR_NULLABLE fonts = nullptr;       // provides the terminals' monospaced faces and the previews' faces
+    PrTextShaper* PR_NULLABLE shaper = nullptr;   // shapes the previews' text; with none, nothing previews
 
     PrSyntaxRegistry* PR_NULLABLE languages = nullptr;
     PrCommandRegistry* PR_NULLABLE commands = nullptr;
@@ -50,12 +55,18 @@ struct Scribe {
 
     // The menus of the menu bar, which openEditor sets to Scribe's, and an application may change.
     Array<Menu> menus;
-    float menuHeight = 0;           // of the menu bar, at the last layout
-    PrLayoutNode menuBar = kPrLayoutNodeNone;
     bool paletteRequested = false;    // a command asked to open the palette in the next round
     bool paletteOpen = false;         // the palette was open in the last round, and has focus
     bool menuOpen = false;            // a menu was open in the last round
     String paletteQuery;
+
+    // The project panel, the tabs of resources and the outline (apps/scribe/workspace.h), which openEditor makes. While
+    // no tab is open, the editor's own documents show between the panels.
+    Workspace* PR_NULLABLE workspace = nullptr;
+
+    // The file that remembers the last project that opened, or empty to remember none. The application sets it before
+    // openEditor; tests leave it empty.
+    String statePath;
 };
 
 // Makes the editor with Scribe's languages, its language servers and its commands, over the kit, the ui and the font,
@@ -72,8 +83,8 @@ void setDebuggee(Scribe& s, PrStringView program);
 // Opens the files at `oldPath` and `newPath`, and shows their comparison. Returns false if either cannot be read.
 bool openDiff(Scribe& s, PrStringView oldPath, PrStringView newPath);
 
-// Opens a document of `text` that belongs to no file and streams in as a file does. `name` is a file name that chooses
-// its language, or empty for none.
+// Opens a document of `text` that belongs to no file and streams in as a file does. `name` is a file name, which the
+// classification of the text reads (pr/mime_sniff.h), or empty.
 void openText(Scribe& s, PrStringView text, PrStringView name);
 
 // Starts a terminal running the user's shell in the panel, shows it, and gives it focus. The shell starts in the
@@ -81,15 +92,23 @@ void openText(Scribe& s, PrStringView text, PrStringView name);
 // document that shows (prTextEditorDocumentWorkspace).
 void openTerminal(Scribe& s);
 
-// Frees the editor, its documents, the terminals and the commands.
+// Returns the file where Scribe remembers its last project, under the platform's directory of applications' data, or
+// empty if the platform names none.
+String defaultStatePath();
+
+// Frees the workspace, the editor, its documents, the terminals and the commands.
 void closeEditor(Scribe& s);
 
 // Declares a round of Scribe under `root`.
-void buildScribe(Scribe& s, PrLayoutNode root, PrVec2 extent);
+void buildScribe(Scribe& s, PrLayoutNode root);
 
 // Gives the editor the layout of the frame. Returns true if another frame would show something different, as while a
 // document loads.
 bool afterLayout(Scribe& s);
+
+// Handles the window's events before its interface sees them: a mouse's back and forward buttons and a swipe between
+// pages (prAppEventNavigation) run Back and Forward. Returns true if Scribe took the event.
+bool handleWindowEvent(Scribe& s, const PrAppEvent& event);
 
 // Handles Scribe's application events. A wake services every terminal, whether or not the panel shows it
 // (prTerminalService). A click on a terminal's notification shows that terminal in the panel and gives it focus.

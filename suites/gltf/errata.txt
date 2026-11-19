@@ -1,0 +1,9 @@
+# The cases in which lib/gltf is right and the asset is wrong. An entry is its cases, one on each line, then the
+# reason, indented: the rule that the asset breaks.
+
+AnimationPointerUVs/glTF-Binary/AnimationPointerUVs.glb
+AnimationPointerUVs/glTF/AnimationPointerUVs.gltf
+    Its animation has two channels with the pointer
+    /materials/18/pbrMetallicRoughness/metallicRoughnessTexture/extensions/KHR_texture_transform/rotation, among
+    others, which KHR_animation_pointer forbids: different channels of one animation must not have identical pointers.
+    lib/gltf refuses the asset as InvalidData.

@@ -4,6 +4,7 @@
 #include "pr/ascii.h"
 #include "pr/float.h"
 #include "pr/gpu.h"
+#include "pr/image_texture_source.h"
 #include "pr/string_ops.h"
 #include "pr/time.h"
 #include "pr/url.h"
@@ -30,7 +31,7 @@ struct MediaTask {
     void (*run)(MediaTask* task);
     PrStringView event;                   // an event to fire, or the null view
     PrStringView after;                   // an event to fire after `event`, or the null view
-    RawArray<PrHtmlPlayPromise> promises;
+    RawArray<PrHtmlPromise> promises;
 
     // The DOMException that the promises are rejected with, or the null view to resolve them.
     PrStringView rejection;
@@ -40,14 +41,14 @@ struct MediaTask {
 };
 
 // Releases the promises without settling them.
-void releasePromises(RawArray<PrHtmlPlayPromise>* promises) {
+void releasePromises(RawArray<PrHtmlPromise>* promises) {
     for (uint32_t i = 0; i < promises->count; ++i)
         promises->data[i].release(promises->data[i].context);
     promises->reset();
 }
 
-void settle(RawArray<PrHtmlPlayPromise>* promises, PrStringView rejection) {
-    RawArray<PrHtmlPlayPromise> taken = *promises;
+void settle(RawArray<PrHtmlPromise>* promises, PrStringView rejection) {
+    RawArray<PrHtmlPromise> taken = *promises;
     *promises = {};
     for (uint32_t i = 0; i < taken.count; ++i) {
         taken.data[i].settle(taken.data[i].context, rejection);
@@ -243,14 +244,14 @@ void closeResource(HtmlMedia* media) {
     media->playableEnd = kPrF64Infinity;
     media->seekWaits = false;
     media->decoder = nullptr;
-    prDrawImageRelease(media->frame);
+    prTextureSourceRelease(media->frame);
     media->frame = nullptr;
     media->frameSerial = 0;
 }
 
 // Returns the image that the video shows: its poster frame while no video data is available, or while it is paused with
 // the show poster flag set, if it has a poster frame. Otherwise the frame at its playback position.
-const PrDrawImage* PR_NULLABLE pictureOf(const HtmlMedia* media) {
+const PrTextureSource* PR_NULLABLE pictureOf(const HtmlMedia* media) {
     bool data = media->frame != nullptr && media->readyState >= PrHtmlMediaReadyState_HaveCurrentData;
     if (!data || (media->showPoster && media->paused && media->poster != nullptr))
         return media->poster;
@@ -268,18 +269,9 @@ bool decodeFrame(HtmlMedia* media) {
     // The page draws on the CPU, so it keeps a copy of the frame's texels as an image.
     PrGpuImportPixels pixels{};
     if (frame.serial != media->frameSerial && prGpuImportLock(&frame.image, &pixels)) {
-        PrDrawImageDesc desc{
-            .pixels = pixels.pixels,
-            .format = PrPixelFormat_Bgra8,
-            .alpha = PrDrawAlpha_Premultiplied,
-            .space = PrColorSpace_Srgb,
-        };
-        const PrDrawImage* image = nullptr;
-        if (prDrawImageCreate(&desc, &image) == PrStatus_Ok) {
-            prDrawImageRelease(media->frame);
-            media->frame = image;
-            media->frameSerial = frame.serial;
-        }
+        prTextureSourceRelease(media->frame);
+        media->frame = prTextureSourceCreateCopy(pixels.pixels, PrPixelFormat_Bgra8, PrTextureAlpha_Premultiplied);
+        media->frameSerial = frame.serial;
         prGpuImportUnlock(&frame.image);
     }
     return frame.current;
@@ -289,10 +281,10 @@ bool decodeFrame(HtmlMedia* media) {
 // frame's (html/#concept-video-intrinsic-width).
 void showPicture(HtmlMedia* media) {
     DomElementState* state = domElementState(media->element);
-    const PrDrawImage* picture = pictureOf(media);
+    const PrTextureSource* picture = pictureOf(media);
     PrUVec2 natural{media->videoWidth, media->videoHeight};
     if ((natural.x == 0 || natural.y == 0) && media->poster != nullptr)
-        natural = prDrawImageExtent(media->poster);
+        natural = prTextureSourceDesc(media->poster)->extent;
     PrDomImageState image = PrDomImageState_Unavailable;
     if (natural.x != 0 && natural.y != 0)
         image = PrDomImageState_CompletelyAvailable;
@@ -300,11 +292,9 @@ void showPicture(HtmlMedia* media) {
             state->naturalHeight == natural.y)
         return;
     if (picture != nullptr)
-        prDrawImageRetain(picture);
-    prDrawImageRelease(state->picture);
-    prDrawImageRelease(state->storedPicture);
+        prTextureSourceRetain(picture);
+    prTextureSourceRelease(state->picture);
     state->picture = picture;
-    state->storedPicture = nullptr;
     state->orientation = PrImageOrientation_Identity;
     state->image = image;
     state->naturalWidth = natural.x;
@@ -333,9 +323,9 @@ void posterFetched(void* PR_NULLABLE data, const DomFetchResult* result) {
     const PrImageCodecSet* images = media->window != nullptr ? media->window->images : nullptr;
     if (fetch->generation == media->posters && images != nullptr && domFetchIsOk(result)) {
         PrByteView bytes = prStringBytes(domFetchText(result));
-        const PrDrawImage* poster = nullptr;
-        if (prDrawImageCreateFromBytes(images, bytes, &poster, nullptr) == PrStatus_Ok) {
-            prDrawImageRelease(media->poster);
+        const PrTextureSource* poster = nullptr;
+        if (prImageTextureSourceOpenBytes(bytes, images, nullptr, PrImageTextureColor_Srgb, &poster) == PrStatus_Ok) {
+            prTextureSourceRelease(media->poster);
             media->poster = poster;
             pictureChanged(media);
             showPicture(media);
@@ -347,7 +337,7 @@ void posterFetched(void* PR_NULLABLE data, const DomFetchResult* result) {
 // Fetches the poster frame that the poster attribute names (html/#attr-video-poster), and drops the last one.
 void updatePoster(HtmlMedia* media) {
     ++media->posters;
-    prDrawImageRelease(media->poster);
+    prTextureSourceRelease(media->poster);
     media->poster = nullptr;
     pictureChanged(media);
     PrStringView source = domAttributeValue(media->element, "poster");
@@ -824,7 +814,7 @@ void initializePlayback(HtmlMedia* media) {
 // dropped when it ends.
 void resetPlayback(HtmlMedia* media) {
     closeResource(media);
-    prDrawImageRelease(media->poster);
+    prTextureSourceRelease(media->poster);
     media->poster = nullptr;
     ++media->posters;
     releasePromises(&media->promises);
@@ -1077,7 +1067,7 @@ bool htmlMediaEnded(HtmlMedia* media) {
         domAttribute(media->element, PrDomNamespace_None, "loop") == nullptr;
 }
 
-void htmlMediaPlay(HtmlMedia* media, const PrHtmlPlayPromise& promise) {
+void htmlMediaPlay(HtmlMedia* media, const PrHtmlPromise& promise) {
     if (media->error == PrHtmlMediaError_SrcNotSupported) {
         promise.settle(promise.context, "NotSupportedError");
         promise.release(promise.context);
@@ -1214,7 +1204,7 @@ void htmlMediaSourceTracksChanging(HtmlMedia* media) {
     media->source = nullptr;
     prMediaDecoderDestroy(media->decoder);
     media->decoder = nullptr;
-    prDrawImageRelease(media->frame);
+    prTextureSourceRelease(media->frame);
     media->frame = nullptr;
     media->frameSerial = 0;
 }

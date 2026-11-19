@@ -132,6 +132,20 @@ PrKitDockNode prKitDockSplit(PrKitDock* dock, PrKitDockNode leaf, PrKitDockEdge 
 // one child is replaced by that child. Returns true if the dock held the panel.
 bool prKitDockRemovePanel(PrKitDock* dock, PrKitDockPanelId panel);
 
+// Adds `panel`, which the dock does not hold, to `leaf` as its preview, and opens it. A leaf has at most one preview: a
+// panel that the user is looking at in passing, as a file chosen in a list, whose tab the next preview takes over. The
+// new preview takes the place of the leaf's preview, which leaves the dock. Returns that panel, which the application
+// frees, or zero if the leaf had none. A preview's title shows in italics.
+PrKitDockPanelId prKitDockAddPreview(PrKitDock* dock, PrKitDockNode leaf, PrKitDockPanelId panel);
+
+// Returns true if `panel`'s tab is a preview. A preview is kept, and is a preview no longer, when the application keeps
+// it (prKitDockKeep), when the user double-clicks its tab, or when it reports unsaved changes.
+bool prKitDockIsPreview(const PrKitDock* dock, PrKitDockPanelId panel);
+void prKitDockKeep(PrKitDock* dock, PrKitDockPanelId panel);
+
+// Opens the tab of `panel` in its leaf. A panel that the dock does not hold changes nothing.
+void prKitDockOpenPanel(PrKitDock* dock, PrKitDockPanelId panel);
+
 // Moves `panel` to tab `at` of `leaf`, or to the end if `at` is past it, and opens it.
 void prKitDockMoveToTab(PrKitDock* dock, PrKitDockPanelId panel, PrKitDockNode leaf, uint32_t at);
 
@@ -145,26 +159,37 @@ void prKitDockMoveToEdge(PrKitDock* dock, PrKitDockPanelId panel, PrKitDockEdge 
 // zero gives each child an equal share.
 void prKitDockSplitSetWeights(PrKitDock* dock, PrKitDockNode split, const float* weights, uint32_t count);
 
+// Closes `panel`'s tab as its close control does: the next build removes it and reports it among the panels that the
+// user closed (prKitDockRemoved). A panel that the dock does not hold changes nothing. The caller asks for the frame
+// that builds the dock again.
+void prKitDockClosePanel(PrKitDock* dock, PrKitDockPanelId panel);
+
 // Opens tab `index` of `leaf`. An index past the last tab changes nothing.
 void prKitDockLeafSetActiveTab(PrKitDock* dock, PrKitDockNode leaf, uint32_t index);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Dock views
 
-// What a panel's tab shows. The title stays valid until the frame commits.
+// What a panel's tab shows. The strings stay valid until the frame commits.
 typedef struct PrKitDockTab {
     PrStringView title;
+    PrStringView tooltip;           // what the tab's tooltip says, such as where the panel's content is; empty for none
     bool dirty;                     // the panel has unsaved changes
 } PrKitDockTab;
 
 // Returns what `panel`'s tab shows.
 typedef PrKitDockTab (*PrKitDockDescribeFn)(void* PR_NULLABLE context, PrKitDockPanelId panel);
 
-// The content of a dock's view: the dock's model, and the function that says what each panel's tab shows.
+// Creates the items of the context menu of `panel`'s tab under `menu` (prKitMenuItem), while the menu is open.
+typedef void (*PrKitDockMenuFn)(void* PR_NULLABLE context, PrKitDockPanelId panel, PrLayoutNode menu);
+
+// The content of a dock's view: the dock's model, the function that says what each panel's tab shows, and the function
+// that fills the context menu of a tab, which a tab has only if it is set. Both receive `context`.
 typedef struct PrKitDockView {
     PrUiKey key;
     PrKitDock* dock;
     PrKitDockDescribeFn describe;
+    PrKitDockMenuFn PR_NULLABLE menu;
     void* PR_NULLABLE context;
 } PrKitDockView;
 
@@ -177,17 +202,23 @@ typedef struct PrKitDockPane {
 } PrKitDockPane;
 
 // Applies the rearrangements that the last build staged, then creates the dock under `parent`: a split for each split,
-// and for each leaf its strip of tabs, titled by `describe`, and the content box of its open panel. A panel's content
-// box keeps its node, and so its subtree, as the panel moves between leaves. The round's input stages a tab's close,
-// and a drop of a dragged tab on another leaf's tabs or content, or near an edge of a leaf or of the dock. While a tab
-// is in flight, the overlay previews its drop (prUiOverlay). The dock's nodes are keyed under the dock's own, so docks
-// in one tree never collide. Returns the dock's box.
+// and for each leaf its strip of tabs, titled by `describe`, and the content box of its open panel. A strip that holds
+// more tabs than fit scrolls them, by the wheel and to show a tab as it opens, and has a control at its end that lists
+// its tabs to open one. A panel's content box keeps its node, and so its subtree, as the panel moves between leaves.
+// The round's input stages a tab's close, and a drop of a dragged tab on another leaf's tabs or content, or near an
+// edge of a leaf or of the dock. While a tab is in flight, the overlay previews its drop (prUiOverlay). The dock's
+// nodes are keyed under the dock's own, so docks in one tree never collide. Returns the dock's box.
 PrLayoutNode prKitDockBuild(PrKit* kit, PrLayoutNode parent, PrKitDockView view);
 
 // Return the number of panes that the last build declared, one for each leaf with an open panel, and pane `index`, in
 // tree order. The panes are valid until the dock's next build.
 uint32_t prKitDockPaneCount(const PrKitDock* dock);
 PrKitDockPane prKitDockPane(const PrKitDock* dock, uint32_t index);
+
+// Return the number of panels that the user closed, which the last build removed as it applied what the build before it
+// staged, and the panel at `index`. The application frees what it held for them.
+uint32_t prKitDockRemovedCount(const PrKitDock* dock);
+PrKitDockPanelId prKitDockRemoved(const PrKitDock* dock, uint32_t index);
 
 #if defined(__cplusplus)
 }

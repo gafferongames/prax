@@ -5,8 +5,9 @@ if (PR_JS)
     add_library(page_host STATIC page_host.cpp)
     target_include_directories(page_host PUBLIC ${PROJECT_SOURCE_DIR})
     pr_font_bundle_resources(page_host Standard14 Complete)
-    target_link_libraries(page_host PUBLIC prax::compress_select prax::image_select prax::draw_select prax::app
-                                           prax::audio prax::draw prax::layout prax::media
+    target_link_libraries(page_host PUBLIC prax::compress_select prax::image_select prax::texture prax::app prax::audio
+                                           prax::draw prax::draw_select prax::layout
+                                           prax::media
                                     PRIVATE prax::core_quickjs_cpp prax::html_quickjs
                                             prax::svg_quickjs prax::mathml_quickjs prax::url_quickjs
                                             prax::xhr_quickjs

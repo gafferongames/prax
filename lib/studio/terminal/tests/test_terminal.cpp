@@ -1446,15 +1446,31 @@ TEST_CASE("terminal: a terminal that has no title is named for its program, with
 }
 
 TEST_CASE("terminal: a terminal of no program runs the user's shell") {
+    // On Windows, the shell is cmd. The echoed command does not contain the number that it computes.
+#if defined(_WIN32)
     Term t("", {});
     t.focus();
     t.f.frame();
-    // The echoed command does not contain the number that it computes. On Windows, the shell is cmd.
-#if defined(_WIN32)
     t.f.type("set /a 6*7");
     t.f.key(PrAppKey_Enter);
     t.frameUntil([&] { return t.shows("\n42\n"); });
 #else
+    // The shell reads startup files of the test's own, which set its prompt, from a home of the test's own, and the
+    // command is typed once the prompt shows: a shell may set its terminal up after it reads its startup files, and
+    // drop what was typed before.
+    String home = subfolder("home-user-shell");
+    writeFile(concat(home, "/.zshrc"), "PS1='ready$ '\n");
+    writeFile(concat(home, "/.bash_profile"), "PS1='ready$ '\n");
+    String homeVariable = concat("HOME=", home);
+    String zdotdirVariable = concat("ZDOTDIR=", home);
+    PrStringView environment[] = {homeVariable, zdotdirVariable, "BASH_SILENCE_DEPRECATION_WARNING=1"};
+    auto setup = [&](PrTerminalDesc* desc) {
+        desc->environment = environment;
+        desc->environmentCount = uint32_t(countOf(environment));
+    };
+    Term t("", {}, nullptr, {}, setup);
+    t.focus();
+    t.frameUntil([&] { return t.shows("ready$"); });
     t.f.type("echo shell-$((6 * 7))");
     t.f.key(PrAppKey_Enter);
     t.frameUntil([&] { return t.shows("shell-42"); });

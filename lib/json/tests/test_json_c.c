@@ -5,7 +5,7 @@ int prTestJsonCApi(void);
 // The public headers compile as C. An array's element reads back, and the array writes back.
 int prTestJsonCApi(void) {
     PrJson* document = prJsonCreate();
-    int result = !prJsonParse(document, PR_SV("[1, \"two\"]"), NULL);
+    int result = !prJsonParse(document, PR_SV("[1, \"two\"]"), 0, NULL);
     result |= prJsonKind(document, 0) != PrJsonKind_Array;
     result |= prJsonString(document, prJsonElement(document, 0, 1)).size != 3;
     result |= prJsonMember(document, 0, PR_SV("x")) != kPrJsonMissing;

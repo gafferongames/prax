@@ -5,6 +5,7 @@
 #include "pr/assert.h"
 #include "pr/kit_box.h"
 #include "pr/kit_image.h"
+#include "pr/kit_menu.h"
 #include "pr/layout_query.h"
 #include "pr/layout_unit.h"
 
@@ -51,6 +52,14 @@ constexpr float kHeaderHeight = 22;
 // apart from the next.
 constexpr float kRowGap = 4;               // the second step of the spacing scale
 constexpr float kColumnGap = 12;           // the sixth step of the spacing scale
+
+// The width in px of the grip at the end of a table's heading, which the user drags to set the column's width, and the
+// least width that a drag leaves a column.
+constexpr float kGripWidth = 6;
+constexpr float kLeastColumn = 16;
+
+// The key of a table's retained state (TableState) on its frame.
+constexpr uint64_t kTableStateKey = KitStateKey_Collection;
 
 // What a row is.
 enum {
@@ -220,11 +229,15 @@ struct ColumnBox {
     static constexpr PrLayoutGroup kKind = PrLayoutGroup_Box;
     float width;
     bool fills;
-    uint8_t _pad[3];
+    bool positioned;                // a heading, which places its grip
+    uint8_t _pad[2];
 
     void make(const PrKit&, PrLayoutBoxStyle& box) const {
         box.display = PrLayoutDisplay_Flex;
+        box.boxSizing = PrLayoutBoxSizing_BorderBox;
         box.overflowX = box.overflowY = PrLayoutOverflow_Clip;
+        if (positioned)
+            box.position = PrLayoutPosition_Relative;
         if (fills)
             box.minWidth = prLayoutLengthPx(width);
         else
@@ -254,6 +267,22 @@ struct ColumnFlex {
     }
 };
 PR_NO_PADDING_END
+
+// The grip at the end of a heading: a band as tall as the heading, with a rule at its end that shows while the pointer
+// is over it or drags it.
+struct GripBox {
+    static constexpr PrLayoutGroup kKind = PrLayoutGroup_Box;
+    void make(const PrKit&, PrLayoutBoxStyle& box) const {
+        box.display = PrLayoutDisplay_Block;
+        box.boxSizing = PrLayoutBoxSizing_BorderBox;
+        box.position = PrLayoutPosition_Absolute;
+        box.inset[PrRectSide_Top] = prLayoutLengthPx(0);
+        box.inset[PrRectSide_Bottom] = prLayoutLengthPx(0);
+        box.inset[PrRectSide_Right] = prLayoutLengthPx(0);
+        box.width = prLayoutLengthPx(kGripWidth);
+        box.border[PrRectSide_Right] = prLayoutUnitFromPx(2);
+    }
+};
 
 // The port of a table's header, which follows the rows' sideways scroll.
 struct HeaderPortBox {
@@ -295,8 +324,36 @@ struct ContentFlex {
 };
 PR_NO_PADDING_END
 
+// What a table keeps from round to round: the widths that the user set, or 0, and the widest heading or cell that a Fit
+// column measured since the rows last changed in number, which is `count`.
+struct TableState {
+    float user[kPrKitTableMaxColumns];
+    float fit[kPrKitTableMaxColumns];
+    uint32_t count;
+};
+
+// A column as a round lays it out: its width in px, the least for a column that fills, and its share of the room.
+struct ColumnWidth {
+    float width;
+    float weight;                   // above zero for a column that fills
+};
+
+// Returns the width that a column takes in a round, from what the user set and what it measured.
+ColumnWidth columnWidth(const PrKitTableColumn& c, float user, float fit) {
+    if (user > 0)
+        return ColumnWidth{.width = user};
+    if (c.size == PrKitColumnSize_Fill)
+        return ColumnWidth{.width = c.width, .weight = c.weight > 0 ? c.weight : 1};
+    if (c.size != PrKitColumnSize_Fit)
+        return ColumnWidth{.width = c.width};
+    float width = fit > c.width ? fit : c.width;
+    if (c.maxWidth > 0 && width > c.maxWidth)
+        width = c.maxWidth;
+    return ColumnWidth{.width = width};
+}
+
 // Returns the width of a table's rows with every column at its least width.
-float tableMinWidth(const PrKitTableColumn* columns, uint32_t count) {
+float tableMinWidth(const ColumnWidth* columns, uint32_t count) {
     float width = kSelectionBar + kRowInset * 2;
     for (uint32_t i = 0; i < count; ++i)
         width += columns[i].width + (i != 0 ? kColumnGap : 0);
@@ -304,11 +361,20 @@ float tableMinWidth(const PrKitTableColumn* columns, uint32_t count) {
 }
 
 // Creates a column's heading or cell under `parent`.
-PrLayoutNode columnElement(PrKit* kit, PrLayoutNode parent, uint64_t key, const PrKitTableColumn& c) {
-    bool fills = c.flex == PrKitFlex_Fill;
-    ColumnFlex flex{.weight = fills ? (c.weight > 0 ? c.weight : 1) : 0, .align = c.align};
-    ColumnBox box{.width = c.width, .fills = fills};
+PrLayoutNode columnElement(PrKit* kit, PrLayoutNode parent, uint64_t key, ColumnWidth c, PrKitTextAlign align) {
+    ColumnFlex flex{.weight = c.weight, .align = align};
+    ColumnBox box{.width = c.width, .fills = c.weight > 0};
     return prLayoutTreeFrameElement(kit->tree, parent, kitKey(*kit, parent, key), kitStyle(*kit, box, flex));
+}
+
+// Returns the width in px that the content of a heading or a cell took at the last layout, from its start to the end of
+// `last`, its last child, which a cell's clip does not shrink. Returns 0 for content that was not laid out.
+float contentWidth(const PrKit& kit, PrLayoutNode cell, PrLayoutNode last) {
+    PrLayoutRect box = prLayoutNodeBounds(kit.tree, cell, PrLayoutCoordinates_Layout);
+    PrLayoutRect content = prLayoutNodeBounds(kit.tree, last, PrLayoutCoordinates_Layout);
+    if (content.right <= content.left)
+        return 0;
+    return prLayoutUnitToPx(content.right - box.left);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -332,7 +398,10 @@ PrKitSelectionEdit moveLead(PrKitSelection& selection, uint32_t count, uint32_t 
 // Returns the edit that a click on row `index` makes with `modifiers`, and moves the cursor to the row.
 PrKitSelectionEdit clickEdit(PrKitSelection& selection, uint32_t index, PrAppModifierFlags modifiers) {
     bool extend = (modifiers & PrAppModifierFlag_Shift) != 0;
-    bool toggle = (modifiers & (PrAppModifierFlag_Super | PrAppModifierFlag_Control)) != 0;
+    PrAppModifierFlags toggles = PrAppModifierFlag_Super | PrAppModifierFlag_Control;
+    if (kKitControlClickIsContext)
+        toggles = PrAppModifierFlag_Super;
+    bool toggle = (modifiers & toggles) != 0;
     if (extend) {
         uint32_t first = selection.anchor < index ? selection.anchor : index;
         uint32_t last = selection.anchor < index ? index : selection.anchor;
@@ -376,7 +445,7 @@ constexpr ViewKey kTreeKeys[] = {{PrAppKey_Left, true}, {PrAppKey_Right, true}};
 // Finds the key, among those that the view claims, that the round routed to the view, and whether Shift was held.
 // Claims every key for the next round. A tree and a grid claim Left and Right too. Returns false if the round routed
 // none.
-bool viewKey(PrUi* ui, PrLayoutNode view, bool sideways, PrAppKey* key, bool* shift) {
+bool viewKey(PrUi* ui, PrLayoutNode view, bool sideways, bool opens, PrAppKey* key, bool* shift) {
     bool found = false;
     auto claim = [&](PrAppKey k, PrAppModifierFlags modifiers) {
         if (prUiKeyPressed(ui, view, k, modifiers) && !found) {
@@ -396,6 +465,8 @@ bool viewKey(PrUi* ui, PrLayoutNode view, bool sideways, PrAppKey* key, bool* sh
             claim(k.key, PrAppModifierFlag_Shift);
         }
     }
+    if (opens)
+        claim(PrAppKey_Enter, 0);
     // Select all is A with the accelerator modifier, which is Command or Control.
     if (prUiKeyPressed(ui, view, 'A', PrAppModifierFlag_Super) ||
             prUiKeyPressed(ui, view, 'A', PrAppModifierFlag_Control)) {
@@ -489,6 +560,8 @@ struct View {
     PrKitSelection* PR_NULLABLE selection;
     const PrKitTreeItem* PR_NULLABLE items;
     const PrKitTableColumn* PR_NULLABLE columns;
+    TableState* PR_NULLABLE table;      // a table's state, which its cells' measures raise
+    ColumnWidth widths[kPrKitTableMaxColumns];
     uint64_t dragKind;
     uint32_t columnCount;
     uint32_t first;
@@ -499,9 +572,23 @@ struct View {
     PrKitSelectionEdit edit;
     PrKitTreeFold fold;
     PrKitTreeDrop drop;
+    uint32_t opened;                // the row that Enter or a double click opened, or kPrKitRowNone
+    bool opens;
+    bool revealsLead;               // the view scrolls its lead's row into view in this round
+    bool clickFolds;
     bool folded;
     bool sorted;
 };
+
+// Raises what a table's Fit column measured to `width` px, the width that a heading or a cell of it took at the last
+// layout, and asks for the frame that lays the column out at its new width.
+void tableMeasure(PrKit& kit, View& v, uint32_t column, float width) {
+    if (v.table == nullptr || v.columns[column].size != PrKitColumnSize_Fit || width <= v.table->fit[column])
+        return;
+    v.table->fit[column] = width;
+    if (width > v.widths[column].width)
+        prUiRequestFrame(kit.ui);
+}
 
 // Returns the context of the view that `view` names. Rows are created under the view itself.
 View& viewOf(PrKit& kit, PrLayoutNode view) {
@@ -575,7 +662,11 @@ PrLayoutNode listView(PrKit& kit, PrLayoutNode parent, PrUiKey key, uint32_t cou
     PrAppKey pressed = PrAppKey_Unknown;
     bool shift = false;
     bool sideways = v.items != nullptr || style.tileWidth > 0;
-    if (v.selection != nullptr && viewKey(ui, view, sideways, &pressed, &shift) && count != 0) {
+    v.opened = kPrKitRowNone;
+    bool keyed = v.selection != nullptr && viewKey(ui, view, sideways, v.opens, &pressed, &shift) && count != 0;
+    if (keyed && pressed == PrAppKey_Enter) {
+        v.opened = v.selection->lead < count ? v.selection->lead : kPrKitRowNone;
+    } else if (keyed) {
         uint32_t page = uint32_t(port / rowHeight);
         page = page > 1 ? page : 1;
         PrKitTreeFold fold{.row = kPrKitRowNone};
@@ -584,14 +675,18 @@ PrLayoutNode listView(PrKit& kit, PrLayoutNode parent, PrUiKey key, uint32_t cou
             v.fold = fold;
             v.folded = true;
         }
-        // Scrolls by the smallest amount that shows the lead's row, which the window then holds.
-        if (v.edit.op != PrKitSelectionOp_None && measured) {
-            float top = rowHeight * float(v.selection->lead / tiles);
-            float to = top < offset ? top : top + rowHeight > offset + port ? top + rowHeight - port : offset;
-            if (to != offset) {
-                offset = to;
-                prLayoutNodeSetScroll(tree, view, PrLayoutVec{scroll.x, prLayoutUnitFromPx(offset)});
-            }
+    }
+    // Scrolls by the smallest amount that shows the lead's row, which the window then holds: after a key moved the
+    // lead, or if the caller asks for it.
+    bool moved = keyed && v.edit.op != PrKitSelectionOp_None && measured;
+    bool revealed = v.revealsLead && v.selection != nullptr && v.selection->lead < count;
+    if (moved || revealed) {
+        float top = rowHeight * float(v.selection->lead / tiles);
+        float to = top < offset ? top : top + rowHeight > offset + port ? top + rowHeight - port : offset;
+        to = to < maxOffset ? to : maxOffset;
+        if (to != offset) {
+            offset = to;
+            prLayoutNodeSetScroll(tree, view, PrLayoutVec{scroll.x, prLayoutUnitFromPx(offset)});
         }
     }
 
@@ -633,10 +728,14 @@ PrLayoutNode tileThumbnail(PrKit& kit, PrLayoutNode tile, PrColor tint) {
     return prLayoutTreeFrameElement(kit.tree, tile, 0, kitStyle(kit, ThumbBox{}, ThumbFlex{}, background));
 }
 
-// Applies a click on the node of row or tile `index` to the view's selection.
+// Applies a click on the node of row or tile `index` to the view's selection. The second click of a double click opens
+// the row of a view whose rows open.
 void applyClick(PrKit& kit, View& v, uint32_t index, PrLayoutNode node) {
-    if (v.selection != nullptr && prUiClicked(kit.ui, node, 0))
-        v.edit = clickEdit(*v.selection, index, pointerModifiers(kit.ui, node));
+    if (v.selection == nullptr || !prUiClicked(kit.ui, node, 0))
+        return;
+    v.edit = clickEdit(*v.selection, index, pointerModifiers(kit.ui, node));
+    if (v.opens && prUiPressCount(kit.ui, 0) >= 2)
+        v.opened = index;
 }
 
 // Creates the element of a view's row, keyed by `item` under the view's content, and indented by `indent` px, and
@@ -701,7 +800,7 @@ void prKitSelectionApply(const PrKitSelectionEdit* edit, bool* selected, uint32_
 
 PrLayoutNode prKitListView(PrKit* kit, PrLayoutNode parent, PrKitListView list, PrKitListViewStyle style) {
     PrKit& k = *kit;
-    View v{.selection = list.selection};
+    View v{.selection = list.selection, .opens = list.opens, .revealsLead = list.revealsLead};
     PrLayoutNode view = listView(k, parent, list.key, list.count, style, ViewShape{.place = style.place}, v);
     kitProvide<View>(k, view, KitContext_View) = v;
     return view;
@@ -718,6 +817,14 @@ bool prKitSelectionEdited(const PrKit* kit, PrLayoutNode view, PrKitSelectionEdi
     if (v == nullptr || v->edit.op == PrKitSelectionOp_None)
         return false;
     *edit = v->edit;
+    return true;
+}
+
+bool prKitRowOpened(const PrKit* kit, PrLayoutNode view, uint32_t* row) {
+    const View* v = findView(*kit, view);
+    if (v == nullptr || v->opened == kPrKitRowNone)
+        return false;
+    *row = v->opened;
     return true;
 }
 
@@ -827,7 +934,14 @@ PrLayoutNode prKitEmptyState(PrKit* kit, PrLayoutNode parent, PrKitEmptyState em
 PrLayoutNode prKitTreeView(PrKit* kit, PrLayoutNode parent, PrKitTreeView tree, PrKitListViewStyle style) {
     PR_ASSERT(tree.items != nullptr || tree.count == 0);
     PrKit& k = *kit;
-    View v{.selection = tree.selection, .items = tree.items, .dragKind = tree.dragKind};
+    View v{
+        .selection = tree.selection,
+        .items = tree.items,
+        .dragKind = tree.dragKind,
+        .opens = tree.opens,
+        .revealsLead = tree.revealsLead,
+        .clickFolds = tree.clickFolds,
+    };
     PrLayoutNode view = listView(k, parent, tree.key, tree.count, style, ViewShape{.place = style.place}, v);
     kitProvide<View>(k, view, KitContext_View) = v;
     return view;
@@ -841,7 +955,9 @@ PrLayoutNode prKitTreeRow(PrKit* kit, PrLayoutNode view, PrKitRow row) {
     const PrKitTreeItem& place = v.items[row.index];
     PrLayoutNode disclosure = kPrLayoutNodeNone;
     PrLayoutNode node = rowOf(kit, v, row, &disclosure);
-    if (place.hasChildren && prUiActivated(ui, disclosure)) {
+    // A plain click on a row of a view that folds on a click folds the row, as its disclosure does.
+    bool clicked = v.clickFolds && prUiClicked(ui, node, 0) && pointerModifiers(ui, node) == 0;
+    if (place.hasChildren && (prUiActivated(ui, disclosure) || clicked)) {
         v.fold = PrKitTreeFold{.row = row.index, .open = !place.open};
         v.folded = true;
     }
@@ -900,26 +1016,74 @@ PrLayoutNode prKitTable(PrKit* kit, PrLayoutNode parent, PrKitTable table, PrKit
     box.overflow = PrKitOverflow_Clip;
     box.place = style.place;
     PrLayoutNode frame = prKitBox(kit, parent, {.key = table.key}, box);
-    float minWidth = tableMinWidth(table.columns, table.columnCount);
+    PR_ASSERT(table.columnCount <= kPrKitTableMaxColumns);
+    TableState& state = kitState<TableState>(k, frame, kTableStateKey);
+    // A Fit column measures again once the rows change in number, as when the table shows other rows.
+    if (state.count != table.count) {
+        state.count = table.count;
+        for (float& fit : state.fit)
+            fit = 0;
+    }
+    View v{
+        .selection = table.selection,
+        .columns = table.columns,
+        .table = &state,
+        .columnCount = table.columnCount,
+        .revealsLead = table.revealsLead,
+    };
+    for (uint32_t i = 0; i < table.columnCount; ++i)
+        v.widths[i] = columnWidth(table.columns[i], state.user[i], state.fit[i]);
+    float minWidth = tableMinWidth(v.widths, table.columnCount);
 
     // The header sits above the rows' scroll container, and takes its sideways scroll from it below.
     PrLayoutNode header = prLayoutTreeFrameElement(tree, frame, 0, kitStyle(k, HeaderPortBox{}, KitFixed{}));
     PrLayoutStyleIndex headings = kitStyle(k, RowBox{.height = kHeaderHeight, .indent = kRowInset, .minWidth = minWidth},
         RowFlex{.kind = RowKind_Header}, RowFill{.kind = RowKind_Header});
     PrLayoutNode row = prLayoutTreeFrameElement(tree, header, 0, headings);
-    View v{.selection = table.selection, .columns = table.columns, .columnCount = table.columnCount};
     PrKitTableSort* sort = table.sort;
+    const PrKitPalette& p = k.theme.palette;
     for (uint32_t i = 0; i < table.columnCount; ++i) {
         const PrKitTableColumn& c = table.columns[i];
-        PrLayoutNode heading = columnElement(kit, row, 0, c);
+        ColumnBox headingBox{.width = v.widths[i].width, .fills = v.widths[i].weight > 0, .positioned = true};
+        ColumnFlex headingFlex{.weight = v.widths[i].weight, .align = c.align};
+        PrLayoutNode heading = prLayoutTreeFrameElement(tree, row, 0, kitStyle(k, headingBox, headingFlex));
         bool sorted = sort != nullptr && sort->column == i;
         PrKitTone tone = sorted ? PrKitTone_Primary : PrKitTone_Muted;
-        PrKitTextStyle labelStyle{.role = PrKitTextRole_Caption, .tone = tone};
-        prKitLabel(kit, heading, {.text = c.label}, labelStyle);
+        PrKitTextStyle labelStyle{.role = PrKitTextRole_Caption, .tone = tone, .wrap = PrKitWrap_Nowrap};
+        PrLayoutNode last = prKitLabel(kit, heading, {.text = c.label}, labelStyle);
         if (sorted) {
             PrStudioIconKind chevron = sort->descending ? PrStudioIconKind_ChevronDown : PrStudioIconKind_ChevronUp;
-            prKitIcon(kit, heading, {.icon = chevron}, {.size = kChevronSize, .tone = PrKitTone_Muted});
+            last = prKitIcon(kit, heading, {.icon = chevron}, {.size = kChevronSize, .tone = PrKitTone_Muted});
         }
+        tableMeasure(k, v, i, contentWidth(k, heading, last) + kGripWidth);
+
+        // The grip at the heading's end sets the column's width by a drag, and gives the column its own width again by
+        // a double click.
+        PrLayoutNode grip = prLayoutTreeFrameElement(tree, heading, 0, 0);
+        bool disabled = kitSetFlags(k, grip, PrUiFlag_Pressable);
+        bool lit = !disabled && (prUiIsHovered(ui, grip) || prUiIsPressed(ui, grip, 0));
+        KitColors rule{.background = PrColor{0, 0, 0, 0}, .border = lit ? p.accent : PrColor{0, 0, 0, 0}};
+        prLayoutTreeFrameSetStyle(tree, grip, kitStyle(k, GripBox{}, rule));
+        if (!disabled)
+            prUiSetCursor(ui, grip, PrAppCursor_ResizeX);
+        PrUiDrag drag{};
+        if (prUiDrag(ui, grip, 0, 0, &drag) && !drag.cancelled && drag.delta.x != 0) {
+            float from = state.user[i] > 0 ? state.user[i] : kitExtent(k, heading).x;
+            PrVec2 start{drag.position.x - drag.delta.x, drag.position.y};
+            PrVec2 a{};
+            PrVec2 b{};
+            float motion = drag.delta.x;
+            if (prUiLocalPoint(ui, row, start, &a) && prUiLocalPoint(ui, row, drag.position, &b))
+                motion = b.x - a.x;
+            float to = from + motion;
+            state.user[i] = to > kLeastColumn ? to : kLeastColumn;
+            prUiRequestFrame(ui);
+        }
+        if (prUiClicked(ui, grip, 0) && prUiPressCount(ui, 0) >= 2) {
+            state.user[i] = 0;
+            prUiRequestFrame(ui);
+        }
+
         if (!c.sortable || sort == nullptr)
             continue;
         if (!kitSetFlags(k, heading, PrUiFlag_Pressable))
@@ -952,14 +1116,20 @@ PrLayoutNode prKitTableRow(PrKit* kit, PrLayoutNode table, PrKitTableRow row) {
 }
 
 PrLayoutNode prKitTableCell(PrKit* kit, PrLayoutNode row, PrKitTableCell cell) {
-    const View* v = kitContext<View>(*kit, row, KitContext_View);
+    View* v = kitContext<View>(*kit, row, KitContext_View);
     PR_ASSERT(v != nullptr && v->columns != nullptr && cell.column < v->columnCount);
-    PrLayoutNode node = columnElement(kit, row, 0, v->columns[cell.column]);
+    PrLayoutNode node = columnElement(kit, row, 0, v->widths[cell.column], v->columns[cell.column].align);
+    PrLayoutNode last = kPrLayoutNodeNone;
     if (cell.icon != PrStudioIconKind_None)
-        prKitIcon(kit, node, {.icon = cell.icon}, {.size = kRowIconSize, .tone = PrKitTone_Muted});
+        last = prKitIcon(kit, node, {.icon = cell.icon}, {.size = kRowIconSize, .tone = PrKitTone_Muted});
     if (cell.text.size != 0) {
         PrKitTextStyle textStyle{.role = cell.role, .tone = cell.tone, .wrap = PrKitWrap_Nowrap};
-        prKitLabel(kit, node, {.text = cell.text}, textStyle);
+        last = prKitLabel(kit, node, {.text = cell.text}, textStyle);
+        // A cell that its column clips shows its whole text in a tooltip.
+        if (prKitIsClipped(kit, last, node))
+            prKitTooltip(kit, node, {.text = cell.text});
     }
+    if (last != kPrLayoutNodeNone)
+        tableMeasure(*kit, *v, cell.column, contentWidth(*kit, node, last));
     return node;
 }

@@ -5,6 +5,7 @@
 
 #include "pr/draw_renderer.h"
 #include "pr/gpu.h"
+#include "pr/texture_cache.h"
 
 #include <vector>
 
@@ -18,15 +19,20 @@ struct RendererConfig {
     const char* PR_NONNULL name;
     PrDrawRenderer* PR_NONNULL renderer;
     const char* PR_NONNULL familyName;
-    uint32_t family;            // the family's position among the families, from 0
+    uint32_t family;                     // the family's position among the families, from 0
+    PrTextureCache* PR_NONNULL textures; // on the renderer's device, which the lists it draws realize images in
 };
 
 // Creates each renderer in each configuration worth comparing, and the image codec that they read bitmap glyphs with.
 // Renderers that render on a device render on `device`, a device of prGpuDeviceCreate that outlives them. Without a
-// device, those renderers are left out.
-std::vector<RendererConfig> createConfigs(PrGpuDevice* PR_NULLABLE device);
+// device, those renderers are left out. The renderers that render in memory share a memory device. Each device has a
+// texture cache, which realizes in the call that asks (PrTextureCacheDesc), so that a list recorded for a renderer
+// draws its images at once, and packs them as `pack` says.
+std::vector<RendererConfig> createConfigs(PrGpuDevice* PR_NULLABLE device,
+    PrTextureCachePack pack = PrTextureCachePack_Auto);
 
-// Destroys the configurations' renderers, then the codecs and glyph decoders that createConfigs made.
+// Destroys the configurations' renderers, then the codecs, glyph decoders, caches and the memory device that
+// createConfigs made.
 void destroyConfigs(std::vector<RendererConfig>& configs);
 
 // Returns the configuration that the viewer opens on: the fragment renderer's default configuration, or the first

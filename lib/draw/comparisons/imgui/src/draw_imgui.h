@@ -5,13 +5,13 @@
 #pragma once
 
 #include "pr/base.h"
-#include "pr/draw_image.h"
 #include "pr/draw_list.h"
 #include "pr/draw_renderer.h"
 #include "pr/draw_renderer_backend.h"
 #include "pr/font.h"
 #include "pr/pixels.h"
 #include "pr/raw_array.h"
+#include "pr/texture.h"
 
 #include "imgui.h"
 
@@ -40,9 +40,6 @@ struct ImGuiFrame : PrDrawFrame {
     ImGuiBackend* renderer;
     ImDrawData data;
 };
-
-// Writes the image's pixels as Dear ImGui's renderer blends them: Rgba8 with straight alpha.
-void imguiImagePixels(const PrDrawImage* image, PrPixels pixels);
 
 // Deletes the draw lists that the frame holds. The backend's context is current.
 void imguiFrameClear(ImGuiFrame* frame);

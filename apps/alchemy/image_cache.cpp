@@ -8,6 +8,8 @@
 #include "pr/file.h"
 #include "pr/function.h"
 #include "pr/image_process.h"
+#include "pr/image_texture_source.h"
+#include "pr/mem.h"
 #include "pr/string.h"
 
 namespace alchemy {
@@ -22,7 +24,7 @@ struct ScaleCache {
 // A cache of decoded images for each scale, whose loads decode on the pool.
 struct ImageCache {
     PrTaskPool* pool;
-    PrImageCodecSet* codec;
+    const PrImageCodecSet* codec;
     Function<void()> wake;
     ScaleCache scales[2];               // by ImageScale
 };
@@ -44,13 +46,13 @@ struct Decode {
 void runDecode(void* PR_NULLABLE context) {
     Decode* decode = static_cast<Decode*>(context);
     ImageCache* images = decode->scale->images;
-    const PrDrawImage* image = nullptr;
+    const PrTextureSource* image = nullptr;
     if (BlobRef file = BlobRef::adopt(prFileOpen(decode->path))) {
         image = imageDecode(images->codec, file.bytes().data, file.bytes().size);
         if (image != nullptr && decode->scale->scale == ImageScale_Thumbnail) {
-            const PrDrawImage* full = image;
+            const PrTextureSource* full = image;
             image = imageShrink(full, kThumbnailMaxEdge);
-            prDrawImageRelease(full);
+            prTextureSourceRelease(full);
         }
     }
     prCacheLoadFinish(decode->load, image);
@@ -64,7 +66,7 @@ void* startDecode(void* PR_NULLABLE context, PrStringView path, PrCacheLoad* loa
 }
 
 void releaseImage(void* PR_NULLABLE, const void* image) {
-    prDrawImageRelease(static_cast<const PrDrawImage*>(image));
+    prTextureSourceRelease(static_cast<const PrTextureSource*>(image));
 }
 
 void wakeOwner(void* PR_NULLABLE context) {
@@ -75,7 +77,7 @@ void wakeOwner(void* PR_NULLABLE context) {
 
 } // namespace
 
-ImageCache* imageCacheCreate(PrTaskPool* pool, PrImageCodecSet* codec, Function<void()> wake) {
+ImageCache* imageCacheCreate(PrTaskPool* pool, const PrImageCodecSet* codec, Function<void()> wake) {
     ImageCache* images = new ImageCache();
     images->pool = pool;
     images->codec = codec;
@@ -105,8 +107,8 @@ void imageCacheDestroy(ImageCache* PR_NULLABLE cache) {
     delete cache;
 }
 
-const PrDrawImage* PR_NULLABLE imageCacheGet(ImageCache* cache, PrStringView path, ImageScale scale) {
-    return static_cast<const PrDrawImage*>(prCacheValue(cache->scales[scale].cache, path));
+const PrTextureSource* PR_NULLABLE imageCacheGet(ImageCache* cache, PrStringView path, ImageScale scale) {
+    return static_cast<const PrTextureSource*>(prCacheValue(cache->scales[scale].cache, path));
 }
 
 bool imageCacheFailed(ImageCache* cache, PrStringView path, ImageScale scale) {
@@ -125,46 +127,62 @@ bool imageCachePump(ImageCache* cache) {
     return landed;
 }
 
-const PrDrawImage* PR_NULLABLE imageDecode(PrImageCodecSet* codec, const void* bytes, size_t size) {
-    const PrDrawImage* image = nullptr;
+const PrTextureSource* PR_NULLABLE imageDecode(const PrImageCodecSet* codec, const void* bytes, size_t size) {
+    const PrTextureSource* image = nullptr;
     PrByteView view{static_cast<const uint8_t*>(bytes), size};
-    if (prDrawImageCreateFromBytes(codec, view, &image, nullptr) != PrStatus_Ok)
+    if (prImageTextureSourceOpenBytes(view, codec, nullptr, PrImageTextureColor_Srgb, &image) != PrStatus_Ok)
         return nullptr;
     return image;
 }
 
-const PrDrawImage* imageShrink(const PrDrawImage* image, uint32_t maxEdge) {
-    PrUVec2 extent = prDrawImageExtent(image);
-    PrPixelFormat format = prDrawImageFormat(image);
-    // An image in half floats holds extended sRGB, which a shrunk copy would have to carry, so only 8-bit images
-    // shrink.
-    bool shrinkable = format == PrPixelFormat_Rgba8 || format == PrPixelFormat_Bgra8;
-    if (!shrinkable || (extent.x <= maxEdge && extent.y <= maxEdge)) {
-        prDrawImageRetain(image);
+bool imageReadRgba8(const PrTextureSource* image, PrTextureAlpha alpha, PrPixels out) {
+    PrTextureConvertDesc convert = prTextureConvertDescDefault(PrGpuFormat_Rgba8);
+    if (prTextureSourceDesc(image)->alpha != PrTextureAlpha_None)
+        convert.alpha = alpha;
+    const PrTextureSource* chain = prTextureSourceCreateConvert(image, &convert);
+    PrTextureReadDesc first{.levelCount = 1, .layerCount = 1};
+    PrTextureRead* read = prTextureReadCreate(chain, &first);
+    prTextureReadWait(read);
+    bool ok = prTextureReadStatus(read) == PrStatus_Ok;
+    if (ok) {
+        size_t row = size_t(out.extent.x) * 4;
+        for (uint32_t y = 0; y < out.extent.y; ++y)
+            prMemCopy(out.data + y * out.stride, prTextureReadStorage(read) + y * row, row);
+    }
+    prTextureReadDestroy(read);
+    prTextureSourceRelease(chain);
+    return ok;
+}
+
+const PrTextureSource* imageShrink(const PrTextureSource* image, uint32_t maxEdge) {
+    const PrTextureDesc& desc = *prTextureSourceDesc(image);
+    PrUVec2 extent = desc.extent;
+    // An image of floats holds extended sRGB, which a shrunk copy would have to carry, so only 8-bit images shrink.
+    PrGpuFormat stored = prGpuFormatPlain(desc.format);
+    if (stored != PrGpuFormat_Rgba8 || (extent.x <= maxEdge && extent.y <= maxEdge)) {
+        prTextureSourceRetain(image);
         return image;
     }
     uint32_t pixelSize = 4;
-    PrPixelView above = prDrawImagePixels(image);
-    Array<uint8_t> level;
+    Array<uint8_t> level(size_t(extent.x) * extent.y * pixelSize);
+    if (!imageReadRgba8(image, PrTextureAlpha_Premultiplied, PrPixels{level.data(), extent.x * pixelSize, extent})) {
+        prTextureSourceRetain(image);
+        return image;
+    }
+    PrPixelView above{level.data(), extent.x * pixelSize, extent};
     while (above.extent.x > maxEdge || above.extent.y > maxEdge) {
         PrUVec2 next{above.extent.x > 1 ? above.extent.x / 2 : 1, above.extent.y > 1 ? above.extent.y / 2 : 1};
         Array<uint8_t> below(size_t(next.x) * next.y * pixelSize);
-        prImageMipLevel(above, PrPixels{below.data(), next.x * pixelSize, next}, format);
+        prImageMipLevel(above, PrPixels{below.data(), next.x * pixelSize, next}, PrPixelFormat_Rgba8);
         level = move(below);
         above = PrPixelView{level.data(), next.x * pixelSize, next};
     }
-    PrDrawImageDesc desc{
-        .pixels = above,
-        .format = format,
-        .alpha = prDrawImageAlpha(image),
-        .space = PrColorSpace_Srgb,
-    };
-    const PrDrawImage* shrunk = nullptr;
-    if (prDrawImageCreate(&desc, &shrunk) != PrStatus_Ok) {
-        prDrawImageRetain(image);
-        return image;
-    }
-    return shrunk;
+    // The thumbnail keeps its pixels, which nothing makes again, and shows as the image's orientation displays it.
+    bool opaque = desc.alpha == PrTextureAlpha_None;
+    PrTextureDesc shrunk = prTextureDesc2d(PrGpuFormat_Rgba8, above.extent,
+        PrTextureAlpha(opaque ? PrTextureAlpha_None : PrTextureAlpha_Premultiplied));
+    shrunk.orientation = desc.orientation;
+    return prTextureSourceCreatePixels(&shrunk, above);
 }
 
 } // namespace alchemy

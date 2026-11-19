@@ -43,7 +43,7 @@ struct Editor {
             openText(s, text, name);
         else
             openDocument(s, "");
-        f.build = [this](PrLayoutNode root) { buildScribe(s, root, PrVec2{800, 600}); };
+        f.build = [this](PrLayoutNode root) { buildScribe(s, root); };
         settle();
     }
 
@@ -132,8 +132,9 @@ constexpr PrAppModifierFlags kCommand = kPrCommandPrimaryModifier;
 
 TEST_CASE("the text sits below the menu bar and above the status line, and takes focus") {
     Editor e("hello");
-    CHECK(e.s.menuHeight > 0);
-    CHECK(e.portBox().top == doctest::Approx(double(e.s.menuHeight)));
+    PrRect menuBar = e.f.bounds(prLayoutNodeFirstChild(e.f.tree, e.f.root));
+    CHECK(menuBar.bottom > menuBar.top);
+    CHECK(e.portBox().top >= menuBar.bottom);
     CHECK(e.portBox().bottom < 600);
     e.type("x");
     CHECK(e.text() == "xhello");
@@ -203,7 +204,7 @@ TEST_CASE("the first terminal starts in the document's workspace, and a new one 
     REQUIRE(prFileWrite(path, prStringBytes("notes\n")));
     Editor e("");
     REQUIRE(openDocument(e.s, path));
-    prTextEditorShow(e.s.editor, prTextEditorDocumentFromPath(e.s.editor, path));
+    prTextEditorShow(e.s.editor, prTextEditorDocumentFromPath(e.s.editor, path), true);
     e.settle();
     // Returns the working directory of the terminal at `index`.
     auto directory = [&](uint32_t index) {
@@ -443,7 +444,7 @@ TEST_CASE("the View menu sets each line's direction, from the choice or from its
 
 #if defined(SCRIBE_HAS_TREESITTER)
 
-TEST_CASE("a file's extension chooses its language, whose captures color the text, and edits recolor it") {
+TEST_CASE("a file's classification chooses its language, whose captures color the text, and edits recolor it") {
     Editor e("int main(void) {\n    return 0; // done\n}\n", "main.c");
     const PrSyntaxLanguage* language = prTextEditorDocumentLanguage(e.document());
     REQUIRE(language != nullptr);
@@ -509,7 +510,7 @@ TEST_CASE("Save waits for the load to finish") {
     REQUIRE(prFileWrite(path, prStringBytes(program)));
     Editor e("");
     REQUIRE(openDocument(e.s, path));
-    prTextEditorShow(e.s.editor, prTextEditorDocumentFromPath(e.s.editor, path));
+    prTextEditorShow(e.s.editor, prTextEditorDocumentFromPath(e.s.editor, path), true);
     e.f.frame();
     if (prTextEditorDocumentInfo(e.document()).loading) {
         uint32_t index = prCommandRegistryFind(e.s.commands, "file.save");

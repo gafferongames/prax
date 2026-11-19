@@ -232,6 +232,26 @@ typedef uint8_t PrHtmlViewEventResult;
 // The events that the view fires are trusted.
 PrHtmlViewEventResult prHtmlViewEvent(PrHtmlView* view, const PrAppEvent* event, PrHtmlViewEventFlags flags);
 
+// How a scroll that the documents' containers did not take is measured.
+enum {
+    PrHtmlViewOverscrollUnit_Pixels,    // `amount` is in CSS pixels
+    PrHtmlViewOverscrollUnit_Pages,     // a page of the host's scroller, in the direction of `amount` on each axis
+    PrHtmlViewOverscrollUnit_End,       // the end of the host's scroller, in the direction of `amount` on each axis
+};
+typedef uint8_t PrHtmlViewOverscrollUnit;
+
+// What a scroll asked of the containers around the view that no scroll container of its documents took.
+typedef struct PrHtmlViewOverscroll {
+    PrVec2 amount;
+    PrHtmlViewOverscrollUnit unit;
+} PrHtmlViewOverscroll;
+
+// Returns the part of the scroll of the last event that prHtmlViewEvent routed, by the wheel or by a key, that no
+// scroll container of the view's documents took, or a zero amount if the event scrolled nothing or all of it was taken.
+// A host that shows the document in a scroller of its own, as one that paints it through prHtmlViewPainter does,
+// scrolls that scroller by it.
+PrHtmlViewOverscroll prHtmlViewOverscrolled(const PrHtmlView* view);
+
 // Pass what a host's window gives the view from the window's thread, which is the compositor's, to the agent's thread.
 // Each is applied in a task of the agent: an event as prHtmlViewEvent dispatches it, with a copy of its text; a frame's
 // extent, display and preferences as prHtmlViewSetViewport, prHtmlViewSetDisplay and prHtmlViewSetUserPreferences set

@@ -8,11 +8,11 @@
 #pragma once
 
 #include "pr/base.h"
-#include "pr/draw_image.h"
 #include "pr/function.h"
 #include "pr/image.h"
 #include "pr/string.h"
 #include "pr/task.h"
+#include "pr/texture.h"
 
 #include <stdint.h>
 
@@ -37,12 +37,12 @@ struct ImageCache;
 
 // Creates a cache that decodes on `pool` with `codec`, which must outlive it, and calls `wake` from the pool's threads
 // when a decode lands. Freeing waits for the decodes in flight.
-ImageCache* imageCacheCreate(PrTaskPool* pool, PrImageCodecSet* codec, Function<void()> wake);
+ImageCache* imageCacheCreate(PrTaskPool* pool, const PrImageCodecSet* codec, Function<void()> wake);
 void imageCacheDestroy(ImageCache* PR_NULLABLE cache);
 
 // Returns the image of the file at `path` at `scale`, or null while it decodes or if it cannot be decoded. The first
 // request starts the decode. The image stays valid until the next pump.
-const PrDrawImage* PR_NULLABLE imageCacheGet(ImageCache* cache, PrStringView path, ImageScale scale);
+const PrTextureSource* PR_NULLABLE imageCacheGet(ImageCache* cache, PrStringView path, ImageScale scale);
 
 // Returns true if the file at `path` could not be decoded.
 bool imageCacheFailed(ImageCache* cache, PrStringView path, ImageScale scale);
@@ -55,11 +55,15 @@ void imageCacheForget(ImageCache* cache, PrStringView path);
 bool imageCachePump(ImageCache* cache);
 
 // Returns an image decoded from `bytes`, which the caller releases, or null if the codec cannot read them.
-const PrDrawImage* PR_NULLABLE imageDecode(PrImageCodecSet* codec, const void* bytes, size_t size);
+const PrTextureSource* PR_NULLABLE imageDecode(const PrImageCodecSet* codec, const void* bytes, size_t size);
+
+// Reads the first level of the image as Rgba8 with `alpha`, or opaque for an opaque image, into `out` of its extent.
+// Returns false if the image does not read.
+bool imageReadRgba8(const PrTextureSource* image, PrTextureAlpha alpha, PrPixels out);
 
 // Returns a copy of `image` halved until it fits `maxEdge`, which the caller releases, or a new reference to `image` if
 // it already fits or is not in 8 bits.
-const PrDrawImage* imageShrink(const PrDrawImage* image, uint32_t maxEdge);
+const PrTextureSource* imageShrink(const PrTextureSource* image, uint32_t maxEdge);
 
 } // namespace alchemy
 

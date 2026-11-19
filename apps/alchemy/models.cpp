@@ -154,7 +154,7 @@ bool architecturesConflict(ModelArchitecture a, ModelArchitecture b) {
 ModelArchitecture architectureFromHeader(PrStringView headerJson) {
     PrJson* d = prJsonCreate();
     ModelArchitecture arch = ModelArchitecture_Unknown;
-    if (prJsonParse(d, headerJson, nullptr) && prJsonKind(d, 0) == PrJsonKind_Object) {
+    if (prJsonParse(d, headerJson, 0, nullptr) && prJsonKind(d, 0) == PrJsonKind_Object) {
         PrJsonValueIndex meta = prJsonMember(d, 0, "__metadata__");
         arch = fromModelSpec(prJsonString(d, prJsonMember(d, meta, "modelspec.architecture")));
         if (arch == ModelArchitecture_Unknown)

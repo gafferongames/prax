@@ -381,6 +381,14 @@ float kitPressFactor(PrKit& kit, PrLayoutNode node);
 // its own coordinates, which positions from prUiLocalPoint are measured in.
 PrVec2 kitExtent(const PrKit& kit, PrLayoutNode node);
 
+// True where a click with Control is the platform's secondary click, as on macOS, so that it opens a context menu and
+// never toggles a selection.
+#if defined(__APPLE__)
+inline constexpr bool kKitControlClickIsContext = true;
+#else
+inline constexpr bool kKitControlClickIsContext = false;
+#endif
+
 // Returns the height in px of a control of `size`.
 float kitControlHeight(PrKitControlSize size);
 

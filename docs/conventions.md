@@ -56,7 +56,7 @@ tools/harness/                    code shared by the harnesses, the tools and th
   nothing in core is a subject of its own. The toolkit holds general-purpose data structures and algorithms. A
   facility with its own domain, such as JSON or task scheduling, is a module.
 - A type that has a subject lives in that subject's module, however small, together with its operations. Color values
-  are in `lib/color`, rectangles and transforms in `lib/geom`, and locales in `lib/locale`. The build assumes COMDAT
+  are in `lib/color`, rectangles, boxes and transforms in `lib/geom`, and locales in `lib/locale`. The build assumes COMDAT
   folding, so functions that a consumer does not call add nothing to its binary.
 - An interface module defines a record of functions and the dispatch over it. It also holds the types that those
   operations take and return, as `lib/app` holds displays and user preferences. Its library includes each backend that

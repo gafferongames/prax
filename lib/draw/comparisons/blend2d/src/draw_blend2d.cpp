@@ -370,10 +370,10 @@ void endPaint(Renderer& r, const PrDrawCommand&) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Images
 
-// Returns a Blend2D image of the image's pixels, premultiplied BGRA. It is created once and kept for as long as renders
-// use it.
-const BLImageCore* imageOf(Blend2dBackend* b2, const PrDrawImage* image) {
-    uint64_t id = prDrawImageId(image);
+// Returns a Blend2D image of the texels of a Texture source's texture, premultiplied BGRA. It is created once and kept
+// for as long as renders use it, as a texture that renders draw does not change while they draw it.
+const BLImageCore* PR_NULLABLE imageOf(Blend2dBackend* b2, const PrDrawSource& source) {
+    uint64_t id = source.texture.id;
     uint32_t found = b2->imageIndex.find(id, [&](uint32_t i) { return b2->images.data[i].id; });
     if (found != kHashMissing) {
         b2->images.data[found].lastUsed = b2->render;
@@ -383,20 +383,21 @@ const BLImageCore* imageOf(Blend2dBackend* b2, const PrDrawImage* image) {
     CachedImage& cached = b2->images.emplace();
     cached = CachedImage{id, {}, b2->render};
     bl_image_init(&cached.image);
-    uint32_t width = prDrawImageExtent(image).x;
-    uint32_t height = prDrawImageExtent(image).y;
-    bl_image_create(&cached.image, int(width), int(height), BL_FORMAT_PRGB32);
+    PrUVec2 extent = source.extent;
+    bl_image_create(&cached.image, int(extent.x), int(extent.y), BL_FORMAT_PRGB32);
     BLImageData data{};
     bl_image_make_mutable(&cached.image, &data);
-    PrPixels pixels{static_cast<uint8_t*>(data.pixel_data), size_t(data.stride), {width, height}};
-    prDrawImageWritePixels(image, pixels, PrPixelFormat_Bgra8, PrIVec2{0, 0});
+    PrPixels pixels{static_cast<uint8_t*>(data.pixel_data), size_t(data.stride), extent};
+    PrDrawSource whole = source;
+    whole.rect = PrRect{0, 0, float(extent.x), float(extent.y)};
+    drawMemoryReadSource(b2->device, whole, PrPixelFormat_Bgra8, pixels);
     b2->imageIndex.insert(id, index);
     return &cached.image;
 }
 
 // Returns the image of an image source, or null for a list source.
 const BLImageCore* PR_NULLABLE sourceImage(Renderer& r, const PrDrawSource& source) {
-    return source.kind == PrDrawSourceKind_Image ? imageOf(r.b2, source.image) : nullptr;
+    return source.kind == PrDrawSourceKind_Texture ? imageOf(r.b2, source) : nullptr;
 }
 
 // Returns Blend2D's extend mode for a tile mode on each axis. None extends in the same way as Pad.
@@ -803,7 +804,7 @@ void writePixels(Renderer& r, const PrDrawCommand& c) {
     if (r.pixels == nullptr)
         return;
     bl_context_flush(&r.targets.data[0]->context, BL_CONTEXT_FLUSH_SYNC);
-    prDrawImageWritePixels(c.writePixels.image, *r.pixels, PrPixelFormat_Bgra8, c.writePixels.origin);
+    drawMemoryWriteSource(r.b2->device, c.writePixels.source, *r.pixels, PrPixelFormat_Bgra8, c.writePixels.origin);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

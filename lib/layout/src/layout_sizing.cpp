@@ -69,6 +69,16 @@ bool layoutBlockReadsBase(const LayoutLogicalBox& logical, LayoutAutoSize autoSi
 PrLayoutUnit layoutContentBlockSize(const LayoutStyles* styles, const PrLayoutBoxStyle& box,
         const LayoutLogicalBox& logical, const LayoutBlockAxis& axis,
         PrLayoutUnit percentBlock, bool clamps, PrLayoutUnit content, PrLayoutUnit grown) {
+    // A box with size containment in its block axis is sized there as if it had no content, or content of its
+    // contain-intrinsic block size (css-contain-2/#containment-size, css-sizing-4/#intrinsic-size-override).
+    if (box.containBlock) {
+        PrLayoutLength intrinsic = logical.containIntrinsicBlockSize;
+        PrLayoutUnit contained = kLayoutUnitZero;
+        if (layoutLengthIsFixed(intrinsic) && !layoutLengthReadsBase(intrinsic))
+            contained = layoutUnitMax(kLayoutUnitZero, layoutResolve(styles, intrinsic, kLayoutUnitZero));
+        content = contained + axis.edges;
+        grown = content;
+    }
     PrLayoutUnit size = layoutIsDefinite(axis.size) ? axis.size : content;
     if (clamps)
         size = layoutClampSize(styles, box, size, logical.minBlockSize, logical.maxBlockSize, percentBlock, axis.edges,

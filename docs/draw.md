@@ -51,10 +51,12 @@ with no private fast path. A `const` list may be rendered by several backends at
 - **A paint is a color or a brush.** A brush carries its own opacity. A command stores the color that its brush
   multiplies, per component: the paint's color, or white at the brush's opacity. So a backend paints a brush times the
   command's color, and opacity without a group is that color's alpha.
-- **Images are brushes.** An image is a shape filled with an image brush (`prDrawBrushImage`). A source is either
-  texels or an area of a list rendered once at the target scale.
-- **Every source samples the same way.** Its kind (an image, a host texture, a list, a projected group's layer)
+- **Images are brushes.** An image is a shape filled with an image brush (`prDrawBrushImage`). A source is an image's
+  texels, a host's texture, or an area of a list rendered once at the target scale.
+- **Every source samples the same way.** Its kind (an image, a host's texture, a list, a projected group's layer)
   decides only where its texture comes from. Each is then a texture with its own mip levels, sampled by one path.
+  A level that a renderer or the cache makes is filtered in linear light, decoded from the encoded values, averaged
+  and encoded again, since every texel in lib/draw is encoded color.
   Mipmap sampling is anisotropic: the level comes from the minor axis of the pixel's footprint, and up to 16 taps
   spread along its major axis, so a plane seen at a steep angle stays sharp across it. A sampling with
   `PrDrawSamplingFlag_Gutter` lets a backend sample the whole texture, so filtering reads the texels around a
@@ -66,6 +68,45 @@ with no private fast path. A `const` list may be rendered by several backends at
   its two ends. Pad keeps which end a point lies past, so past the end is the last stop's color while 1 itself is the
   gradient's. Stops mix premultiplied, as CSS mixes them, or with color and alpha interpolated separately
   (`interpolationAlpha`), as SVG mixes them. In the second case, a stop next to transparent black mixes toward black.
+
+## Images
+
+A drawn image is a texture source (`PrTextureSource`, [texture.md](texture.md)) and the rect of its texels that the
+image occupies. An Image source (`prDrawSourceImage`) names it, and the list holds a reference to the source. A Texture
+source (`prDrawSourceTexture`) names a GPU texture of the host's instead, such as a 3D view's color.
+
+- **A list is of no device.** Its images are sources, so one list draws on any renderer: a GPU frame, the CPU renderer
+  making a thumbnail of the same content, or a canvas whose bitmap moves to the CPU renderer for a readback. A list
+  that names a host's texture draws only on that texture's device, which is the host's choice.
+- **A renderer realizes its images through the host's texture cache** (`PrDrawRendererOptions::textures`), a cache on
+  the renderer's device that lib/render and Studio's views share, so one image is one texture whoever samples it.
+  lib/draw never opens, decodes or schedules an image, and implements no caching: it asks the cache for each image as
+  a frame draws it, for every channel, with levels for Mipmap sampling, as color. The CPU renderer's cache is on a
+  memory device, whose textures are texels in memory, so one path serves every renderer.
+- **lib/draw samples encoded values.** Colors in lib/draw are encoded extended sRGB, so a renderer samples an 8-bit
+  texture through its plain form (`PrTexture::plain`), whatever form its source states, and encodes the linear values
+  of a float texture as it samples them. Its asks are of color, so the levels that the cache makes are filtered in
+  linear light, though lib/draw reads them encoded ([texture.md](texture.md#the-texture-cache)). The CPU renderer
+  reads opaque and premultiplied texels of Rgba8 and half floats in place, and converts any others for each render.
+- **lib/draw samples either alpha.** A texture is opaque, straight or premultiplied as its source is
+  (`PrTexture::alpha`). `fragment` premultiplies straight texels after filtering; `triangles` samples as it can
+  ([`triangles` departures](#backends)).
+- **An image that has not arrived draws nothing**, and the frame reports that it drew without it
+  (`PrDrawFrameInfo::pending`). The cache calls the host's `arrived` as it arrives, and the host draws again. A render
+  that must be whole, as a capture, a canvas's bitmap or a test, waits for its images (`PrDrawTarget::wait`). No
+  producer waits, polls or records again for an image: its list already names the source.
+- **The host keeps a host texture alive and unchanged** until the frames that draw it are done. A frame retains a
+  texture while it draws it. The cache keeps an image's region while anything holds its source, and a list holds its
+  images' sources.
+- **Atlases are the cache's.** A renderer packs no images of its own and copies no texture: the cache decides which
+  images share a page, and lib/draw samples a region's rect alone, whether it spans the texture or is a slot of a page.
+- **Orientation is the producer's.** A texture carries none. A producer that shows an image upright turns the brush
+  (`prDrawBrushImageUpright`) as the image's source states its orientation, and sizes the image by its displayed extent
+  (`prTextureDescDisplayedExtent`).
+- **Glyphs that are images are pictures of their sources.** A glyph decoder decodes a glyph's image into a source, and
+  its picture names the source as any list does.
+- **A writer reads its images' sources** and embeds the texels of the rects that they draw. A host texture that a page
+  draws is read from a memory device (`PrDrawWriterOptions::device`).
 
 ## Coverage and compositing
 
@@ -207,16 +248,18 @@ lowers both kinds to lists. Hinting applies only under a plain scale, and shapin
   `texelFetch`). Blends that the API does not support read the destination through framebuffer fetch or a copy.
   Filters are passes into half-float layers. Instance colors and ramps are half floats, so one record layout serves
   8-bit and half-float targets; a frame for an 8-bit target clamps them. Images, lists rendered as sources and projected
-  groups' layers are textures with real mip levels that the device generates, and the hardware's samplers filter them:
+  groups' layers are textures with real mip levels that the device generates as encoded color
+  (`PrGpuMipFilter_Srgb`), and the hardware's samplers filter them:
   nearest, linear, trilinear and anisotropic for mipmaps, and cubic as nine bilinear samples. Tile modes are the
   samplers' address modes, and the shader places each point within its tile. Copies that are filtered on their own
   (`PrDrawTileFlag_Clamped`) are sampled as one tile that extends by Pad, at the point moved into its copy. A tiled
   sub-rectangle without a gutter,
-  and an opaque host texture whose taps can land on no texel, read texels in the shader instead. Straight-alpha host
-  textures are premultiplied after filtering, so the colors of their transparent texels bleed into their edges. A
+  and an opaque texture whose taps can land on no texel, read texels in the shader instead. Straight-alpha textures
+  are premultiplied after filtering, so the colors of their transparent texels bleed into their edges. A
   projected group composites as one quad that samples its layer through the projection. On a device without bindless,
   each kind of texture that an instance reads has a slot of its own, an image's slot holds its sampler, and a run of
-  instances takes a new draw where the texture or the sampler in a slot changes.
+  instances takes a new draw where the texture or the sampler in a slot changes. An image's texture is the cache's
+  realization of its source, sampled through its plain form, and a texture of floats is encoded in the shader.
 
 A device backend is a GPU-free builder that turns a list into a frame of plain data, plus one renderer that draws the
 frame on a `lib/gpu` device. The fragment renderer defines its records once, in a header that C++ and Slang share
@@ -265,8 +308,8 @@ done for one platform alone is a cost in its numbers, not only in its code.
 - Shadow bands fall off linearly, drop shadows are not cut by the caster, and the opening edges of inner shadows are
   aliased.
 - Image brushes tile by the sampler of the horizontal mode, without spacing, and filter across the copies' edges
-  whatever their flags. Host textures are sampled as straight
-  alpha.
+  whatever their flags. Textures are sampled as straight alpha: a premultiplied texture's texels are divided by their
+  alpha after filtering. A texture of floats is sampled as its linear values, unencoded.
 - Sub-pixel strokes are a pixel wide, faded by their width.
 - Unrotated, unskewed glyphs at moderate sizes come from the atlas at quarter-pixel phase, and other glyphs are filled
   as paths.
@@ -320,9 +363,10 @@ Each is rasterized once, with the coverage that the uncached fill would have. An
   format) records uploads and offscreen passes into the host's command buffer. Rendering draws into a rectangle of a
   pass that the host opened, over what the pass holds. Several lists may share a pass.
 - Every backend is created over a `lib/gpu` device. The target's `commands` and the render's pass are the device's
-  (`PrGpuCommands`, `PrGpuPass`), which may wrap the host's native ones, and a host texture is a `PrDrawTextureId`
-  that names a texture of the device (`prDrawGpuTexture`). A backend may destroy what it creates as soon
-  as the work that uses it is recorded, and the device keeps it until that work is done.
+  (`PrGpuCommands`, `PrGpuPass`), which may wrap the host's native ones. A host's texture that a list samples is a
+  `PrTexture` of the device, and one that a group draws into, or that lies beneath a render, is a `PrGpuTexture` of
+  it. A backend may destroy what it creates as soon as the work that uses it is recorded, and the device keeps it until
+  that work is done.
 - A backdrop is provided at prepare time as a texture or a redraw function. Otherwise, what lies beneath is
   transparent.
 - The backends that draw on the CPU render on a memory device (`PrGpuNativeKind_Pixels`), such as the memory and
@@ -337,8 +381,8 @@ Each is rasterized once, with the coverage that the uncached fill would have. An
 - There is no global device state, and a backend never assumes that it is the device's only user.
 - A device renderer belongs to the native device that its driver was made on. When the device is lost (`pr/gpu.h`),
   the host destroys the renderer with the device and makes one on the new device, whose first prepare makes again what
-  it draws with from the list's resources. Dropping resources (`prDrawRendererDropResources`) frees device memory and
-  keeps the device.
+  it draws with from the list's resources, reading each image's chain again. Dropping resources
+  (`prDrawRendererDropResources`) frees device memory and keeps the device.
 - Shaders are written once, in Slang, and compiled for each API. Render tests against `cpu` keep each API's results
   in agreement.
 - What a render draws belongs to the host.
@@ -500,8 +544,8 @@ This table shows how producers' features map to commands.
 | `globalAlpha`, `globalCompositeOperation` | the paint's alpha; operator or blend mode, around the draw in a group where the operator changes what lies beneath a transparent source (`prDrawCompositeIsUnbounded`) |
 | `filter`, `shadow*` | the draw inside a group with a filter |
 | `save`, `restore` | the producer's recorder, emitting pops |
-| `drawImage`, `createPattern` | a rectangle filled with an image brush, of the pixels for a canvas |
-| `putImageData`, `getImageData` | `WritePixels`; the caller's pixels |
+| `drawImage`, `createPattern` | a rectangle filled with an image brush, upright, of a copy of the pixels for a canvas |
+| `putImageData`, `getImageData` | `WritePixels` of a copy of the data; the canvas's own pixels, read back from its target |
 | `isPointInPath`, `isPointInStroke` | the path toolkit |
 | `roundRect`, `ellipse`, `arc` | `CornerRect`, `Ellipse`, `Path` |
 | **Lottie** | |

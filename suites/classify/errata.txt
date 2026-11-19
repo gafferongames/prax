@@ -1,0 +1,8 @@
+# The cases in which lib/mime is right and the file's name is wrong. An entry is its cases, one on each line, then the
+# reason, indented: what the file holds.
+
+usd-assets/full_assets/SubdivisionSurfaces/media/Creases_SpinningPyramids_Storm.jpg
+    The file is a PNG image: it begins with PNG's signature, and its extension names JPEG.
+
+usd-assets/test_assets/USDZ/BoxAnimated/screenshot/USDView_BoxAnimated.gif
+    The file is an MP4 video: its first box is an `ftyp` with the brand isom, and its extension names GIF.

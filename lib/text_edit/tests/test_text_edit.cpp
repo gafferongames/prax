@@ -597,6 +597,21 @@ TEST_CASE("text that loads at the end stays out of the history, and keeps its st
     prTextEditBufferDestroy(b);
 }
 
+TEST_CASE("text that loads changes the version and not the edit version") {
+    PrTextEditBuffer* b = prTextEditBufferCreate("abc");
+    PrTextEditView* v = prTextEditViewCreate(b);
+    uint64_t version = prTextEditBufferVersion(b);
+    uint64_t edits = prTextEditBufferEditVersion(b);
+    PrTextEditChange load = change(3, 3, "\ndef");
+    REQUIRE(prTextEditBufferApply(b, &load, 1, PrTextEditOrigin_Load));
+    CHECK(prTextEditBufferVersion(b) > version);
+    CHECK(prTextEditBufferEditVersion(b) == edits);
+    REQUIRE(prTextEditViewInsert(v, "x", PrTextEditOrigin_Local, PrTextEditMerge_None));
+    CHECK(prTextEditBufferEditVersion(b) > edits);
+    prTextEditViewDestroy(v);
+    prTextEditBufferDestroy(b);
+}
+
 TEST_CASE("what is attached to a buffer stays safe after the buffer is destroyed") {
     PrTextEditBuffer* b = prTextEditBufferCreate("abc");
     PrTextEditView* v = prTextEditViewCreate(b);

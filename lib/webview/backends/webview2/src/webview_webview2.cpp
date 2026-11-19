@@ -333,7 +333,7 @@ void navigate(Win32Browser* b, Request& request) {
 void answer(Win32Browser* b, HRESULT error, LPCWSTR json, PrWebViewResultFn done, void* PR_NULLABLE context) {
     PrJson* document = prJsonCreate();
     PrStringView text = json != nullptr ? windowsNarrow(json, uint32_t(lstrlenW(json)), b->utf8) : PrStringView{""};
-    if (!prJsonParse(document, text, nullptr)) {
+    if (!prJsonParse(document, text, 0, nullptr)) {
         prJsonDestroy(document);
         done(context, PrStatus_InvalidData, "the engine did not answer");
         return;
@@ -430,7 +430,7 @@ void deliverCapture(Win32Browser* b, HRESULT error, LPCWSTR json, PrUVec2 size, 
     if (ok) {
         PrJson* document = prJsonCreate();
         PrStringView data;
-        if (prJsonParse(document, windowsNarrow(json, uint32_t(lstrlenW(json)), b->utf8), nullptr))
+        if (prJsonParse(document, windowsNarrow(json, uint32_t(lstrlenW(json)), b->utf8), 0, nullptr))
             data = prJsonString(document, prJsonMember(document, 0, "data"));
         else
             data = PrStringView{};
@@ -482,7 +482,7 @@ bool screenshot(Win32Browser* b, PrRect rect, PrUVec2 size, PrWebViewCaptureFn d
 // Page.getLayoutMetrics.
 bool scrollOf(Win32Browser* b, LPCWSTR json, PrVec2* out) {
     PrJson* document = prJsonCreate();
-    bool ok = prJsonParse(document, windowsNarrow(json, uint32_t(lstrlenW(json)), b->utf8), nullptr);
+    bool ok = prJsonParse(document, windowsNarrow(json, uint32_t(lstrlenW(json)), b->utf8), 0, nullptr);
     PrJsonValueIndex viewport = prJsonMember(document, 0, "cssVisualViewport");
     ok = ok && viewport != kPrJsonMissing;
     *out = PrVec2{

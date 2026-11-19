@@ -126,8 +126,10 @@ bool wantsFrame(const PrHtmlWindow* window) {
     if (htmlWindowRenderBlocked(window))
         return false;
     PrCssPresentation* presentation = presentationOf(window);
+    // A frame settles the decodes that the window waits for (htmlImagesShow).
     return window->frameRequests.count != 0 || window->revealing || window->canvases.count != 0 ||
-        htmlMediaWantsFrame(window) || awaitsRenderingSteps(window) || (presentation != nullptr &&
+        window->imageDecodes.count != 0 || htmlMediaWantsFrame(window) || awaitsRenderingSteps(window) ||
+        (presentation != nullptr &&
             (prCssPresentationIsAnimating(presentation) || cssPresentationHasWork(presentation)));
 }
 
@@ -211,6 +213,7 @@ void runFrame(PrHtmlWindow* window, double now) {
     // The canvases that the callbacks and the tasks before them drew show what they drew.
     htmlCanvasShow(window);
     htmlMediaShow(window);
+    htmlImagesShow(window);
     // Styles are computed for the frame, in the same way as when the host lays out, which starts the transitions that
     // style changes make. Computing styles does not wait for a presentation thread that is still laying out the last
     // frame.

@@ -1,6 +1,6 @@
 // The triangles renderer's shaders, as draw_triangles_frame.h specifies them: the vertex color times the texture's
-// sample. The pipeline's vertex layout reads the frame's vertices. The fragment shader samples the draw's texture,
-// which Texture slot 0 holds with its sampler.
+// sample, divided by its alpha for a texture of premultiplied texels. The pipeline's vertex layout reads the frame's
+// vertices. The fragment shader samples the draw's texture, which Texture slot 0 holds with its sampler.
 
 #include "pr/gpu.slang"
 
@@ -36,5 +36,14 @@ VertexOut trianglesVertex(Vertex v) {
 
 [shader("fragment")]
 float4 trianglesFragment(VertexOut i) : SV_Target {
+    float4 texel = drawTexture.Sample(drawTextureSampler, i.uv);
+    if (texel.a > 0)
+        texel.rgb /= texel.a;
+    return i.color * texel;
+}
+
+// The fragment shader for a host's texture of straight texels.
+[shader("fragment")]
+float4 trianglesFragmentStraight(VertexOut i) : SV_Target {
     return i.color * drawTexture.Sample(drawTextureSampler, i.uv);
 }

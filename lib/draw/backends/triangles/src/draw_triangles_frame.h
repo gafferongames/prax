@@ -44,8 +44,9 @@ typedef uint8_t TrianglesSampler;
 // over the target by source alpha and one minus source alpha, and the alpha by one and one minus source alpha. On a
 // target that holds premultiplied values, the result is premultiplied. Pixels outside `scissor` are left alone.
 struct TrianglesDraw {
-    PrDrawTextureId hostTexture;           // the host's texture, sampled as straight alpha, or zero to use `texture`
+    PrGpuTexture hostTexture;              // the host's texture, or zero to use `texture`
     uint32_t texture;                      // the number of a texture that the requests created
+    bool straight;                         // the host's texture holds straight texels, and others premultiplied
     TrianglesSampler sampler;
     PrIRect scissor;                  // within the target
     uint32_t indexOffset;
@@ -67,6 +68,7 @@ struct TrianglesTextureRequest {
     TrianglesTextureOp op;
     uint32_t texture;                       // the texture's number
     PrUVec2 origin;                         // Update: the region's top left
+
     PrPixelView texels;                     // Create: the size and the texels; Update: the region's texels
 };
 

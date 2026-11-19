@@ -26,11 +26,20 @@ struct JsonValue {
     };
 };
 
+// Where a value was read from, recorded by a parse with PrJsonParseFlag_Spans.
+struct JsonSource {
+    PrJsonSpan span;
+    PrJsonValueIndex parent;    // the array or object that holds the value, or kPrJsonMissing for the root
+    uint32_t ordinal;           // the element or member of the parent, from 0, which a key and its value share
+};
+
 // A document's values in document order, and the unescaped bytes of its strings. The value after an array or object is
 // at `index + 1 + span`.
 struct Json {
     RawArray<JsonValue> values;    // by PrJsonValueIndex
     RawArray<char> text;
+    RawArray<JsonSource> sources;  // by PrJsonValueIndex, or empty if the parse recorded no spans
+    bool hasSpans;
 };
 
 struct Reader {
@@ -38,6 +47,8 @@ struct Reader {
     size_t size;
     size_t at;
     Json* document;
+    bool spans;
+    RawArray<uint32_t> open;    // the open arrays and objects, innermost last
 };
 
 bool isSpace(char c) {
@@ -49,13 +60,22 @@ void skipSpace(Reader& r) {
         ++r.at;
 }
 
-uint32_t emit(Reader& r, PrJsonKind kind) {
+// Appends a value that begins at the byte `begin` and, if the parse records spans, ends at the reader's position. An
+// array or object moves its end once it closes.
+uint32_t emit(Reader& r, PrJsonKind kind, size_t begin) {
     uint32_t index = r.document->values.count;
     JsonValue& value = r.document->values.emplace();
     value.kind = kind;
     value.count = 0;
     value.span = 0;
     value.number = 0;
+    if (r.spans) {
+        JsonSource& source = r.document->sources.emplace();
+        source.span = PrJsonSpan{uint32_t(begin), uint32_t(r.at)};
+        source.parent = r.open.count != 0 ? r.open.last() : kPrJsonMissing;
+        // A container counts each element and member before it reads it.
+        source.ordinal = r.open.count != 0 ? r.document->values.data[r.open.last()].count - 1 : 0;
+    }
     return index;
 }
 
@@ -63,8 +83,9 @@ bool literal(Reader& r, const char* word, PrJsonKind kind) {
     PrStringView rest{r.text + r.at, r.size - r.at};
     if (!prStringStartsWith(rest, word))
         return false;
+    size_t begin = r.at;
     r.at += PrStringView(word).size;
-    emit(r, kind);
+    emit(r, kind, begin);
     return true;
 }
 
@@ -98,7 +119,7 @@ bool number(Reader& r) {
     double value = 0;
     if (!prF64ParsePrefix(PrStringView{r.text + start, r.at - start}, &value))
         return false;
-    uint32_t index = emit(r, PrJsonKind_Number);
+    uint32_t index = emit(r, PrJsonKind_Number, start);
     r.document->values.data[index].number = value;
     return true;
 }
@@ -125,7 +146,7 @@ void appendCodePoint(RawArray<char>& text, uint32_t codePoint) {
 
 // Reads a string at the reader's quote into the document's text.
 bool string(Reader& r) {
-    ++r.at;
+    size_t begin = r.at++;
     RawArray<char>& text = r.document->text;
     uint32_t offset = uint32_t(text.count);
     while (true) {
@@ -194,7 +215,7 @@ bool string(Reader& r) {
                 return false;
         }
     }
-    uint32_t index = emit(r, PrJsonKind_String);
+    uint32_t index = emit(r, PrJsonKind_String, begin);
     JsonValue& value = r.document->values.data[index];
     value.text = offset;
     value.count = uint32_t(text.count) - offset;
@@ -219,8 +240,15 @@ bool scalar(Reader& r) {
     }
 }
 
+// Records that the array or object at `index` closed at the reader's position.
+void close(Reader& r, uint32_t index) {
+    r.document->values.data[index].span = r.document->values.count - index - 1;
+    if (r.spans)
+        r.document->sources.data[index].span.end = uint32_t(r.at);
+}
+
 bool read(Reader& r) {
-    RawArray<uint32_t> open;  // the open arrays and objects, innermost last
+    RawArray<uint32_t>& open = r.open;
     bool ok = true;
     bool closed = false;
     while (ok) {
@@ -234,12 +262,11 @@ bool read(Reader& r) {
                     ok = false;
                     break;
                 }
-                open.push(emit(r, isObject ? PrJsonKind_Object : PrJsonKind_Array));
+                open.push(emit(r, isObject ? PrJsonKind_Object : PrJsonKind_Array, r.at - 1));
                 skipSpace(r);
                 if (r.at < r.size && r.text[r.at] == (isObject ? '}' : ']')) {
                     ++r.at;
-                    uint32_t index = open.data[--open.count];
-                    r.document->values.data[index].span = r.document->values.count - index - 1;
+                    close(r, open.data[--open.count]);
                     closed = true;
                     continue;
                 }
@@ -300,10 +327,9 @@ bool read(Reader& r) {
             break;
         }
         open.pop();
-        r.document->values.data[container].span = r.document->values.count - container - 1;
+        close(r, container);
         closed = true;
     }
-    open.reset();
     return ok && r.at == r.size;
 }
 
@@ -422,19 +448,25 @@ void prJsonDestroy(PrJson* PR_NULLABLE document) {
         return;
     document->values.reset();
     document->text.reset();
+    document->sources.reset();
     prMemoryFree(document);
 }
 
-bool prJsonParse(PrJson* document, PrStringView text, size_t* PR_NULLABLE errorAt) {
+bool prJsonParse(PrJson* document, PrStringView text, PrJsonParseFlags flags, size_t* PR_NULLABLE errorAt) {
     document->values.clear();
     document->text.clear();
-    Reader r{text.data, text.size, 0, document};
+    document->sources.clear();
+    Reader r{.text = text.data, .size = text.size, .document = document, .spans = (flags & PrJsonParseFlag_Spans) != 0};
     if (prStringStartsWith(text, "\xEF\xBB\xBF"))
         r.at = 3;
-    bool ok = text.size > 0 && read(r);
+    bool fits = !r.spans || text.size <= 0xffffffffu;
+    bool ok = text.size > 0 && fits && read(r);
+    r.open.reset();
+    document->hasSpans = ok && r.spans;
     if (!ok) {
         document->values.clear();
         document->text.clear();
+        document->sources.clear();
         if (errorAt != nullptr)
             *errorAt = r.at;
     }
@@ -510,6 +542,130 @@ PrJsonValueIndex prJsonAfter(const PrJson* document, PrJsonValueIndex container,
     if (document->values.data[container].kind == PrJsonKind_Object)
         next = prJsonNext(document, next);
     return next < prJsonNext(document, container) ? next : kPrJsonMissing;
+}
+
+PrStatus prJsonValueFromPointer(const PrJson* document, PrStringView pointer, PrJsonValueIndex* out) {
+    *out = kPrJsonMissing;
+    if (pointer.size != 0 && pointer.data[0] != '/')
+        return PrStatus_Syntax;
+    PrJsonValueIndex at = 0;
+    bool found = prJsonValueCount(document) != 0;
+    PrTextBuffer token = {};
+    size_t i = 0;
+    PrStatus status = PrStatus_Ok;
+    while (i < pointer.size && status == PrStatus_Ok) {
+        // The reference token after the `/` at `i`, unescaped.
+        prTextBufferClear(&token);
+        for (++i; i < pointer.size && pointer.data[i] != '/'; ++i) {
+            char c = pointer.data[i];
+            if (c == '~') {
+                char next = i + 1 < pointer.size ? pointer.data[i + 1] : '\0';
+                if (next != '0' && next != '1') {
+                    status = PrStatus_Syntax;
+                    break;
+                }
+                c = next == '0' ? '~' : '/';
+                ++i;
+            }
+            prTextBufferAppendChar(&token, c);
+        }
+        if (status != PrStatus_Ok || !found)
+            continue;
+        PrStringView name = prTextBufferView(&token);
+        PrJsonKind kind = prJsonKind(document, at);
+        if (kind == PrJsonKind_Object) {
+            at = prJsonMember(document, at, name);
+        } else if (kind == PrJsonKind_Array) {
+            // An index is `0` or digits without a leading zero (RFC 6901, section 4).
+            bool digits = name.size != 0 && name.size <= 9;
+            for (size_t d = 0; d < name.size && digits; ++d)
+                digits = prAsciiIsDigit(name.data[d]);
+            if (digits && name.size > 1 && name.data[0] == '0') {
+                status = PrStatus_Syntax;
+                continue;
+            }
+            uint32_t index = 0;
+            for (size_t d = 0; d < name.size && digits; ++d)
+                index = index * 10 + uint32_t(name.data[d] - '0');
+            at = digits ? prJsonElement(document, at, index) : kPrJsonMissing;
+        } else {
+            at = kPrJsonMissing;
+        }
+        found = at != kPrJsonMissing;
+    }
+    prTextBufferReset(&token);
+    if (status != PrStatus_Ok)
+        return status;
+    if (!found)
+        return PrStatus_NotFound;
+    *out = at;
+    return PrStatus_Ok;
+}
+
+bool prJsonHasSpans(const PrJson* document) {
+    return document->hasSpans;
+}
+
+PrJsonSpan prJsonSpan(const PrJson* document, PrJsonValueIndex index) {
+    PR_ASSERT(document->hasSpans && index < document->sources.count);
+    return document->sources.data[index].span;
+}
+
+PrJsonValueIndex prJsonValueFromOffset(const PrJson* document, uint32_t offset) {
+    PR_ASSERT(document->hasSpans);
+    const JsonSource* sources = document->sources.data;
+    // Values begin in document order, so the last value that begins at or before the offset is the innermost value that
+    // holds it, or a value inside it, or a value before it that ended. Spans nest, so the innermost value that holds
+    // the offset is that value or one of its ancestors.
+    uint32_t low = 0;
+    uint32_t high = document->sources.count;
+    while (low < high) {
+        uint32_t middle = low + (high - low) / 2;
+        if (sources[middle].span.begin <= offset)
+            low = middle + 1;
+        else
+            high = middle;
+    }
+    if (low == 0)
+        return kPrJsonMissing;
+    PrJsonValueIndex at = low - 1;
+    while (at != kPrJsonMissing && offset >= sources[at].span.end)
+        at = sources[at].parent;
+    return at;
+}
+
+PrRawString prJsonPointer(const PrJson* document, PrJsonValueIndex index) {
+    PR_ASSERT(document->hasSpans && index < document->sources.count);
+    const JsonSource* sources = document->sources.data;
+    // The reference tokens from the value up to the root, each preceded by its `/`, and then reversed.
+    RawArray<PrJsonValueIndex> path;
+    for (PrJsonValueIndex at = index; sources[at].parent != kPrJsonMissing; at = sources[at].parent)
+        path.push(at);
+    PrTextBuffer pointer = {};
+    for (uint32_t i = path.count; i-- > 0;) {
+        PrJsonValueIndex at = path.data[i];
+        const JsonSource& source = sources[at];
+        prTextBufferAppendChar(&pointer, '/');
+        if (document->values.data[source.parent].kind == PrJsonKind_Array) {
+            prTextBufferAppendU64(&pointer, source.ordinal, 10);
+            continue;
+        }
+        // A member's value follows its key, which has the same parent and ordinal. Any other value of an object is a
+        // key.
+        bool isValue = at > source.parent + 1 && sources[at - 1].parent == source.parent &&
+            sources[at - 1].ordinal == source.ordinal;
+        PrStringView key = prJsonString(document, isValue ? at - 1 : at);
+        for (size_t c = 0; c < key.size; ++c) {
+            if (key.data[c] == '~')
+                prTextBufferAppend(&pointer, "~0");
+            else if (key.data[c] == '/')
+                prTextBufferAppend(&pointer, "~1");
+            else
+                prTextBufferAppendChar(&pointer, key.data[c]);
+        }
+    }
+    path.reset();
+    return pointer.size != 0 ? prTextBufferTake(&pointer) : prRawStringEmpty();
 }
 
 PrJsonWriter* prJsonWriterCreate(void) {

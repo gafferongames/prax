@@ -16,6 +16,24 @@ The libraries are layered so that applications can take the parts that they need
 The result is web quality layout and rendering made available without a browser. Then lib/ui adds
 an immediate mode framework on top, improving ergonomics and performance.
 
+3D is layered the same way:
+
+ - lib/gpu records a frame's passes and their barriers from a render graph
+ - lib/gltf reads a glTF asset as its specification describes it, and lib/mesh computes the normals, tangents and
+   bounds that an asset leaves out
+ - lib/draco decodes the Draco streams that an asset compresses its meshes with
+ - lib/texture describes a texture without decoding it, and prepares it for a device: blocks that the device samples,
+   blocks transcoded for it, or pixels. Each format's library adapts its format to it: lib/ktx reads KTX 2.0, whose
+   Basis Universal payloads lib/basis transcodes, and lib/image adapts every image that its codec decodes
+ - lib/usd reads OpenUSD layers, in text, crate or a package, and composes them into stages, as the USD Core
+   Specification describes them, and reads the schemas that a model draws
+ - lib/render keeps a scene of instances, materials and lights on the GPU, and adds the passes of a view to a frame
+   that the application owns
+ - lib/model loads a glTF document into a renderer, in the background, and animates it
+
+An application takes the renderer without an engine around it: it writes its own frame, adds its own passes, and
+compiles its own materials and shading models with the library's.
+
 Prax can be embedded in an existing application or be the base of a standalone one. For example, an application can
 link the compression library it already uses or plug in its own GPU abstraction layer, and Prax has built-in
 implementations so that it needs few external dependencies. The same application can run on desktop, mobile, and the
@@ -30,16 +48,22 @@ The libraries, by area. The first comment of each library's `CMakeLists.txt` say
 | Foundation | `core`, `task`, `cache`, `storage`, `webidl` |
 | System | `app`, `gpu`, `audio`, `media`, `process` |
 | Networking | `net`, `tls`, `http`, `websocket`, `fetch`, `xhr`, `url`, `mime` |
-| Data | `json`, `xml`, `compress`, `image`, `color`, `geom`, `charset`, `locale`, `unicode`, `html_entity` |
-| Formats | `png`, `jpeg`, `gif`, `webp`, `ico`, `tiff`, `hdr`, `exr`, `emjc`, `deflate`, `brotli`, `lzfse`, `lz4`, `zstd`, `zip`, and `entropy`, which their coders share |
+| Data | `json`, `xml`, `compress`, `image`, `gltf`, `draco`, `usd`, `color`, `geom`, `charset`, `locale`, `unicode`, `html_entity` |
+| Formats | `png`, `jpeg`, `gif`, `webp`, `ico`, `tiff`, `hdr`, `exr`, `ktx`, `basis`, `emjc`, `deflate`, `brotli`, `lzfse`, `lz4`, `zstd`, `zip`, and `entropy`, which their coders share |
 | Text | `font`, `font_bundle`, `text`, `text_edit`, `text_view`, `syntax`, `regex`, `text_diff` |
-| Graphics | `path`, `draw`, `canvas`, `lottie` |
+| Graphics | `path`, `mesh`, `texture`, `draw`, `render`, `model`, `canvas`, `lottie` |
 | Documents | `css`, `dom`, `layout`, `html`, `svg`, `mathml`, `tex`, `markdown` |
 | Developer tools | `lsp`, `dap`, `vterm` |
 | Interface | `ui`, `studio/kit`, `studio/command`, `studio/text_editor`, `studio/terminal` |
 
-**Verified.** WPT, the test suites of CommonMark, GFM, resvg and the Lottie players, and Prax's own suites check
-conformance. Benchmarks measure immediate-mode frames and dynamic retained documents.
+**Verified.** WPT, the test suites of CommonMark, GFM, resvg and the Lottie players, Khronos's glTF sample assets, and
+Prax's own suites check conformance. Benchmarks measure immediate-mode frames and dynamic retained documents.
+
+**Two commands show the 3D stack.** `./dev.sh example render_features` steps through a page for each feature of the
+renderer, with materials and a shading model of the example's own, under 2D from `lib/draw` in the same frame.
+`./dev.sh example model_viewer third_party/glTF-Sample-Assets/Models` browses Khronos's sample assets, which the
+command fetches. [docs/render.md](docs/render.md), [docs/texture.md](docs/texture.md) and
+[docs/model.md](docs/model.md) describe the libraries behind them.
 
 ## Status
 
@@ -49,7 +73,12 @@ Prax is approaching pre-alpha on macOS, iOS, tvOS, visionOS and Windows. The sui
 Coming soon:
 
 - **Platforms.** The web, then Linux and Android.
-- **3D.** A scene renderer, composed with 2D in one frame.
+- **3D.** A glTF model draws today: loaded in the background, with Draco or meshopt meshes and KTX 2.0, Basis Universal
+  or WebP textures, skinned and morphed, with Khronos's material extensions, lit by lights and by a sky or an image,
+  shadowed, by a forward or a visibility-buffer technique, with an application's own materials and shading models, and
+  composed with 2D in one frame. Still to come are meshlets and GPU-driven submission, clustered lights, cascaded
+  shadows, temporal antialiasing, ray tracing, a reference path tracer, streaming at reduced detail, the geometry of a
+  composed USD stage, and the web target.
 - **Audio and video.** Audio devices and the Web Audio API, synthesis, recording an application to video, reading
   video and audio files.
 - **Accessibility.** The semantics of a UI and of a document (roles, names, states, focus and actions).

@@ -111,6 +111,7 @@ PrCanvas* htmlCanvasCreateContext2D(HtmlCanvas* canvas, const PrCanvasSettings& 
         },
         .settings = settings,
         .renderer = window != nullptr ? window->renderer : nullptr,
+        .textures = window != nullptr ? window->textures : nullptr,
         .element = canvas->element,
         .changed = queueCanvas,
         .changedContext = canvas,
@@ -191,7 +192,7 @@ bool htmlCanvasImageSource(PrDomElement* element, PrCanvasImageSource* out) {
     *out = PrCanvasImageSource{};
     const HtmlCanvas* canvas = htmlCanvasFind(element);
     if (canvas != nullptr && canvas->context != nullptr) {
-        const PrDrawImage* image = prCanvasSnapshot(canvas->context);
+        const PrTextureSource* image = prCanvasSnapshot(canvas->context);
         if (image == nullptr)
             return false;
         PrUVec2 extent = prCanvasExtent(canvas->context);
@@ -206,20 +207,24 @@ bool htmlCanvasImageSource(PrDomElement* element, PrCanvasImageSource* out) {
     PrUVec2 extent{domReflectedUnsigned(element, "width", 300), domReflectedUnsigned(element, "height", 150)};
     if (extent.x == 0 || extent.y == 0 || extent.x > kPrCanvasBitmapMaxSize || extent.y > kPrCanvasBitmapMaxSize)
         return false;
-    RawArray<uint8_t> pixels;
-    pixels.resize(extent.x * extent.y * 4);
-    prMemZero(pixels.data, pixels.count);
-    PrDrawImageDesc desc{
-        .pixels = PrPixelView{pixels.data, size_t(extent.x) * 4, extent},
-        .format = PrPixelFormat_Rgba8,
-        .alpha = PrDrawAlpha_Premultiplied,
-        .space = PrColorSpace_Srgb,
+    // The bitmap is made again, transparent, whenever it is read, so nothing keeps its pixels.
+    PrTextureSourceDesc transparent{
+        .texture = PrTextureDesc{
+            .kind = PrGpuTextureKind_2d,
+            .extent = extent,
+            .depth = 1,
+            .layerCount = 1,
+            .levelCount = 1,
+            .format = PrGpuFormat_Rgba8,
+            .alpha = PrTextureAlpha_Premultiplied,
+        },
+        .read = [](void* PR_NULLABLE, PrTextureRead* read) {
+            const PrTextureDesc* desc = prTextureSourceDesc(prTextureReadSource(read));
+            prMemZero(prTextureReadStorage(read), prTextureReadSize(desc, prTextureReadInfo(read)));
+            prTextureReadComplete(read, PrStatus_Ok);
+        },
     };
-    const PrDrawImage* image = nullptr;
-    bool made = prDrawImageCreate(&desc, &image) == PrStatus_Ok;
-    pixels.reset();
-    if (!made)
-        return false;
+    const PrTextureSource* image = prTextureSourceCreate(&transparent);
     *out = PrCanvasImageSource{.image = image, .extent = PrVec2{float(extent.x), float(extent.y)}, .originClean = true};
     return true;
 }

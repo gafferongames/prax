@@ -108,6 +108,26 @@ PrVec2 ellipseRadii(PrVec2 viewport, const SvgEllipseShape& s) {
     return radiiOf(viewport, s.rx, s.ry, s.rxAuto, s.ryAuto);
 }
 
+// Writes the region of a raster's texture, which the drawing waits for, since what an SVG draws is kept. Returns false
+// if the raster has no texture.
+bool rasterRegion(const SvgDrawer& d, const PrTextureSource* raster, PrTextureRegion* out) {
+    *out = PrTextureRegion{};
+    return d.tree->textures != nullptr &&
+        prTextureCacheWait(d.tree->textures, raster, 0, out) == PrTextureCacheState_Ready;
+}
+
+// Returns a brush of a raster's displayed texels over `tile`, upright, or false if the raster has no texture.
+bool rasterBrush(const SvgDrawer& d, const PrTextureSource* raster, PrRect tile, PrDrawSampling sampling, PrDrawBrush* out) {
+    PrTextureRegion region{};
+    if (!rasterRegion(d, raster, &region))
+        return false;
+    const PrTextureDesc& desc = *prTextureSourceDesc(raster);
+    PrUVec2 texels = prTextureDescDisplayedExtent(&desc);
+    *out = prDrawBrushImage(prDrawSourceRegion(&region, PrRect{0, 0, float(texels.x), float(texels.y)}), tile, sampling);
+    prDrawBrushImageUpright(out, desc.orientation, region.rect);
+    return true;
+}
+
 // The default object size, which an image with no natural size of its own takes (SVG2/embedded.html#Placement).
 constexpr PrVec2 kDefaultObjectSize{300, 150};
 
@@ -115,7 +135,7 @@ constexpr PrVec2 kDefaultObjectSize{300, 150};
 // width over height, or zero for none.
 PrSvgNaturalSize naturalOf(const SvgPicture& picture) {
     if (picture.raster != nullptr) {
-        PrUVec2 extent = prDrawImageExtent(picture.raster);
+        PrUVec2 extent = prTextureDescDisplayedExtent(prTextureSourceDesc(picture.raster));
         float ratio = extent.y != 0 ? float(extent.x) / float(extent.y) : 0;
         return PrSvgNaturalSize{float(extent.x), float(extent.y), ratio};
     }
@@ -672,11 +692,9 @@ void drawImage(SvgDrawer& d, const SvgImageShape& image) {
     if (image.clips)
         prDrawListPushClipRect(d.list, box, PrDrawEdges_Antialiased);
     if (image.picture.raster != nullptr) {
-        PrUVec2 texels = prDrawImageExtent(image.picture.raster);
-        PrDrawBrush brush = prDrawBrushImage(
-            prDrawSourceImage(image.picture.raster, PrRect{0, 0, float(texels.x), float(texels.y)}), area,
-            image.sampling);
-        prDrawListRect(d.list, area, {.brush = &brush});
+        PrDrawBrush brush{};
+        if (rasterBrush(d, image.picture.raster, area, image.sampling, &brush))
+            prDrawListRect(d.list, area, {.brush = &brush});
     } else {
         svgImageDrawRendering(image.picture.svg, area, d.list);
     }
@@ -1159,7 +1177,7 @@ LayerResult imageLayer(SvgDrawer& d, SvgNodeIndex index, const SvgEffects& maski
         return LayerResult_Drawn;
     PrSvgNaturalSize natural{-1, -1, 0};
     if (layer.kind == SvgMaskLayerKind_Image && layer.picture.raster != nullptr) {
-        PrUVec2 texels = prDrawImageExtent(layer.picture.raster);
+        PrUVec2 texels = prTextureDescDisplayedExtent(prTextureSourceDesc(layer.picture.raster));
         natural = PrSvgNaturalSize{
             float(texels.x), float(texels.y), texels.y != 0 ? float(texels.x) / float(texels.y) : 0,
         };
@@ -1237,9 +1255,8 @@ LayerResult imageLayer(SvgDrawer& d, SvgNodeIndex index, const SvgEffects& maski
     PrDrawList* source = nullptr;
     PrDrawBrush brush{};
     if (layer.kind == SvgMaskLayerKind_Image && layer.picture.raster != nullptr) {
-        PrUVec2 texels = prDrawImageExtent(layer.picture.raster);
-        PrRect rect{0, 0, float(texels.x), float(texels.y)};
-        brush = prDrawBrushImage(prDrawSourceImage(layer.picture.raster, rect), tile, PrDrawSampling_Linear);
+        if (!rasterBrush(d, layer.picture.raster, tile, PrDrawSampling_Linear, &brush))
+            return LayerResult_Ignored;
     } else {
         source = prDrawListCreate();
         PrRect own{0, 0, size.x, size.y};

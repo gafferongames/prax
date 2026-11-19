@@ -12,4 +12,6 @@ if (PR_DEVELOP)
         tests/test_mime_c.c
         tests/test_mime_sniff.cpp
     )
+    # The classification harness, which tools/suite/classify.py drives.
+    pr_harness(mime_corpus prax::mime tests/mime_corpus.cpp)
 endif()

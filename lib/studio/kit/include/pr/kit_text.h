@@ -37,8 +37,14 @@ typedef struct PrKitLabel {
     PrStringView text;
 } PrKitLabel;
 
-// Creates a label under `parent`.
+// Creates a label under `parent`. A label that clips its text (PrKitWrap_Clip) shows the whole text in a tooltip
+// (prKitTooltip) while the pointer rests on it and the text does not fit.
 PrLayoutNode prKitLabel(PrKit* kit, PrLayoutNode parent, PrKitLabel label, PrKitTextStyle style);
+
+// Returns true if the pointer is over `node`, created in the current round, and the node's text ran past the end of
+// `clip`, the node or an ancestor that clips it, at the last layout. A widget that clips text in a box of its own, as a
+// table's cell does, shows the whole text in a tooltip while this holds.
+bool prKitIsClipped(PrKit* kit, PrLayoutNode node, PrLayoutNode clip);
 
 // A run of text in a role and tone of its own. A run takes its paragraph's wrap, alignment and white space.
 typedef struct PrKitTextRun {

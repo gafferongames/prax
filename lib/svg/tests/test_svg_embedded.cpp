@@ -3,14 +3,17 @@
 
 #include "pr/array.h"
 #include "pr/css.h"
-#include "pr/draw_image.h"
 #include "pr/map.h"
 #include "pr/mem.h"
 #include "pr/string.h"
 #include "pr/string_ops.h"
 #include "pr/svg.h"
+#include "pr/texture.h"
 
 #include "svg/tests/svg_fixture.h"
+#include "tools/harness/harness_textures.h"
+
+using namespace harness;
 
 namespace pr_impl {
 
@@ -33,13 +36,9 @@ bool loadImage(void* PR_NULLABLE context, PrDomDocument* from, PrStringView url,
     if (name == "flag.png") {
         Array<uint8_t> pixels(40 * 20 * 4);
         prMemFill(pixels.data(), 0xff, pixels.count());
-        PrDrawImageDesc desc{
-            .pixels = {pixels.data(), 40 * 4, {40, 20}},
-            .format = PrPixelFormat_Rgba8,
-            .alpha = PrDrawAlpha_Straight,
-            .space = PrColorSpace_Srgb,
-        };
-        return prDrawImageCreate(&desc, &out->raster) == PrStatus_Ok;
+        out->raster = prTextureSourceCreateCopy(PrPixelView{pixels.data(), 40 * 4, {40, 20}}, PrPixelFormat_Rgba8,
+            PrTextureAlpha_Straight);
+        return true;
     }
     const String* found = images->svgs.get(name);
     if (found == nullptr)
@@ -51,6 +50,7 @@ bool loadImage(void* PR_NULLABLE context, PrDomDocument* from, PrStringView url,
     PrSvgDrawOptions options = prSvgDrawOptionsDefault();
     options.loadImage = loadImage;
     options.loadContext = context;
+    options.textures = harnessMemoryTextures();
     out->svg = root != nullptr ? prSvgImageCreate(root, fragment, &options) : nullptr;
     prDomDocumentRelease(document);
     return out->svg != nullptr;
@@ -64,6 +64,7 @@ struct Embedded {
     Embedded() {
         options.loadImage = loadImage;
         options.loadContext = &images;
+        options.textures = harnessMemoryTextures();
         // The flag 40 by 20 in quarters, with a viewBox of its size.
         images.svgs["flag.svg"] = "<svg xmlns='http://www.w3.org/2000/svg' width='40' height='20' viewBox='0 0 40 20'>"
             "<rect width='20' height='10' fill='blue'/><rect id='orange' x='20' width='20' "

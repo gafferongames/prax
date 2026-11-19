@@ -63,11 +63,16 @@ void prKitSelectionApply(const PrKitSelectionEdit* edit, bool* selected, uint32_
 // and its keys and clicks on its rows edit the selection. The arrows, Home, End and the page keys move the lead, and
 // with Shift they extend the range from the anchor; in a grid, Up and Down move by a row of tiles, and Left and Right
 // by a tile. Space toggles the lead. Command or Control with A selects every row. An unbound view shows rows and takes
-// no keys.
+// no keys. In a view whose rows open, Enter opens the lead and a double click opens its row (prKitRowOpened), which is
+// how a view tells choosing a row, which only selects it, from acting on it. A view whose `revealsLead` is set scrolls
+// by the least that shows the lead's row in the round, as a key that moves the lead does, so that an application that
+// moves the lead itself, as to show a row that it found, brings the row into view.
 typedef struct PrKitListView {
     PrUiKey key;
     uint32_t count;
     PrKitSelection* PR_NULLABLE selection;
+    bool opens;
+    bool revealsLead;
 } PrKitListView;
 
 // The style of a list, tree or table view: the height of its rows, its placement in its parent, and, for a grid, the
@@ -97,6 +102,10 @@ PrKitWindow prKitListWindow(const PrKit* kit, PrLayoutNode view);
 // and writes the edit to `edit`. The caller applies the edit once it has created the rows.
 bool prKitSelectionEdited(const PrKit* kit, PrLayoutNode view, PrKitSelectionEdit* edit);
 
+// Returns true if Enter or a double click opened a row of a list or tree view whose rows open, in the current round,
+// and writes the row to `row`. The double click's first click selected the row, as any click does.
+bool prKitRowOpened(const PrKit* kit, PrLayoutNode view, uint32_t* row);
+
 // A row of a list or a tree view: row `index` of the view, which shows `item`, and keys the row by it, so that
 // scrolling keeps its node.
 typedef struct PrKitRow {
@@ -106,7 +115,8 @@ typedef struct PrKitRow {
 } PrKitRow;
 
 // Creates a row of a list view. A click edits the view's selection: a plain click replaces the selection with the row,
-// Shift extends the range from the anchor, and Command or Control toggles the row, or adds the range with Shift.
+// Shift extends the range from the anchor, and Command, or Control except on macOS, toggles the row, or adds the range
+// with Shift. On macOS a click with Control is the secondary click, which opens a context menu (prKitContextMenu).
 //
 // A row is a line of cells that the caller fills: what it shows goes under it, in order, from the row's cells below or
 // any of the kit's widgets, such as a status (prKitStatus) or a visibility toggle (prKitVisibilityToggle).
@@ -195,14 +205,19 @@ typedef struct PrKitTreeDrop {
 // The content of a tree view: `count` visible rows, described by `items`, which must stay valid through the round, and
 // the selection that it edits. The view moves the lead in the same way as a list view. Right and Left walk the tree:
 // Right opens a closed row and steps into an open one, and Left closes an open row and climbs to the parent of any
-// other row. If `dragKind` is nonzero, rows drag as payloads of that kind that carry their items, and take drops of
-// that kind.
+// other row. Up and Down only move the lead. If `dragKind` is nonzero, rows drag as payloads of that kind that carry
+// their items, and take drops of that kind. Rows open as a list's do if `opens` is set. If `clickFolds` is set, a plain
+// click anywhere on a row that has children also asks to fold it, as a file tree's folders do; the keys never fold a
+// row that way. The view reveals its lead as a list view does if `revealsLead` is set.
 typedef struct PrKitTreeView {
     PrUiKey key;
     uint32_t count;
     PrKitSelection* PR_NULLABLE selection;
     const PrKitTreeItem* PR_NULLABLE items;
     uint64_t dragKind;
+    bool opens;
+    bool revealsLead;
+    bool clickFolds;
 } PrKitTreeView;
 
 // Creates a tree view under `parent`, in the same way that prKitListView creates a list.
@@ -242,17 +257,32 @@ PrLayoutNode prKitVisibilityToggle(PrKit* kit, PrLayoutNode parent, PrKitVisibil
 // The absent index of a column.
 PR_CONSTANT uint32_t kPrKitColumnNone = 0xffffffffu;
 
-// A table's column: its heading, its width, and where its heading and cells sit. A column is `width` px wide, or with
-// Fill it is at least `width` px wide and shares the room that the other columns leave by `weight`. Columns wider than
-// the table scroll it sideways, and the header scrolls with them.
+// How a table's column takes its width.
+enum {
+    PrKitColumnSize_Fixed,          // `width` px
+    PrKitColumnSize_Fill,           // at least `width` px, and a share of the room that the other columns leave
+    PrKitColumnSize_Fit,            // as wide as its heading and its widest cell, from `width` to `maxWidth` px
+};
+typedef uint8_t PrKitColumnSize;
+
+// A table's column: its heading, its width, and where its heading and cells sit. A Fit column measures its heading and
+// the cells that the table created since its rows last changed in number, at the last layout, so that it grows as wider
+// cells scroll into view, and only shrinks when the rows are new. A Fill column shares the room that the others leave
+// by `weight`. The user drags the end of a heading to set its column's width, which then holds whatever the column's
+// size, and a double click there gives the column its own width again. Columns wider than the table scroll it sideways,
+// and the header scrolls with them.
 typedef struct PrKitTableColumn {
     PrStringView label;
-    float width;
-    PrKitFlex flex;                 // Fill, or zero for a fixed width
+    float width;                    // px: a Fixed column's width, or the least of the others'
+    float maxWidth;                 // Fit: the most px, or 0 for no limit
     float weight;                   // Fill: the share; 0 means 1
+    PrKitColumnSize size;
     PrKitTextAlign align;
     bool sortable;                  // a click on the heading sorts by the column
 } PrKitTableColumn;
+
+// The most columns that a table has.
+enum { kPrKitTableMaxColumns = 16 };
 
 // The column that the application sorts a table's rows by, which a click on a sortable heading edits: a click on the
 // sorted column reverses the order, and a click on another column sorts by it in ascending order.
@@ -261,9 +291,9 @@ typedef struct PrKitTableSort {
     bool descending;
 } PrKitTableSort;
 
-// The content of a table: `count` rows in `columnCount` columns, which must stay valid through the round, the selection
-// that its rows edit as a list view's rows do, and the sort that its headings edit. A table bound to a sort marks the
-// sorted column's heading.
+// The content of a table: `count` rows in at most kPrKitTableMaxColumns columns, which must stay valid through the
+// round, the selection that its rows edit as a list view's rows do, and the sort that its headings edit. A table bound
+// to a sort marks the sorted column's heading. The table reveals its lead as a list view does if `revealsLead` is set.
 typedef struct PrKitTable {
     PrUiKey key;
     uint32_t count;
@@ -271,6 +301,7 @@ typedef struct PrKitTable {
     const PrKitTableColumn* columns;
     uint32_t columnCount;
     PrKitTableSort* PR_NULLABLE sort;
+    bool revealsLead;
 } PrKitTable;
 
 // Creates a table under `parent`: its header, and a list view of its rows in the same way that prKitListView creates

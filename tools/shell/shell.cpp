@@ -855,6 +855,11 @@ int main(int argc, char** argv) {
     PrGpuDevice* memory = nullptr;
     gpuDeviceCreate(PrGpuBackend_Memory, nullptr, &memory);
     std::unique_ptr<PrGpuDevice, decltype(&prGpuDeviceDestroy)> memoryOwner(memory, prGpuDeviceDestroy);
+    // The pages' images realize on that device too, in the call that first asks for each, so that a capture draws them.
+    PrTextureCacheDesc texturesDesc = prTextureCacheDescDefault(memory);
+    texturesDesc.values = PrTextureCacheValues_Encoded;
+    PrTextureCache* textures = memory != nullptr ? prTextureCacheCreate(&texturesDesc) : nullptr;
+    std::unique_ptr<PrTextureCache, decltype(&prTextureCacheDestroy)> texturesOwner(textures, prTextureCacheDestroy);
     Renderers renderers;
     // Glyphs are drawn at the phases that the fragment backend's atlas holds them at, so that runs that a page splits
     // differently from its reference draw alike, as reftests expect.
@@ -864,6 +869,7 @@ int main(int argc, char** argv) {
     renderers.cpu = prDrawCpuCreate(&cpuOptions);
     PageHost host(shaper.get(), mediaCodec.get(), mixer);
     host.setRenderer(renderers.cpu);
+    host.setTextures(textures);
     if (pacedAudio)
         host.paceAudio(audioOutput);
     // The hinter lives as long as the process, because the fonts that name it are kept.

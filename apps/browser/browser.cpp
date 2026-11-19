@@ -6,9 +6,12 @@
 
 #include "apps/browser/browser.h"
 
+#include "pr/compress_select.h"
 #include "pr/draw_list.h"
 #include "pr/draw_select.h"
+#include "pr/file.h"
 #include "pr/float.h"
+#include "pr/image_select.h"
 #include "pr/kit_theme.h"
 #include "pr/layout_query.h"
 #include "pr/layout_tree.h"
@@ -31,6 +34,9 @@ namespace {
 
 // The color that the page's box shows before its page has a frame to present.
 constexpr PrColor kBlankCanvas{1, 1, 1, 1};
+
+// How long the window shows before --capture takes it, in seconds.
+constexpr double kCaptureSeconds = 3;
 
 void build(void* context, PrUi*, const PrUiRound*) {
     chromeBuild(*static_cast<Browser*>(context));
@@ -109,6 +115,8 @@ void render(Browser& b, PrDrawList* PR_NULLABLE page, PrColor canvas) {
     }
     PrDrawTarget window{.extent = b.extent, .format = format, .commands = commands};
     prDrawFramePrepare(b.chromeFrame, b.chromeList, &window);
+    // The frame is the cache's: what the frames since the last trim did not draw, and nothing else holds, may go.
+    prTextureCacheTrim(b.textures);
     PrGpuSubresources all{};
     prGpuCommandsTextureBarrier(commands, target, all, mapped ? PrGpuAccessFlag_ShaderRead : PrGpuAccessFlag_Discard,
         PrGpuAccessFlag_ColorAttachment);
@@ -145,6 +153,40 @@ void render(Browser& b, PrDrawList* PR_NULLABLE page, PrColor canvas) {
         b.statsLast = prDrawFrameStats(page != nullptr ? b.pageFrame : b.chromeFrame);
         printStats(b, now);
     }
+}
+
+// Writes the frame that the swap chain captured to the PNG of --capture, and wakes the application, which then stops.
+// Called on the device's thread.
+void writeCapture(void* PR_NULLABLE context, PrPixelView texels, PrGpuFormat format) {
+    Browser& b = *static_cast<Browser*>(context);
+    PrUVec2 extent = texels.extent;
+    Array<uint8_t> rgba(size_t(extent.x) * extent.y * 4);
+    PrPixels pixels{rgba.data(), size_t(extent.x) * 4, extent};
+    bool written = false;
+    if (prGpuCaptureToRgba8(texels, format, pixels)) {
+        PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+        PrImageCodecSet* images = prImageCodecSetCreateDefault(compress);
+        size_t size = 0;
+        prImageCodecSetEncode(images, "image/png", prPixelsView(pixels), nullptr, 0, &size);
+        Array<uint8_t> png(size);
+        written = prImageCodecSetEncode(images, "image/png", prPixelsView(pixels), png.data(), png.count(), &size) ==
+            PrStatus_Ok && prFileWrite(b.capture, PrByteView{png.data(), size});
+        prImageCodecSetDestroy(images);
+        prCompressCodecSetDestroy(compress);
+    }
+    if (!written)
+        printError("browser: cannot write {}\n", b.capture);
+    b.captured.store(true);
+    prAppWake(b.app);
+}
+
+// Wakes the application once the window has shown for kCaptureSeconds, and its next frame takes the capture. The wake
+// comes whether or not the display shows the window.
+void wakeForCapture(void* PR_NULLABLE context) {
+    Browser& b = *static_cast<Browser*>(context);
+    prThreadSleep(kCaptureSeconds * 1000);
+    b.captureDue.store(true);
+    prAppWake(b.app);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -203,9 +245,22 @@ bool openDevice(Browser& b) {
         return true;
     PrSurface surface{};
     PrGpuSwapChainDesc swapChain{.intent = PrGpuSwapChainIntent_Hdr};
+    // An image that arrives after a frame drew without it asks for a frame that draws it.
+    PrTextureCacheDesc textures = prTextureCacheDescDefault(b.device);
+    textures.tasks = b.pool;
+    textures.values = PrTextureCacheValues_Encoded;
+    textures.arrived = [](void* PR_NULLABLE context) {
+        Browser& arrived = *static_cast<Browser*>(context);
+        arrived.frameWanted.store(true);
+        prAppWake(arrived.app);
+    };
+    textures.arrivedContext = &b;
+    b.textures = prTextureCacheCreate(&textures);
+    prKitSetTextures(b.kit, b.textures);
+    PrDrawRendererOptions rendererOptions = prDrawRendererOptionsDefault();
     if (prAppWindowSurface(b.window, &surface) != PrStatus_Ok ||
             prGpuSwapChainCreate(b.device, &surface, &swapChain, &b.swapChain) != PrStatus_Ok ||
-            prDrawRendererCreate(PrDrawRendererBackend_Default, b.device, nullptr, &b.renderer) != PrStatus_Ok ||
+            prDrawRendererCreate(PrDrawRendererBackend_Default, b.device, &rendererOptions, &b.renderer) != PrStatus_Ok ||
             prDrawDisplayCreate(b.device, &b.display) != PrStatus_Ok) {
         printError("browser: the device cannot render to the window\n");
         prAppStop(b.app);
@@ -234,6 +289,10 @@ PrAppOutput frame(void* context, PrAppWindow*, const PrAppFrame* f) {
     if (!openDevice(b))
         return PrAppOutput{.wantsFrame = b.device != nullptr && !prGpuDeviceIsReady(b.device)};
     prGpuSwapChainWait(b.swapChain);
+    // A frame that takes the capture of --capture is not presented, so another frame follows it.
+    bool capturing = b.captureDue.exchange(false);
+    if (capturing)
+        prGpuSwapChainRequestCapture(b.swapChain, writeCapture, &b);
     tabsRefresh(b);
     prCachePump(b.icons);
     if (f->preferences.colorScheme != b.scheme) {
@@ -294,7 +353,7 @@ PrAppOutput frame(void* context, PrAppWindow*, const PrAppFrame* f) {
         PrVec2 origin{b.chrome.page.left, b.chrome.page.top};
         output = prAppOutputMerge(output, prAppOutputPlaced(tab->info.output, origin, tab->zoom), pagePointer);
     }
-    if (tab != nullptr && prLayoutCompositorWantsFrame(tab->compositor))
+    if (capturing || (tab != nullptr && prLayoutCompositorWantsFrame(tab->compositor)))
         output.wantsFrame = true;
     return output;
 }
@@ -304,9 +363,15 @@ PrAppOutput frame(void* context, PrAppWindow*, const PrAppFrame* f) {
 // while nothing of the chrome has focus. The chrome sees every move of the pointer, so that its hover follows the
 // pointer out of it, and every press, so that a press in the page closes its menus. A key bound to one of the browser's
 // commands runs it wherever focus is: through the chrome's scope while the chrome has the keyboard, and ahead of the
-// page while the page has it.
+// page while the page has it. A mouse's back and forward buttons and a swipe between pages (prAppEventNavigation) run
+// Back and Forward. The event that asks for the step goes to neither the chrome nor the page.
 void event(void* context, PrAppWindow* window, const PrAppEvent* e) {
     Browser& b = *static_cast<Browser*>(context);
+    if (PrAppNavigation navigation = prAppEventNavigation(e); navigation != PrAppNavigation_None) {
+        commandRun(b, navigation == PrAppNavigation_Back ? kCommandBack : kCommandForward);
+        prAppWindowRequestFrame(window);
+        return;
+    }
     Tab* tab = browserActiveTab(b);
     PrHtmlView* view = tab != nullptr ? tab->view.load() : nullptr;
     bool toPageToo = false;
@@ -381,18 +446,29 @@ bool start(void* context, PrApp* app) {
     if (prAppWindowCreate(app, &desc, &b.window) != PrStatus_Ok)
         return false;
     prUiSetWindow(b.ui, b.window);
+    if (!b.capture.isEmpty())
+        prThreadStart(&b.captureWaker, wakeForCapture, &b);
     return true;
 }
 
-// A wake from a tab's thread asks for a frame, if one asked for it since the last.
-void appEvent(void* context, PrApp*, const PrAppEvent* e) {
+// A wake asks for a frame if a tab's thread asked for one since the last, or if the capture of --capture is due. Once
+// the capture is written, a wake stops the application.
+void appEvent(void* context, PrApp* app, const PrAppEvent* e) {
     Browser& b = *static_cast<Browser*>(context);
-    if (e->kind == PrAppEventKind_Wake && b.window != nullptr && b.frameWanted.exchange(false))
+    if (e->kind != PrAppEventKind_Wake || b.window == nullptr)
+        return;
+    if (b.captured.load()) {
+        prAppStop(app);
+        return;
+    }
+    if (b.frameWanted.exchange(false) || b.captureDue.load())
         prAppWindowRequestFrame(b.window);
 }
 
 void shutdown(void* context, PrApp*) {
     Browser& b = *static_cast<Browser*>(context);
+    if (!b.capture.isEmpty())
+        prThreadJoin(&b.captureWaker);
     tabsShutdown(b);
     if (b.device != nullptr)
         prGpuTextureRelease(b.device, b.rendered);
@@ -400,6 +476,8 @@ void shutdown(void* context, PrApp*) {
     prDrawFrameDestroy(b.pageFrame);
     prDrawFrameDestroy(b.chromeFrame);
     prDrawRendererDestroy(b.renderer);
+    prKitSetTextures(b.kit, nullptr);
+    prTextureCacheDestroy(b.textures);
     prGpuSwapChainDestroy(b.swapChain);
     prGpuDeviceDestroy(b.device);
 }

@@ -1,5 +1,5 @@
-// Commands in an interface: the scopes that put key bindings on the nodes of a tree, and the menu items and the command
-// palette of Studio Kit that run commands.
+// Commands in an interface: the scopes that put key bindings on the nodes of a tree, and the menu items, the buttons
+// and the command palette of Studio Kit that run commands.
 //
 // Each entry point runs a command by its id, through its registry, so a verb behaves the same whichever entry point
 // reached it. An entry point runs only the commands that take no required parameter (prCommandRegistryIsDirect), and a
@@ -11,6 +11,7 @@
 #include "pr/command.h"
 #include "pr/command_keymap.h"
 #include "pr/kit.h"
+#include "pr/kit_button.h"
 #include "pr/kit_menu.h"
 #include "pr/string_view.h"
 #include "pr/ui.h"
@@ -34,6 +35,13 @@ void prCommandScope(PrUi* ui, PrLayoutNode node, const PrCommandRegistry* regist
 // registry has no such command.
 PrLayoutNode prCommandMenuItem(PrKit* kit, PrLayoutNode menu, const PrCommandRegistry* registry,
     const PrCommandKeymap* keymap, PrStringView commandId, PrKitMenuItemStyle style);
+
+// Creates a button that runs the command `commandId`. `button` gives the key and the content: an icon, text, or both.
+// The command sets the rest. The button is selected while the command is checked, and disabled while the command is
+// disabled or takes a required parameter. Its tooltip shows the command's title and chord (prCommandTooltip). Returns
+// kPrLayoutNodeNone, and creates nothing, if the registry has no such command.
+PrLayoutNode prCommandButton(PrKit* kit, PrLayoutNode parent, const PrCommandRegistry* registry,
+    const PrCommandKeymap* keymap, PrStringView commandId, PrKitButton button, PrKitButtonStyle style);
 
 // Creates the tooltip of `anchor` (prKitTooltip), which shows the title of the command `commandId` and the chord of its
 // first binding. Returns none until it shows, or if the registry has no such command.
