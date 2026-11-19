@@ -12,6 +12,7 @@
 #include "pr/process.h"
 #include "pr/string.h"
 #include "pr/string_ops.h"
+#include "pr/syntax_treesitter_json.h"
 #include "pr/text_editor.h"
 #include "pr/text_font.h"
 #include "pr/thread.h"
@@ -623,6 +624,32 @@ TEST_CASE("text editor: Compare with Saved compares a document with its file, an
 }
 
 #if defined(TEXT_EDITOR_TESTS_HAVE_TREESITTER)
+
+TEST_CASE("text editor: a document's language is the language of its media type") {
+    Editor e;
+    prSyntaxRegistryAdd(e.languages, prSyntaxTreeSitterJson());
+    auto languageOf = [&](PrTextEditorDocumentDesc desc) -> String {
+        PrTextEditorDocument* document = nullptr;
+        REQUIRE(prTextEditorDocumentCreate(e.editor, &desc, &document) == PrStatus_Ok);
+        const PrSyntaxLanguage* language = prTextEditorDocumentLanguage(document);
+        String name = language != nullptr ? String(language->name) : String("none");
+        prTextEditorDocumentDestroy(document);
+        return name;
+    };
+    PrStringView gltf = "{\"asset\": {\"version\": \"2.0\"}}\n";
+    // With no media type, the editor classifies a file by its bytes and its path, and a text by its bytes and its name.
+    CHECK(languageOf({.path = writeFile("scene.gltf", gltf)}) == "json");
+    CHECK(languageOf({.text = gltf, .name = "scene.gltf"}) == "json");
+    CHECK(languageOf({.text = gltf}) == "json");
+    CHECK(languageOf({.text = "int x;\n", .name = "main.c"}) == "c");
+    CHECK(languageOf({.text = "plain words\n", .name = "notes.txt"}) == "none");
+    // In the classification, a name replaces the guess that the content of text gives.
+    CHECK(languageOf({.text = "{\"a\": 1}\n", .name = "main.c"}) == "c");
+    // A host's media type decides alone, over the bytes and the name.
+    CHECK(languageOf({.text = "plain words\n", .mediaType = "model/gltf+json"}) == "json");
+    CHECK(languageOf({.text = gltf, .name = "main.c", .mediaType = "model/gltf+json"}) == "json");
+    CHECK(languageOf({.text = "int x;\n", .name = "main.c", .mediaType = "text/plain"}) == "none");
+}
 
 TEST_CASE("text editor: a language server's diagnostics, hover and definition reach the document" *
         doctest::skip(!prProcessBackendIsBuilt(PrProcessBackend_Default))) {
