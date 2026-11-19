@@ -75,11 +75,11 @@ bool prDrawGlyphDecoderDecode(PrDrawGlyphDecoder* decoder, const PrFont* font, u
 
 // Appends the glyph's image from the strike for `pixelsPerEm` (prFontGlyphImage) to `list`, decoded by `codec`, in ems
 // with y down from the glyph's origin. Returns false for a glyph with no image, or an image the codec cannot decode.
-bool prDrawGlyphImage(PrImageCodec* codec, const PrFont* font, uint16_t glyph, float pixelsPerEm, PrDrawList* list);
+bool prDrawGlyphImage(const PrImageCodecSet* codec, const PrFont* font, uint16_t glyph, float pixelsPerEm, PrDrawList* list);
 
 // Creates a decoder that draws the images of glyphs with no SVG document (prDrawGlyphImage), decoded by `codec`. The
 // codec outlives the decoder.
-PrDrawGlyphDecoder* prDrawGlyphBitmapCreate(PrImageCodec* codec);
+PrDrawGlyphDecoder* prDrawGlyphBitmapCreate(const PrImageCodecSet* codec);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Glyph cache

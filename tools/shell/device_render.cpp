@@ -1,7 +1,9 @@
 #include "tools/shell/device_render.h"
 
 #include "pr/draw_renderer.h"
+#include "pr/draw_select.h"
 #include "pr/gpu.h"
+#include "pr/gpu_select.h"
 
 #include "tools/harness/harness_gpu.h"
 

@@ -21,6 +21,7 @@
 #include "pr/draw_fragment.h"
 #include "pr/draw_renderer.h"
 #include "pr/gpu.h"
+#include "pr/gpu_select.h"
 #include "pr/layout_query.h"
 #include "pr/string_ops.h"
 #include "pr/text_buffer.h"

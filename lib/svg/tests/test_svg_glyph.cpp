@@ -1,10 +1,10 @@
 #include "pr/array.h"
 #include "pr/blob_ref.h"
 #include "pr/checksum.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/draw_cpu.h"
 #include "pr/float.h"
-#include "pr/image_builtin.h"
+#include "pr/image_select.h"
 #include "pr/string.h"
 #include "pr/svg_glyph.h"
 #include "pr/vec.h"
@@ -199,16 +199,16 @@ TEST_CASE("a glyph with no document is an image, and without an image codec noth
     CHECK(prDrawListCommandCount(list) == 0);
     prDrawGlyphDecoderDestroy(decoder);
     // With an image codec, a bitmap glyph draws its strike's image.
-    PrCompressCodec* compressCodec = prCompressBuiltinCreate();
-    PrImageCodec* imageCodec = prImageBuiltinCreate(compressCodec);
+    PrCompressCodecSet* compressCodec = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* imageCodec = prImageCodecSetCreateDefault(compressCodec);
     decoder = prSvgGlyphDecoderCreate(imageCodec, compressCodec);
     const PrFont* smiley = load("TwemojiSmileySbix.ttf");
     CHECK(prDrawGlyphDecoderDecode(decoder, smiley, 2, 64, nullptr, PrColor{0, 0, 0, 1}, list));
     CHECK(prDrawListCommandCount(list) != 0);
     prDrawListRelease(list);
     prDrawGlyphDecoderDestroy(decoder);
-    prImageCodecDestroy(imageCodec);
-    prCompressCodecDestroy(compressCodec);
+    prImageCodecSetDestroy(imageCodec);
+    prCompressCodecSetDestroy(compressCodec);
     prFontRelease(smiley);
     prFontRelease(sans);
 }
@@ -229,7 +229,7 @@ TEST_CASE("a gzip-compressed document draws as it does uncompressed, and not wit
     REQUIRE(prFontGlyphSvg(gzipped, glyph, &packed));
     CHECK(packed.document.data[0] == 0x1f);
 
-    PrCompressCodec* compressCodec = prCompressBuiltinCreate();
+    PrCompressCodecSet* compressCodec = prCompressCodecSetCreateDefault();
     PrDrawGlyphDecoder* decoder = prSvgGlyphDecoderCreate(nullptr, compressCodec);
     PrDrawGlyphDecoder* plain = prSvgGlyphDecoderCreate(nullptr, nullptr);
     PrAffine2 place = prAffine2Concat(prAffine2Scale(PrVec2{70, 70}), prAffine2Translate(PrVec2{10, 85}));
@@ -252,7 +252,7 @@ TEST_CASE("a gzip-compressed document draws as it does uncompressed, and not wit
     CHECK_FALSE(decoded);
     prDrawGlyphDecoderDestroy(plain);
     prDrawGlyphDecoderDestroy(decoder);
-    prCompressCodecDestroy(compressCodec);
+    prCompressCodecSetDestroy(compressCodec);
     prFontRelease(gzipped);
     prFontRelease(font);
 }

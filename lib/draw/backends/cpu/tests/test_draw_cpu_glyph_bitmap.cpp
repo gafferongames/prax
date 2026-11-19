@@ -1,9 +1,9 @@
 #include "pr/array.h"
 #include "pr/blob_ref.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/draw_cpu.h"
 #include "pr/draw_glyph.h"
-#include "pr/image_builtin.h"
+#include "pr/image_select.h"
 #include "pr/string.h"
 #include "pr/vec.h"
 
@@ -108,8 +108,8 @@ TEST_CASE("a TIFF image in an sbix strike draws through the image codec") {
     const PrFont* font = nullptr;
     REQUIRE(prFontCreate(BlobRef::adopt(prBlobCopy(bytes)), 0, nullptr, &font) == PrStatus_Ok);
 
-    PrCompressCodec* compressCodec = prCompressBuiltinCreate();
-    PrImageCodec* imageCodec = prImageBuiltinCreate(compressCodec);
+    PrCompressCodecSet* compressCodec = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* imageCodec = prImageCodecSetCreateDefault(compressCodec);
     PrDrawGlyphDecoder* decoder = prDrawGlyphBitmapCreate(imageCodec);
     PrDrawCpuOptions options = prDrawCpuOptionsDefault();
     options.glyphDecoder = decoder;
@@ -134,7 +134,7 @@ TEST_CASE("a TIFF image in an sbix strike draws through the image codec") {
     prDrawListRelease(list);
     prDrawRendererDestroy(renderer);
     prDrawGlyphDecoderDestroy(decoder);
-    prImageCodecDestroy(imageCodec);
-    prCompressCodecDestroy(compressCodec);
+    prImageCodecSetDestroy(imageCodec);
+    prCompressCodecSetDestroy(compressCodec);
     prFontRelease(font);
 }

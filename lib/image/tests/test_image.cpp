@@ -50,46 +50,51 @@ struct FakeCodec;
 
 // The single reader of a fake codec.
 struct FakeReader : PrImageReader {
-    FakeCodec* fake;
+    const FakeCodec* fake;
 };
 
-// A codec whose record is its first member, and which hands out its single reader.
+// A codec whose record is its first member, and which hands out its single reader. A codec is reached through a const
+// pointer, so what the fake records of its calls, and the reader that it hands out, are mutable.
 struct FakeCodec {
     PrImageCodec record = {};
-    FakeReader reader = {};
+    mutable FakeReader reader = {};
     uint32_t headerBytes = 0;
     bool matches = true;
-    uint32_t classifications = 0;
-    size_t prefixSize = 0;
-    uint32_t opens = 0;
-    uint32_t closes = 0;
-    uint32_t decodes = 0;
+    mutable uint32_t classifications = 0;
+    mutable size_t prefixSize = 0;
+    mutable uint32_t opens = 0;
+    mutable uint32_t closes = 0;
+    mutable uint32_t decodes = 0;
     bool rereadPrefix = false;
     PrStatus openResult = PrStatus_Ok;
     PrImageInfo info = {{2, 2}, rgbaFormat(), PrImageOrientation_Identity, {0, 0}, 1, 1, 0, false};
 
-    static FakeCodec& of(PrImageCodec* codec) {
-        return *reinterpret_cast<FakeCodec*>(codec);
+    PrImageCodecSet* set = nullptr;
+
+    ~FakeCodec() { prImageCodecSetDestroy(set); }
+
+    static const FakeCodec& of(const PrImageCodec* codec) {
+        return *reinterpret_cast<const FakeCodec*>(codec);
     }
 
     static uint32_t headerBytesOf(const PrImageCodec* codec) {
         return reinterpret_cast<const FakeCodec*>(codec)->headerBytes;
     }
 
-    static bool supportsType(PrImageCodec*, PrStringView type) {
+    static bool supportsType(const PrImageCodec*, PrStringView type) {
         return type.size == 10 && prMemCompare(type.data, "image/test", 10) == 0;
     }
 
-    static bool recognize(PrImageCodec* codec, PrByteView prefix) {
-        FakeCodec& fake = of(codec);
+    static bool recognize(const PrImageCodec* codec, PrByteView prefix) {
+        const FakeCodec& fake = of(codec);
         ++fake.classifications;
         fake.prefixSize = prefix.size;
         return fake.matches && prefix.size != 0 && prefix.data[0] == 't';
     }
 
-    static PrStatus open(PrImageCodec* codec, const PrImageSource* source, const PrImageLimits*,
-            PrImageReader** out, PrImageInfo* info) {
-        FakeCodec& fake = of(codec);
+    static PrStatus open(const PrImageCodec* codec, const PrImageCodecSet*, const PrImageSource* source,
+            const PrImageLimits*, PrImageReader** out, PrImageInfo* info) {
+        const FakeCodec& fake = of(codec);
         ++fake.opens;
         *out = nullptr;
         if (fake.rereadPrefix) {
@@ -133,7 +138,8 @@ struct FakeCodec {
         return PrStatus_Ok;
     }
 
-    PrImageCodec* codec(uint32_t size = 4) {
+    // Returns a set of this codec alone, which the fake keeps.
+    const PrImageCodecSet* codec(uint32_t size = 4) {
         headerBytes = size;
         record = PrImageCodec{
             .headerBytesFn = headerBytesOf,
@@ -141,7 +147,9 @@ struct FakeCodec {
             .recognizeFn = recognize,
             .decoderOpenFn = open,
         };
-        return &record;
+        PrImageCodec* member = &record;
+        set = prImageCodecSetCreate(&member, 1);
+        return set;
     }
 };
 
@@ -158,7 +166,7 @@ TEST_CASE("the public header compiles as C") {
 TEST_CASE("a decoder reads the codec's prefix once and opens images one at a time") {
     Reader reader;
     FakeCodec fake;
-    PrImageCodec* codec = fake.codec(6);
+    const PrImageCodecSet* codec = fake.codec(6);
     PrImageDecoder* decoder = prImageDecoderCreate(codec);
     CHECK(fake.opens == 0);
     REQUIRE(prImageDecoderOpen(decoder, reader.source(), nullptr) == PrStatus_Ok);
@@ -184,7 +192,7 @@ TEST_CASE("image classification shares the available short prefix") {
     PrImageSource source = reader.source();
     source.stream.size = 2;
     FakeCodec fake;
-    PrImageCodec* codec = fake.codec(8);
+    const PrImageCodecSet* codec = fake.codec(8);
     PrImageDecoder* decoder = prImageDecoderCreate(codec);
     REQUIRE(prImageDecoderOpen(decoder, source, nullptr) == PrStatus_Ok);
     CHECK(reader.reads == 1);
@@ -197,7 +205,7 @@ TEST_CASE("codec inspection reuses the prefix without another positioned read") 
     Reader reader;
     FakeCodec fake;
     fake.rereadPrefix = true;
-    PrImageCodec* codec = fake.codec();
+    const PrImageCodecSet* codec = fake.codec();
     PrImageDecoder* decoder = prImageDecoderCreate(codec);
     REQUIRE(prImageDecoderOpen(decoder, reader.source(), nullptr) == PrStatus_Ok);
     CHECK(reader.reads == 1);
@@ -208,7 +216,7 @@ TEST_CASE("unmatched image codecs do not open a decoder") {
     Reader reader;
     FakeCodec fake;
     fake.matches = false;
-    PrImageCodec* codec = fake.codec();
+    const PrImageCodecSet* codec = fake.codec();
     PrImageDecoder* decoder = prImageDecoderCreate(codec);
     CHECK(prImageDecoderOpen(decoder, reader.source(), nullptr) == PrStatus_NotSupported);
     CHECK(fake.opens == 0);
@@ -221,7 +229,7 @@ TEST_CASE("a failed open leaves no image open") {
     for (PrStatus status : statusList) {
         Reader reader;
         FakeCodec fake;
-        PrImageCodec* codec = fake.codec();
+        const PrImageCodecSet* codec = fake.codec();
         PrImageDecoder* decoder = prImageDecoderCreate(codec);
         REQUIRE(prImageDecoderOpen(decoder, reader.source(), nullptr) == PrStatus_Ok);
         fake.openResult = status;
@@ -256,7 +264,7 @@ TEST_CASE("image dispatch propagates source I/O failure without classification")
     Reader reader;
     reader.result = PrStatus_Io;
     FakeCodec fake;
-    PrImageCodec* codec = fake.codec();
+    const PrImageCodecSet* codec = fake.codec();
     PrImageDecoder* decoder = prImageDecoderCreate(codec);
     CHECK(prImageDecoderOpen(decoder, reader.source(), nullptr) == PrStatus_Io);
     CHECK(prImageDecoderInfo(decoder)->frameCount == 0);
@@ -270,7 +278,7 @@ TEST_CASE("image dispatch applies input and header ceilings before reading") {
     for (bool inputLimit : inputLimits) {
         Reader reader;
         FakeCodec fake;
-        PrImageCodec* codec = fake.codec();
+        const PrImageCodecSet* codec = fake.codec();
         PrImageLimits limits = prImageLimitsDefault();
         if (inputLimit) {
             limits.inputBytes = 7;
@@ -310,7 +318,7 @@ TEST_CASE("image dispatch rejects malformed descriptions and closes codec handle
                 fake.info.format.color = {PrImageColorEncoding_Icc, 0, {nullptr, 16}};
                 break;
         }
-        PrImageCodec* codec = fake.codec();
+        const PrImageCodecSet* codec = fake.codec();
         PrImageDecoder* decoder = prImageDecoderCreate(codec);
         CHECK(prImageDecoderOpen(decoder, reader.source(), nullptr) == PrStatus_InvalidData);
         CHECK(prImageDecoderInfo(decoder)->frameCount == 0);
@@ -323,7 +331,7 @@ TEST_CASE("image dispatch enforces inspected pixel frame and output limits") {
     for (int ceiling = 0; ceiling < 3; ++ceiling) {
         Reader reader;
         FakeCodec fake;
-        PrImageCodec* codec = fake.codec();
+        const PrImageCodecSet* codec = fake.codec();
         PrImageLimits limits = prImageLimitsDefault();
         if (ceiling == 0)
             limits.pixels = 3;
@@ -343,7 +351,7 @@ TEST_CASE("image named color ignores inactive profile fields") {
     Reader reader;
     FakeCodec fake;
     fake.info.format.color.profile = {reader.bytes, SIZE_MAX};
-    PrImageCodec* codec = fake.codec();
+    const PrImageCodecSet* codec = fake.codec();
     PrImageDecoder* decoder = prImageDecoderCreate(codec);
     REQUIRE(prImageDecoderOpen(decoder, reader.source(), nullptr) == PrStatus_Ok);
     uint8_t pixels[16] = {};
@@ -354,7 +362,7 @@ TEST_CASE("image named color ignores inactive profile fields") {
 TEST_CASE("persistent image decoder checks the frame and respects padding") {
     Reader reader;
     FakeCodec fake;
-    PrImageCodec* codec = fake.codec();
+    const PrImageCodecSet* codec = fake.codec();
     PrImageDecoder* decoder = prImageDecoderCreate(codec);
     REQUIRE(prImageDecoderOpen(decoder, reader.source(), nullptr) == PrStatus_Ok);
     REQUIRE(prImageDecoderInfo(decoder) != nullptr);
@@ -381,7 +389,7 @@ TEST_CASE("partial image open retains a usable decoder") {
     Reader reader;
     FakeCodec fake;
     fake.openResult = PrStatus_Truncated;
-    PrImageCodec* codec = fake.codec();
+    const PrImageCodecSet* codec = fake.codec();
     PrImageDecoder* decoder = prImageDecoderCreate(codec);
     REQUIRE(prImageDecoderOpen(decoder, reader.source(), nullptr) == PrStatus_Truncated);
     prImageDecoderDestroy(decoder);
@@ -392,7 +400,7 @@ TEST_CASE("rendering image convenience rejects independent alpha") {
     Reader reader;
     FakeCodec fake;
     fake.info.format.alpha = PrImageAlpha_Independent;
-    PrImageCodec* codec = fake.codec();
+    const PrImageCodecSet* codec = fake.codec();
     PrImageDecoder* decoder = prImageDecoderCreate(codec);
     REQUIRE(prImageDecoderOpen(decoder, reader.source(), nullptr) == PrStatus_Ok);
     uint8_t output[16] = {};
@@ -411,7 +419,7 @@ TEST_CASE("rendering image convenience rejects overflowing RGBA size before allo
     fake.info.extent.y = uint32_t(1) << 31;
     fake.info.format.model = PrColorModel_Gray;
     fake.info.format.alpha = PrImageAlpha_None;
-    PrImageCodec* codec = fake.codec();
+    const PrImageCodecSet* codec = fake.codec();
     PrImageLimits limits = prImageLimitsDefault();
     limits.pixels = UINT64_MAX;
     limits.workingBytes = UINT64_MAX;
@@ -462,7 +470,7 @@ TEST_CASE("rendering image convenience applies stored orientation to rectangular
     fake.info.extent.x = 2;
     fake.info.extent.y = 3;
     fake.info.orientation = PrImageOrientation_Rotate90;
-    PrImageCodec* codec = fake.codec();
+    const PrImageCodecSet* codec = fake.codec();
     PrImageDecoder* decoder = prImageDecoderCreate(codec);
     REQUIRE(prImageDecoderOpen(decoder, reader.source(), nullptr) == PrStatus_Ok);
     uint8_t output[24] = {};
@@ -486,7 +494,7 @@ TEST_CASE("rendering image convenience rejects ICC transforms despite fallback p
     FakeCodec fake;
     uint8_t profile[128] = {};
     fake.info.format.color = {PrImageColorEncoding_Icc, 0, {profile, sizeof(profile)}};
-    PrImageCodec* codec = fake.codec();
+    const PrImageCodecSet* codec = fake.codec();
     PrImageDecoder* decoder = prImageDecoderCreate(codec);
     REQUIRE(prImageDecoderOpen(decoder, reader.source(), nullptr) == PrStatus_Ok);
     uint8_t output[16] = {};
@@ -501,7 +509,7 @@ TEST_CASE("cover frame requests require the codec to advertise a separate cover"
     for (bool cover : covers) {
         FakeCodec fake;
         fake.info.hasCover = cover;
-        PrImageCodec* codec = fake.codec();
+        const PrImageCodecSet* codec = fake.codec();
         PrImageDecoder* decoder = prImageDecoderCreate(codec);
         REQUIRE(prImageDecoderOpen(decoder, reader.source(), nullptr) == PrStatus_Ok);
         uint8_t pixels[16] = {};
@@ -521,7 +529,7 @@ TEST_CASE("a codec that encodes nothing reports it") {
     FakeCodec fake;
     const uint8_t pixel[4] = {1, 2, 3, 4};
     size_t size = 1;
-    CHECK(prImageCodecEncode(fake.codec(), "image/png", PrPixelView{pixel, 4, {1, 1}}, nullptr, 0, &size) ==
+    CHECK(prImageCodecSetEncode(fake.codec(), "image/png", PrPixelView{pixel, 4, {1, 1}}, nullptr, 0, &size) ==
         PrStatus_NotSupported);
     CHECK(size == 0);
 }

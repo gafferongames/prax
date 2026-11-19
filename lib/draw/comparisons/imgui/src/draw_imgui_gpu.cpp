@@ -146,6 +146,7 @@ ImGuiBackend* PR_NULLABLE imguiDeviceCreate(PrGpuDevice* device) {
     g->device = device;
     g->destroyFn = destroyBackend;
     g->frameCreateFn = createFrame;
+    g->name = "imgui";
     g->deviceFn = rendererDevice;
     g->dropResourcesFn = dropResources;
     return g;

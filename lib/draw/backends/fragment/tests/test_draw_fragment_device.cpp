@@ -6,6 +6,7 @@
 #include "pr/draw_list.h"
 #include "pr/float.h"
 #include "pr/gpu.h"
+#include "pr/gpu_select.h"
 #include "pr/min_max.h"
 #include "pr/span.h"
 #include "pr/string.h"

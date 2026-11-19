@@ -5,7 +5,7 @@ device, installed on it and launched with the arguments, and the application's o
 
 The device is the one that PR_IOS_DEVICE names, by its name or its UDID, or else the first connected iPhone or iPad.
 The application's environment reaches it through devicectl's DEVICECTL_CHILD_ prefix, so a variable that it reads, such
-as PR_GPU_BACKEND, is passed as it is set here.
+as PR_BACKEND_GPU, is passed as it is set here.
 
 The build signs a bundle ad hoc, which a device refuses. A device runs an application signed by a development
 certificate whose provisioning profile lists the device and covers the bundle's identifier, so the bundle is signed

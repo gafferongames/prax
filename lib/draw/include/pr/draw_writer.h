@@ -55,36 +55,18 @@ typedef struct PrDrawPage {
     PrRect trim;
 } PrDrawPage;
 
-// The library's backends of writers, which the build turns on (README.md), and Default, the first that the build has.
-enum {
-    PrDrawWriterBackend_Default,
-    PrDrawWriterBackend_Svg,
-    PrDrawWriterBackend_Pdf,
-    PrDrawWriterBackend_Count,
-};
-typedef uint8_t PrDrawWriterBackend;
-
-// Returns the backend that `name` names, as prDrawWriterBackendName spells it, ignoring case, or Count if it names
-// none.
-PrDrawWriterBackend prDrawWriterBackendFromName(PrStringView name);
-
-// Returns the name of a backend in lowercase, as a command line spells it.
-PrStringView prDrawWriterBackendName(PrDrawWriterBackend backend);
-
-// Returns true if the build has the backend. The build has Default if it has any backend.
-bool prDrawWriterBackendIsBuilt(PrDrawWriterBackend backend);
-
 // How a writer writes: what every backend takes.
 typedef struct PrDrawWriterOptions {
-    PrCompressCodec* PR_NULLABLE compress;          // compresses the streams of a format that compresses them, as
-                                                    // Deflate; without it, the streams are written as they are
+    // Compresses the streams of a format that compresses them, as Deflate. Without it, the streams are written as they
+    // are.
+    const PrCompressCodecSet* PR_NULLABLE compress;
 
-    // Compresses several streams at once on the pool's threads, if not null, and then writes them in order. The codec
-    // must then encode on several threads at once, as the built-in codec does. The writer runs loops on the pool from
-    // the thread that writes, so no other thread may run loops on it meanwhile.
+    // Compresses several streams at once on the pool's threads, if not null, and then writes them in order. The set
+    // must then encode on several threads at once, as Prax's codecs do. The writer runs loops on the pool from the
+    // thread that writes, so no other thread may run loops on it meanwhile.
     PrTaskPool* PR_NULLABLE tasks;
 
-    PrImageCodec* PR_NULLABLE images;               // encodes the images of a format that embeds them encoded, as PNG;
+    const PrImageCodecSet* PR_NULLABLE images;      // encodes the images of a format that embeds them encoded, as PNG;
                                                     // without it, such a format writes no images
     PrDrawGlyphDecoder* PR_NULLABLE glyphDecoder;   // draws the glyphs that are pictures; without it, they draw nothing
     float rasterScale;                              // the target pixels per px at which a writer rasterizes what its
@@ -94,10 +76,8 @@ typedef struct PrDrawWriterOptions {
 // Returns options without codecs or a glyph decoder, which rasterize at two target pixels per px.
 PrDrawWriterOptions prDrawWriterOptionsDefault(void);
 
-// Creates a writer by the backend. Null options mean the defaults. Returns NotSupported if the build does not have the
-// backend. On failure, `*out` is null.
-PrStatus prDrawWriterCreate(PrDrawWriterBackend backend, const PrDrawWriterOptions* PR_NULLABLE options,
-    PrDrawWriter* PR_NULLABLE* PR_NONNULL out);
+// A backend's own constructor creates a writer (pr/draw_pdf.h, pr/draw_svg.h). A program can also create one through
+// the selector (pr/draw_select.h).
 
 // Frees the writer. A document that it began must have ended.
 void prDrawWriterDestroy(PrDrawWriter* PR_NULLABLE writer);

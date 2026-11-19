@@ -3,8 +3,10 @@
 // main() is the composition root: the gallery's model, whose choice of theme the window's kit draws in.
 
 #include "pr/assert.h"
+#include "pr/compress_select.h"
 #include "pr/count_of.h"
 #include "pr/font_bundle.h"
+#include "pr/image_select.h"
 #include "pr/print.h"
 #include "pr/studio_app.h"
 
@@ -49,8 +51,13 @@ int main() {
         },
         .context = &state,
     };
-    PrStudioAppDesc app{.fonts = fonts, .window = &desc};
+    // The program decodes every format that Prax has.
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = compress != nullptr ? prImageCodecSetCreateDefault(compress) : nullptr;
+    PrStudioAppDesc app{.fonts = fonts, .compress = compress, .images = images, .window = &desc};
     PrStatus status = prStudioAppRun(&app);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
     prFontSetDestroy(fonts);
     if (status == PrStatus_NotSupported)
         printError("studio_gallery: no GPU device to render with\n");

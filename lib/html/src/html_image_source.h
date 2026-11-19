@@ -36,7 +36,7 @@ struct HtmlImageEnvironment {
     double pixelRatio;
     double viewportWidth;
     double fontSize;
-    PrImageCodec* PR_NULLABLE images;
+    const PrImageCodecSet* PR_NULLABLE images;
 };
 
 // Returns the source size that a sizes attribute's value gives, in CSS pixels (html/#parse-a-sizes-attribute): the

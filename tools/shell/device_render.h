@@ -4,6 +4,7 @@
 
 #include "pr/draw_list.h"
 #include "pr/draw_renderer.h"
+#include "pr/draw_select.h"
 #include "pr/vec.h"
 
 PR_ASSUME_NONNULL_BEGIN

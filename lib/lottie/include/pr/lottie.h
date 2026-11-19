@@ -42,8 +42,8 @@ typedef bool (*PrLottieLoadFn)(void* PR_NULLABLE context, PrStringView path, PrB
 
 // The host services that reading uses.
 typedef struct PrLottieOptions {
-    PrImageCodec* PR_NULLABLE codec;        // decodes image assets; without it, no images draw
-    PrLottieLoadFn PR_NULLABLE load;        // loads the files that assets name; without it, nothing loads
+    const PrImageCodecSet* PR_NULLABLE codec; // decodes image assets; without it, no images draw
+    PrLottieLoadFn PR_NULLABLE load;          // loads the files that assets name; without it, nothing loads
     void* PR_NULLABLE loadContext;
 
     // The families that text is set in, with the set's aliases and default family. Unused for text whose glyphs the

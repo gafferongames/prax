@@ -23,21 +23,23 @@ struct PrImageReader {
     PrStatus (*readFn)(PrImageReader* reader, uint32_t frame, PrPixels output);
 };
 
-// The functions of a codec's backend, at the start of its state. Each implements the function of pr/image.h that it is
-// named for. A null `destroyFn` means that there is nothing to free, and a null `encodeFn` that the codec encodes
-// nothing.
+// The functions of a codec's backend, at the start of its state. A null `destroyFn` means that there is nothing to
+// free, and a null `encodeFn` that the codec encodes nothing.
 //
-// prImageDecoderOpen reads as many bytes from the start of the image as `headerBytesFn` returns, and asks `recognizeFn`
-// whether the codec decodes them. It then calls `decoderOpenFn`, which creates a reader if its status is Ok or
-// Truncated.
+// prImageDecoderOpen reads as many bytes from the start of the image as the largest `headerBytesFn` of the set returns,
+// and asks each codec's `recognizeFn` in turn whether it decodes them. It then calls the first such codec's
+// `decoderOpenFn`, which creates a reader if its status is Ok or Truncated. `set` is the set that the image opens
+// through, which a container uses to open the images that it embeds. `supportsTypeFn` implements
+// prImageCodecSetSupportsType for the codec, and `encodeFn` prImageCodecSetEncode, returning NotSupported for a type
+// that the codec does not encode.
 struct PrImageCodec {
     void (*PR_NULLABLE destroyFn)(PrImageCodec* codec);
     uint32_t (*headerBytesFn)(const PrImageCodec* codec);
-    bool (*supportsTypeFn)(PrImageCodec* codec, PrStringView type);
-    bool (*recognizeFn)(PrImageCodec* codec, PrByteView prefix);
-    PrStatus (*decoderOpenFn)(PrImageCodec* codec, const PrImageSource* source, const PrImageLimits* limits,
-        PrImageReader* PR_NULLABLE* PR_NONNULL out, PrImageInfo* info);
-    PrStatus (*PR_NULLABLE encodeFn)(PrImageCodec* codec, PrStringView type, PrPixelView pixels,
+    bool (*supportsTypeFn)(const PrImageCodec* codec, PrStringView type);
+    bool (*recognizeFn)(const PrImageCodec* codec, PrByteView prefix);
+    PrStatus (*decoderOpenFn)(const PrImageCodec* codec, const PrImageCodecSet* set, const PrImageSource* source,
+        const PrImageLimits* limits, PrImageReader* PR_NULLABLE* PR_NONNULL out, PrImageInfo* info);
+    PrStatus (*PR_NULLABLE encodeFn)(const PrImageCodec* codec, PrStringView type, PrPixelView pixels,
         uint8_t* PR_NULLABLE out, size_t capacity, size_t* size);
 };
 

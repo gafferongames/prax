@@ -330,7 +330,7 @@ void dropPosterFetch(void* data) {
 void posterFetched(void* PR_NULLABLE data, const DomFetchResult* result) {
     PosterFetch* fetch = static_cast<PosterFetch*>(data);
     HtmlMedia* media = fetch->media;
-    PrImageCodec* images = media->window != nullptr ? media->window->images : nullptr;
+    const PrImageCodecSet* images = media->window != nullptr ? media->window->images : nullptr;
     if (fetch->generation == media->posters && images != nullptr && domFetchIsOk(result)) {
         PrByteView bytes = prStringBytes(domFetchText(result));
         const PrDrawImage* poster = nullptr;

@@ -4,7 +4,7 @@
 #include "pr/align.h"
 #include "pr/array.h"
 #include "pr/blob_ref.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/float.h"
 #include "pr/font.h"
 #include "pr/font_math.h"
@@ -42,10 +42,10 @@ const PrFont* fromBytes(const Array<uint8_t>& bytes) {
 // Loads one of WPT's math test fonts, which are WOFF files.
 const PrFont* wptFont(PrStringView name) {
     Array<uint8_t> bytes = fontFile(format("math/{}.woff", name));
-    PrCompressCodec* codec = prCompressBuiltinCreate();
+    PrCompressCodecSet* codec = prCompressCodecSetCreateDefault();
     const PrFont* font = nullptr;
     PrStatus status = prFontCreateWoff(bytes, 0, nullptr, codec, &font);
-    prCompressCodecDestroy(codec);
+    prCompressCodecSetDestroy(codec);
     REQUIRE(status == PrStatus_Ok);
     return font;
 }

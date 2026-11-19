@@ -7,6 +7,7 @@
 #include "pr/app_display.h"
 #include "pr/app_user_preferences.h"
 #include "pr/draw_list.h"
+#include "pr/draw_select.h"
 #include "pr/draw_writer.h"
 #include "pr/font.h"
 #include "pr/text.h"
@@ -50,8 +51,8 @@ std::string htmlBrowserUrl(const std::filesystem::path& path, const std::string&
 // where one serves it (serveWptFrom), another page of third_party from the third-party server where one serves it
 // (serveThirdPartyFrom), and any other page at its file: URL. The page runs on a virtual clock whose time zero is the
 // settled page, so that its frame at a time is the same on every run. Bringing it to a time runs its event loop and
-// animations to that time, and an earlier time runs the page again from its start. The page is presented by a renderer
-// on `device`, or by a renderer in memory if `device` is null.
+// animations to that time, and an earlier time runs the page again from its start. The page is presented by `renderer`,
+// or by a renderer in memory if `renderer` is null.
 //
 // The page renders for `media` in a `width` by `height` viewport, painted for the display and the user's preferences,
 // at the display's pixel ratio: on the screen, or printed in the pages that printHtml prints, stacked down the viewport
@@ -59,7 +60,7 @@ std::string htmlBrowserUrl(const std::filesystem::path& path, const std::string&
 struct HtmlSource;
 std::shared_ptr<HtmlSource> loadHtml(const std::filesystem::path& path, const std::string& query,
     const std::filesystem::path& settings, const std::filesystem::path& capture, bool scripts, page_host::Media media,
-    PrTextShaper* shaper, PrFontHinting hinting, PrFontHinter* PR_NULLABLE hinter, PrGpuDevice* PR_NULLABLE device);
+    PrTextShaper* shaper, PrFontHinting hinting, PrFontHinter* PR_NULLABLE hinter, PrDrawRenderer* PR_NULLABLE renderer);
 void htmlAt(HtmlSource& html, double time);
 void drawHtml(HtmlSource& html, PrDrawList* list, float width, float height, const PrAppDisplay& display,
     const PrAppUserPreferences& preferences);

@@ -191,8 +191,8 @@ typedef struct PrVtermDesc {
 
     // The codecs that decompress compressed images and decode PNG images. If a codec is null, the terminal refuses the
     // images that need it. Each codec outlives the terminal.
-    PrCompressCodec* PR_NULLABLE compressCodec;
-    PrImageCodec* PR_NULLABLE imageCodec;
+    const PrCompressCodecSet* PR_NULLABLE compressCodec;
+    const PrImageCodecSet* PR_NULLABLE imageCodec;
 } PrVtermDesc;
 
 // Creates a terminal with an empty screen and the default palette. prVtermDestroy frees it.

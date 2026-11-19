@@ -3,6 +3,7 @@
 #include "pr/studio_app.h"
 
 #include "pr/alloc.h"
+#include "pr/app_select.h"
 
 #include "studio/app/src/studio_app_shared.h"
 
@@ -74,16 +75,12 @@ PrStatus prStudioAppRun(const PrStudioAppDesc* desc) {
     s->status = PrStatus_Ok;
     s->shaper = prTextShaperCreate(PrTextShaperBackend_Default);
     s->paths = prPathCacheCreate();
-    s->compress = prCompressCodecCreate(PrCompressCodecBackend_Default);
-    s->images = s->compress != nullptr ? prImageCodecCreate(PrImageCodecBackend_Default, s->compress) : nullptr;
-    s->glyphs = s->images != nullptr ? prDrawGlyphBitmapCreate(s->images) : nullptr;
+    s->glyphs = desc->images != nullptr ? prDrawGlyphBitmapCreate(desc->images) : nullptr;
     prAppRun(platform, {.context = s, .start = start, .event = event, .shutdown = shutdown});
     PrStatus status = s->status;
     prAppDestroy(platform);
     s->windows.reset();
     prDrawGlyphDecoderDestroy(s->glyphs);
-    prImageCodecDestroy(s->images);
-    prCompressCodecDestroy(s->compress);
     prTextShaperDestroy(s->shaper);
     prPathCacheDestroy(s->paths);
     prMemoryFree(s);
@@ -112,4 +109,12 @@ PrGpuDevice* PR_NULLABLE prStudioAppDevice(const PrStudioApp* app) {
 
 PrDrawRenderer* PR_NULLABLE prStudioAppRenderer(const PrStudioApp* app) {
     return app->renderer;
+}
+
+const PrCompressCodecSet* PR_NULLABLE prStudioAppCompress(const PrStudioApp* app) {
+    return app->desc.compress;
+}
+
+const PrImageCodecSet* PR_NULLABLE prStudioAppImages(const PrStudioApp* app) {
+    return app->desc.images;
 }

@@ -4,6 +4,7 @@
 
 #include "pr/gpu.h"
 #include "pr/gpu_canvas2d.h"
+#include "pr/gpu_select.h"
 
 #include "tools/harness/harness_gpu.h"
 

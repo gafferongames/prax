@@ -27,7 +27,9 @@ function(pr_example name)
     target_link_libraries(${name} PRIVATE pr_warnings)
     if (EMSCRIPTEN)
         set_target_properties(${name} PROPERTIES SUFFIX ".html" PR_WEB_PAGE TRUE)
-        target_link_options(${name} PRIVATE "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/shell.html")
+        # The page sets environment variables from its query, through the runtime's ENV (shell.html).
+        target_link_options(${name} PRIVATE "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/shell.html"
+            -sEXPORTED_RUNTIME_METHODS=ENV)
         set_property(TARGET ${name} APPEND PROPERTY LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shell.html)
     endif()
     if (arg_FONT_BUNDLES)
@@ -63,7 +65,8 @@ pr_example(draw_gallery
     draw_gallery/scenes.cpp
     FONT_FILES "NotoSans[wdth,wght].ttf" "NotoSerif[wdth,wght].ttf" "NotoSansJP-VF.otf"
 )
-target_link_libraries(draw_gallery PRIVATE prax::app prax::draw prax::gpu prax::task
+target_link_libraries(draw_gallery PRIVATE prax::app_select prax::draw_select prax::gpu_select prax::app prax::draw
+                                           prax::gpu prax::task
                                    prax::font prax::locale prax::text prax::core_cpp)
 
 # The video example: a video that lib/media decodes and lib/draw draws. The device imports each frame without a copy
@@ -72,7 +75,8 @@ pr_example(video
     video/main.cpp
     DATA ${PROJECT_SOURCE_DIR}/third_party/videos/cat.mp4
 )
-target_link_libraries(video PRIVATE prax::app prax::draw prax::gpu prax::media prax::task prax::core_cpp)
+target_link_libraries(video PRIVATE prax::app_select prax::draw_select prax::gpu_select prax::app prax::draw prax::gpu
+                                    prax::media prax::task prax::core_cpp)
 
 # The feature drawings: a captioned drawing of each feature of lib/draw's list, and dense workloads that measure its
 # renderers. They are a library of their own, which the application and draw_bench link. Their fonts are the files of
@@ -91,15 +95,18 @@ add_library(draw_features_drawings STATIC
 )
 target_include_directories(draw_features_drawings PUBLIC ${PROJECT_SOURCE_DIR})
 pr_resources(draw_features_drawings ${PROJECT_SOURCE_DIR}/third_party/fonts@fonts)
-target_link_libraries(draw_features_drawings PUBLIC prax::app prax::draw prax::font prax::text prax::core_cpp
+target_link_libraries(draw_features_drawings PUBLIC prax::compress_select prax::image_select prax::app prax::draw
+                                                    prax::font prax::text prax::core_cpp
                                              PRIVATE prax::color prax::compress prax::image prax::path prax::svg
                                                      pr_warnings)
 
 # The feature drawings in a window, rendered on the GPU and mapped to the display, with the glyphs that are pictures
 # decoded by lib/svg's decoder.
 pr_example(draw_features draw_features/main.cpp)
-target_link_libraries(draw_features PRIVATE draw_features_drawings prax::app prax::compress prax::draw prax::gpu
-                                            prax::image prax::svg prax::task prax::text prax::core_cpp)
+target_link_libraries(draw_features PRIVATE prax::compress_select prax::image_select prax::app_select prax::draw_select
+                                            prax::gpu_select draw_features_drawings
+                                            prax::app prax::draw prax::gpu
+                                            prax::svg prax::task prax::text prax::core_cpp)
 
 # The editor example: Studio Kit's widgets and a HUD library of its own over an editor's model, composed in one tree.
 pr_example(editor
@@ -109,7 +116,9 @@ pr_example(editor
     editor/hud.cpp
     FONT_BUNDLES Complete
 )
-target_link_libraries(editor PRIVATE prax::studio_app prax::font_bundle prax::studio_kit prax::draw prax::layout prax::ui
+target_link_libraries(editor PRIVATE prax::compress_select prax::image_select prax::studio_app prax::font_bundle
+                                     prax::studio_kit prax::draw
+                                     prax::layout prax::ui
                                      prax::ui_cpp prax::text prax::font prax::color prax::core_cpp)
 
 # The application features: each feature of lib/app in Studio's windows, with a log of their events, to try by hand.
@@ -127,7 +136,9 @@ pr_example(app_features
     INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/app_features/Info.plist.in
     MULTIPLE_SCENES
 )
-target_link_libraries(app_features PRIVATE prax::studio_app prax::font_bundle prax::font prax::studio_kit prax::layout
+target_link_libraries(app_features PRIVATE prax::compress_select prax::image_select prax::studio_app prax::font_bundle
+                                           prax::font
+                                           prax::studio_kit prax::layout
                                            prax::ui prax::app prax::color prax::core_cpp)
 
 # The Studio Kit gallery: every widget of the kit, live, over a model of its own.
@@ -143,7 +154,9 @@ pr_example(studio_gallery
     studio_gallery/section_data.cpp
     FONT_BUNDLES Complete
 )
-target_link_libraries(studio_gallery PRIVATE prax::studio_app prax::font_bundle prax::text_edit prax::studio_kit prax::draw
+target_link_libraries(studio_gallery PRIVATE prax::compress_select prax::image_select prax::studio_app prax::font_bundle
+                                             prax::text_edit prax::studio_kit
+                                             prax::draw
                                              prax::layout prax::ui prax::color prax::core_cpp)
 
 # The perspective example: Kit panels standing in 3D over a background that the application draws with its own
@@ -155,7 +168,9 @@ pr_example(perspective
     DATA ${CMAKE_CURRENT_SOURCE_DIR}/perspective/picture.png
 )
 pr_slang(perspective perspective/perspective_gpu.slang VARIABLE kPerspectiveShaders)
-target_link_libraries(perspective PRIVATE prax::app prax::studio_kit prax::draw
+target_link_libraries(perspective PRIVATE prax::compress_select prax::image_select prax::app_select prax::draw_select
+                                          prax::gpu_select prax::app prax::studio_kit
+                                          prax::draw
                                           prax::gpu prax::layout prax::task prax::text prax::font_bundle
                                           prax::image prax::compress prax::core_cpp)
 
@@ -164,7 +179,9 @@ pr_example(incremental
     incremental/incremental.cpp
     FONT_BUNDLES Complete
 )
-target_link_libraries(incremental PRIVATE prax::studio_app prax::font_bundle prax::app prax::studio_kit prax::draw prax::layout
+target_link_libraries(incremental PRIVATE prax::compress_select prax::image_select prax::studio_app prax::font_bundle
+                                          prax::app
+                                          prax::studio_kit prax::draw prax::layout
                                           prax::text prax::html prax::dom prax::css prax::markdown prax::core_cpp)
 
 # The word guess game: six guesses at a hidden five-letter word, built with lib/ui's elements (pr/ui_element.h) in the
@@ -178,7 +195,8 @@ pr_example(word_guess
     word_guess/word_guess_view.cpp
     FONT_FILES "NotoSans[wdth,wght].ttf"
 )
-target_link_libraries(word_guess PRIVATE word_guess_game prax::studio_app prax::font prax::ui_cpp prax::core_cpp)
+target_link_libraries(word_guess PRIVATE prax::compress_select prax::image_select word_guess_game prax::studio_app
+                                         prax::font prax::ui_cpp prax::core_cpp)
 if (PR_DEVELOP)
     pr_module_tests(word_guess_game word_guess/tests/test_word_guess_game.cpp)
 endif()
@@ -194,7 +212,9 @@ pr_example(crossword
     crossword/crossword_view.cpp
     FONT_FILES "NotoSans[wdth,wght].ttf"
 )
-target_link_libraries(crossword PRIVATE crossword_game prax::studio_app prax::studio_icons prax::font prax::ui_cpp
+target_link_libraries(crossword PRIVATE prax::compress_select prax::image_select crossword_game prax::studio_app
+                                        prax::studio_icons prax::font
+                                        prax::ui_cpp
                                         prax::app prax::core_cpp)
 if (PR_DEVELOP)
     pr_module_tests(crossword_game crossword/tests/test_crossword_game.cpp)

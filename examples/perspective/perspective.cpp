@@ -13,16 +13,21 @@
 // renderer owns (PrDrawBeneath).
 
 #include "pr/app.h"
+#include "pr/app_select.h"
 #include "pr/array.h"
 #include "pr/assert.h"
 #include "pr/compress.h"
+#include "pr/compress_select.h"
 #include "pr/draw_filter.h"
 #include "pr/draw_image.h"
 #include "pr/draw_renderer.h"
+#include "pr/draw_select.h"
 #include "pr/float.h"
 #include "pr/font_bundle.h"
 #include "pr/gpu.h"
+#include "pr/gpu_select.h"
 #include "pr/image.h"
+#include "pr/image_select.h"
 #include "pr/kit_box.h"
 #include "pr/kit_button.h"
 #include "pr/kit_choice.h"
@@ -318,11 +323,11 @@ bool openPanels(Panels& p) {
     PrBlob* picture = prResourceOpen("picture.png");
     if (picture == nullptr)
         return false;
-    PrCompressCodec* compress = prCompressCodecCreate(PrCompressCodecBackend_Default);
-    PrImageCodec* images = prImageCodecCreate(PrImageCodecBackend_Default, compress);
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = prImageCodecSetCreateDefault(compress);
     bool read = prDrawImageCreateFromBytes(images, prBlobBytes(picture), &p.picture, nullptr) == PrStatus_Ok;
-    prImageCodecDestroy(images);
-    prCompressCodecDestroy(compress);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
     prBlobRelease(picture);
     return read;
 }

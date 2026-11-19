@@ -573,7 +573,7 @@ bool readFile(Vterm* vterm, const GraphicsCommand& command, PrStringView payload
 
 // Decompresses zlib `input` into `*out`, up to `limit` bytes. Returns false for a stream that is corrupt or that does
 // not fit, and sets `*tooLarge` in the latter case. With `truncate`, a stream that does not fit is cut at the limit.
-bool inflate(PrCompressCodec* codec, PrByteView input, uint64_t limit, bool truncate, RawArray<uint8_t>* out,
+bool inflate(const PrCompressCodecSet* codec, PrByteView input, uint64_t limit, bool truncate, RawArray<uint8_t>* out,
         bool* tooLarge) {
     PrCompressDecoder* decoder = nullptr;
     if (prCompressDecoderCreate(codec, PrCompressFormat_Zlib, &decoder) != PrStatus_Ok)

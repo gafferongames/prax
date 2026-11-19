@@ -90,11 +90,13 @@
 #include "pr/compress.h"
 #include "pr/draw_cpu.h"
 #include "pr/draw_renderer.h"
+#include "pr/draw_select.h"
 #include "pr/draw_structure.h"
 #include "pr/draw_writer.h"
 #include "pr/file.h"
 #include "pr/float.h"
 #include "pr/font_hinter.h"
+#include "pr/gpu_select.h"
 #include "pr/image.h"
 #include "pr/layout_page.h"
 #include "pr/media.h"
@@ -138,7 +140,8 @@ struct Renderers {
     DeviceRender* device = nullptr;
     PrDrawRendererBackend deviceBackend = PrDrawRendererBackend_Default;   // the backend of `device`, once it was tried
 
-    void reset() {
+    // The renderers outlive the pages that they present, so they go after the page host.
+    ~Renderers() {
         deviceRenderDestroy(device);
         prDrawRendererDestroy(cpu);
     }
@@ -174,7 +177,8 @@ bool renderList(const PrDrawList* list, PrVec2 extent, float pixelRatio, PrDrawR
     if (backend != PrDrawRendererBackend_Cpu) {
         bool ok = renderOnDevice(renderers, backend, list, into.extent, out->rgba.data());
         if (!ok)
-            fprintf(stderr, "%s: the %s renderer could not render\n", file, prDrawRendererBackendName(backend).data);
+            fprintf(stderr, "%s: the %s renderer could not render\n", file,
+                prBackendName(prDrawRendererSelectInterface(), backend).data);
         return ok;
     }
     return prDrawRendererRenderPixels(renderers.cpu, list, into, PrPixelFormat_Rgba8) == PrStatus_Ok;
@@ -338,7 +342,8 @@ bool writeDocument(PageHost& host, Page* page, PrVec2 viewport, const PrLayoutPa
         return false;
     if (timings) {
         fprintf(stderr, "%s: %u pages, %zu bytes. paginate %.0f ms, paint %.0f ms, structure %.0f ms, other %.0f ms, "
-            "write %.0f ms, file %.0f ms\n", prDrawWriterBackendName(backend).data, phases.pages, phases.bytes,
+            "write %.0f ms, file %.0f ms\n", prBackendName(prDrawWriterSelectInterface(), backend).data, phases.pages,
+            phases.bytes,
             phases.print.paginate, phases.print.paint, phases.print.structure, phases.other, phases.write, phases.file);
     }
     return true;
@@ -646,8 +651,9 @@ void parse(PageHost& host, const std::vector<std::string>& args, Run& run) {
                 run.viewport = PrVec2{float(width), float(height)};
                 host.setViewport(run.viewport);
             } else if (option == "--renderer") {
-                run.renderer = prDrawRendererBackendFromName(value);
-                run.ok = run.renderer != PrDrawRendererBackend_Default && prDrawRendererBackendIsBuilt(run.renderer);
+                run.renderer = PrDrawRendererBackend(prBackendFromName(prDrawRendererSelectInterface(), value));
+                run.ok = run.renderer != PrDrawRendererBackend_Default &&
+                    prBackendIsBuilt(prDrawRendererSelectInterface(), run.renderer);
                 if (!run.ok)
                     fprintf(stderr, "--renderer names no renderer of lib/draw that the build has: %s\n", value.c_str());
             } else if (option == "--pixel-ratio") {
@@ -849,15 +855,6 @@ int main(int argc, char** argv) {
     PrGpuDevice* memory = nullptr;
     gpuDeviceCreate(PrGpuBackend_Memory, nullptr, &memory);
     std::unique_ptr<PrGpuDevice, decltype(&prGpuDeviceDestroy)> memoryOwner(memory, prGpuDeviceDestroy);
-    PageHost host(shaper.get(), mediaCodec.get(), mixer);
-    host.setDevice(memory);
-    if (pacedAudio)
-        host.paceAudio(audioOutput);
-    // The hinter lives as long as the process, because the fonts that name it are kept.
-    host.setHinting(hinting, hinting != PrFontHinting_None ? prFontHinterCreate(PrFontHinterBackend_Default) : nullptr);
-    Run run;
-    run.started = prTimePerfNow();
-    parse(host, args, run);
     Renderers renderers;
     // Glyphs are drawn at the phases that the fragment backend's atlas holds them at, so that runs that a page splits
     // differently from its reference draw alike, as reftests expect.
@@ -865,8 +862,16 @@ int main(int argc, char** argv) {
     cpuOptions.glyphPhases = true;
     cpuOptions.device = memory;
     renderers.cpu = prDrawCpuCreate(&cpuOptions);
+    PageHost host(shaper.get(), mediaCodec.get(), mixer);
+    host.setRenderer(renderers.cpu);
+    if (pacedAudio)
+        host.paceAudio(audioOutput);
+    // The hinter lives as long as the process, because the fonts that name it are kept.
+    host.setHinting(hinting, hinting != PrFontHinting_None ? prFontHinterCreate(PrFontHinterBackend_Default) : nullptr);
+    Run run;
+    run.started = prTimePerfNow();
+    parse(host, args, run);
     int status = !run.ok ? 1 : run.serve ? serve(host, run, renderers) : finish(host, run, renderers);
-    renderers.reset();
     if (!audioPath.empty() && audio == PrAudioOutputBackend_Memory && audioOutput != nullptr) {
         // The output stops here because the pages that play on it live until the host goes.
         prAudioOutputStop(audioOutput);

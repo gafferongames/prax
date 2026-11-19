@@ -7,6 +7,7 @@
 #include "apps/browser/browser.h"
 
 #include "pr/draw_list.h"
+#include "pr/draw_select.h"
 #include "pr/float.h"
 #include "pr/kit_theme.h"
 #include "pr/layout_query.h"

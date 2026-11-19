@@ -1,9 +1,11 @@
 #include "pr/array.h"
 #include "pr/compress.h"
+#include "pr/compress_select.h"
 #include "pr/draw_filter.h"
 #include "pr/draw_svg.h"
 #include "pr/font.h"
 #include "pr/image.h"
+#include "pr/image_select.h"
 #include "pr/string.h"
 #include "pr/string_ops.h"
 
@@ -28,8 +30,8 @@ void collect(void* PR_NULLABLE context, uint32_t output, PrByteView bytes) {
 
 // Writes the pages as SVG, with a PNG encoder for images, and returns each page's document.
 Array<String> writePages(const PrDrawPage* pages, uint32_t count, PrStringView title = {}) {
-    PrCompressCodec* compress = prCompressCodecCreate(PrCompressCodecBackend_Default);
-    PrImageCodec* images = prImageCodecCreate(PrImageCodecBackend_Default, compress);
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = prImageCodecSetCreateDefault(compress);
     PrDrawWriterOptions options = prDrawWriterOptionsDefault();
     options.images = images;
     PrDrawWriter* writer = prDrawSvgCreate(&options);
@@ -37,8 +39,8 @@ Array<String> writePages(const PrDrawPage* pages, uint32_t count, PrStringView t
     PrDrawDocumentDesc desc{.write = collect, .context = &outputs, .title = title};
     prDrawWriterWrite(writer, &desc, pages, count);
     prDrawWriterDestroy(writer);
-    prImageCodecDestroy(images);
-    prCompressCodecDestroy(compress);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
     return outputs;
 }
 

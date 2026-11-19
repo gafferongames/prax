@@ -94,10 +94,10 @@ struct HtmlWindow : DomCountedTarget {
     RawArray<HtmlFrame> frames;               // the iframes of its document, each with its current window
     RawArray<HtmlMedia*> mediaElements;       // the media elements of its document, which it runs
 
-    // The services of the host that its document's canvases use: the device that the document is presented on, which
-    // holds their bitmaps, or null for bitmaps in memory, and the codec that encodes them.
-    PrGpuDevice* PR_NULLABLE device;
-    PrImageCodec* PR_NULLABLE images;
+    // The host's services for the document's canvases. The renderer presents the document, and its device holds the
+    // canvas bitmaps. Without a renderer, canvases have no bitmaps. The image codec encodes the bitmaps.
+    PrDrawRenderer* PR_NULLABLE renderer;
+    const PrImageCodecSet* PR_NULLABLE images;
 
     PrMediaCodec* PR_NULLABLE mediaCodec;     // reads the resources of its document's media elements, or null
     PrAudioMixer* PR_NULLABLE mixer;          // plays the audio of its document's media elements, or null

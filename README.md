@@ -31,6 +31,7 @@ The libraries, by area. The first comment of each library's `CMakeLists.txt` say
 | System | `app`, `gpu`, `audio`, `media`, `process` |
 | Networking | `net`, `tls`, `http`, `websocket`, `fetch`, `xhr`, `url`, `mime` |
 | Data | `json`, `xml`, `compress`, `image`, `color`, `geom`, `charset`, `locale`, `unicode`, `html_entity` |
+| Formats | `png`, `jpeg`, `gif`, `ico`, `tiff`, `emjc`, `deflate`, `brotli`, `lzfse`, `zip`, and `entropy`, which their coders share |
 | Text | `font`, `font_bundle`, `text`, `text_edit`, `text_view`, `syntax`, `regex`, `text_diff` |
 | Graphics | `path`, `draw`, `canvas`, `lottie` |
 | Documents | `css`, `dom`, `layout`, `html`, `svg`, `mathml`, `tex`, `markdown` |
@@ -93,7 +94,9 @@ find_package(prax 0.1 REQUIRED COMPONENTS app draw text)
 ```
 
 The libraries are static. On Apple platforms, the linker warns when a link line repeats a static library;
-`set(CMAKE_LINK_LIBRARIES_STRATEGY REORDER_FREELY)` in the program's project avoids it. On Windows, link the program
+`set(CMAKE_LINK_LIBRARIES_STRATEGY REORDER_FREELY)` in the program's project avoids it. Link the program with
+`-Wl,-dead_strip_dylibs` there too, so that it loads only the system libraries of the platform codecs that it
+creates, such as Apple's Compression library. On Windows, link the program
 with `/STACK:8388608`, which reserves 8 MB of stack for each thread that does not choose its own size, and with
 Emscripten, link it with `-sSTACK_SIZE=8388608`. The library's
 recursion limits assume that much, as macOS and Linux give a main thread. The options:
@@ -102,7 +105,6 @@ recursion limits assume that much, as macOS and Linux give a main thread. The op
 | --- | --- | --- |
 | `PR_JS` | `ON` | builds the QuickJS bindings and Lottie expressions |
 | `PR_CHARSET_LEGACY` | `ON` | decodes and encodes the Encoding Standard's legacy single-byte and multi-byte charsets; if it is off, a program has only UTF-8, UTF-16, replacement and x-user-defined |
-| `PR_COMPRESS_BROTLI` | `ON` | decodes Brotli in the built-in codec, which WOFF2 fonts and Brotli responses need |
 | `PR_<MODULE>_<BACKEND>` | see below | builds a backend of a module's interface |
 | `PR_INSTALL` | `ON` when Prax is the top-level project | generates the install rules and the CMake package |
 | `PR_PLATFORM_MIMALLOC` | `OFF` | allocates with mimalloc instead of the C library |
@@ -124,7 +126,8 @@ third-party library. A development build (`PR_DEVELOP`), an examples build (`PR_
 | audio | `PR_AUDIO_MEMORY` | output kept in memory, for a run without a device | every platform | on |
 | audio | `PR_AUDIO_APPLE` | Core Audio | Apple platforms | on |
 | audio | `PR_AUDIO_WINDOWS` | WASAPI | Windows | on |
-| compression | `PR_COMPRESS_BUILTIN` | Prax | every platform | on |
+| compression | `PR_COMPRESS_BUILTIN` | Prax's codecs, for Deflate, Brotli and LZFSE | every platform | on |
+| compression | `PR_COMPRESS_APPLE` | Apple's Compression library, for Deflate, Brotli and LZFSE | Apple platforms | on |
 | draw renderer | `PR_DRAW_CPU` | CPU renderer | every platform | on |
 | draw renderer | `PR_DRAW_CANVAS` | the browser's Canvas 2D | the web | on |
 | draw renderer | `PR_DRAW_TRIANGLES` | GPU renderer: colored and textured triangles | every platform | on |
@@ -145,7 +148,8 @@ third-party library. A development build (`PR_DEVELOP`), an examples build (`PR_
 | gpu | `PR_GPU_WEBGPU` | WebGPU, with slots and no bindless | the web | on |
 | gpu | `PR_GPU_CANVAS2D` | memory and a web page's canvases, without shaders | the web | on |
 | http | `PR_HTTP_BUILTIN` | HTTP/1.1 over `lib/net` and `lib/tls` | every platform | on |
-| image codecs | `PR_IMAGE_BUILTIN` | Prax | every platform | on |
+| image codecs | `PR_IMAGE_BUILTIN` | Prax's codecs, for PNG, JPEG, GIF, ICO, TIFF and EMJC | every platform | on |
+| image codecs | `PR_IMAGE_IMAGEIO` | ImageIO, for the formats that it decodes | Apple platforms | on |
 | media | `PR_MEDIA_BUILTIN` | Prax | every platform | on |
 | media | `PR_MEDIA_APPLE` | AVFoundation | Apple platforms | on |
 | media | `PR_MEDIA_WEB` | a web page's video element | the web | on |

@@ -20,7 +20,7 @@ PR_ASSUME_NONNULL_BEGIN
 extern "C" {
 #endif
 
-// An application, created by prAppCreate.
+// An application, created by a backend's own constructor or by prAppCreate (pr/app_select.h).
 typedef struct PrApp PrApp;
 
 // A window of an application (pr/app_window.h).
@@ -28,27 +28,6 @@ typedef struct PrAppWindow PrAppWindow;
 
 // An event (pr/app_event.h).
 typedef struct PrAppEvent PrAppEvent;
-
-// The backends that lib/app provides. Default selects the platform's backend. A program can also supply a backend of
-// its own (pr/app_backend.h).
-enum {
-    PrAppBackend_Default,
-    PrAppBackend_AppKit,
-    PrAppBackend_UiKit,
-    PrAppBackend_Win32,
-    PrAppBackend_Web,
-    PrAppBackend_Count,
-};
-typedef uint8_t PrAppBackend;
-
-// Returns the backend named `name`, ignoring case, or Count if no backend has that name.
-PrAppBackend prAppBackendFromName(PrStringView name);
-
-// Returns the lowercase name of a backend.
-PrStringView prAppBackendName(PrAppBackend backend);
-
-// Returns true if the build includes the backend. The build includes Default if it includes any backend.
-bool prAppBackendIsBuilt(PrAppBackend backend);
 
 // Whether the application appears in the system's lists of running applications: the Dock, the taskbar and the
 // application switcher. An Accessory application appears in none of them. It has only its windows and status items,
@@ -114,10 +93,6 @@ typedef struct PrAppHandler {
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Running
-
-// Creates an application with `backend`. A null `options` means the defaults. Returns null if the build does not
-// include the backend.
-PrApp* PR_NULLABLE prAppCreate(PrAppBackend backend, const PrAppOptions* PR_NULLABLE options);
 
 // Frees the application. It must not be running.
 void prAppDestroy(PrApp* PR_NULLABLE app);

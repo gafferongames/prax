@@ -82,7 +82,8 @@ if (PR_DEVELOP)
     endif()
     # Rendering sets text with HarfBuzz in the fonts the checkout holds. The fetches of a browsing context run on a
     # network whose loop is a thread of its own.
-    target_link_libraries(html_tests PRIVATE prax::app prax::css prax::text prax::image prax::compress
+    target_link_libraries(html_tests PRIVATE prax::compress_select prax::image_select prax::app prax::css prax::text
+                                             prax::image prax::compress
                                              prax::draw prax::dom prax::font prax::layout
                                              prax::markdown html_test_fetch prax::task prax::locale
                                              prax::net prax::fetch)
@@ -123,7 +124,8 @@ if (PR_DEVELOP)
 
     # Printing a long generated document and writing it as PDF and SVG, which ./dev.sh bench print runs.
     pr_harness(print_bench prax::html tests/print_bench.cpp)
-    target_link_libraries(print_bench PRIVATE prax::text prax::draw prax::compress prax::layout)
+    target_link_libraries(print_bench PRIVATE prax::compress_select prax::text prax::draw prax::draw_select
+                                              prax::compress prax::layout)
     target_compile_definitions(print_bench PRIVATE PR_FONTS_DIR="${PROJECT_SOURCE_DIR}/third_party/fonts")
 
     # The selector benchmark's cases through the C API, which ./dev.sh bench selectors runs beside the shell's.

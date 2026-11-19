@@ -195,7 +195,7 @@ void htmlLinkAttributeChanged(PrDomElement* element, PrStringView name) {
         htmlLinkUpdate(element);
 }
 
-PrRawString htmlLinkIconUrl(const PrDomDocument* document, PrImageCodec* PR_NULLABLE codec) {
+PrRawString htmlLinkIconUrl(const PrDomDocument* document, const PrImageCodecSet* PR_NULLABLE codec) {
     PrRawString found = prRawStringNull();
     for (const PrDomNode* node = document->first; node != nullptr; node = domNodeNext(document, node)) {
         const PrDomElement* element = domElementFromNode(node);
@@ -212,7 +212,7 @@ PrRawString htmlLinkIconUrl(const PrDomDocument* document, PrImageCodec* PR_NULL
                 continue;
             for (size_t i = 0; i < essence.size; ++i)
                 lowered[i] = prAsciiLower(essence.data[i]);
-            if (!prImageCodecSupportsType(codec, PrStringView{lowered, essence.size}))
+            if (!prImageCodecSetSupportsType(codec, PrStringView{lowered, essence.size}))
                 continue;
         }
         PrUrl* url = nullptr;

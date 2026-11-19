@@ -2,13 +2,13 @@
 
 #include "tools/harness/draw_renderers.h"
 
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/draw_blend2d.h"
 #include "pr/draw_cpu.h"
 #include "pr/draw_fragment.h"
 #include "pr/draw_imgui.h"
 #include "pr/draw_triangles.h"
-#include "pr/image_builtin.h"
+#include "pr/image_select.h"
 #include "pr/svg_glyph.h"
 
 #if defined(__APPLE__)
@@ -22,8 +22,8 @@ namespace harness {
 
 namespace {
 
-PrCompressCodec* compressCodec;
-PrImageCodec* imageCodec;
+PrCompressCodecSet* compressCodec;
+PrImageCodecSet* imageCodec;
 
 // One decoder for each renderer, because a decoder is used by one thread at a time and panes render renderers
 // independently.
@@ -38,8 +38,8 @@ PrDrawGlyphDecoder* glyphDecoder() {
 } // namespace
 
 std::vector<RendererConfig> createConfigs(PrGpuDevice* PR_NULLABLE device) {
-    compressCodec = prCompressBuiltinCreate();
-    imageCodec = prImageBuiltinCreate(compressCodec);
+    compressCodec = prCompressCodecSetCreateDefault();
+    imageCodec = prImageCodecSetCreateDefault(compressCodec);
     PrDrawCpuOptions cpu = prDrawCpuOptionsDefault();
     cpu.glyphDecoder = glyphDecoder();
     PrDrawBlend2dOptions blend2d = prDrawBlend2dOptionsDefault();
@@ -104,8 +104,8 @@ void destroyConfigs(std::vector<RendererConfig>& configs) {
     for (PrDrawGlyphDecoder* decoder : glyphDecoders)
         prDrawGlyphDecoderDestroy(decoder);
     glyphDecoders.clear();
-    prImageCodecDestroy(imageCodec);
-    prCompressCodecDestroy(compressCodec);
+    prImageCodecSetDestroy(imageCodec);
+    prCompressCodecSetDestroy(compressCodec);
     imageCodec = nullptr;
     compressCodec = nullptr;
 }

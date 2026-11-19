@@ -662,6 +662,23 @@ class ModuleDependencies(unittest.TestCase):
         self.assertEqual(self.problems(cmake, {}),
                          [('CMakeLists.txt', 'geom links prax::core_windows, which no target is')])
 
+    def test_a_selector_is_a_target_that_links_its_module_and_backend(self):
+        cmake = ('pr_library(core_cpp INCLUDE lib/core/cpp/include)\n'
+                 'pr_library(backend INCLUDE lib/backend/include lib/backend/src/backend.cpp)\n'
+                 'pr_library(geom INCLUDE lib/geom/include lib/geom/src/geom.cpp)\n'
+                 'pr_select(geom INCLUDE lib/geom/select/include SOURCES lib/geom/select/src/geom_select.cpp)\n'
+                 'pr_example(viewer examples/viewer/main.cpp)\n'
+                 'target_link_libraries(viewer PRIVATE prax::geom_select)\n')
+        files = {'lib/geom/select/include/pr/geom_select.h': '#include "pr/backend.h"\n#include "pr/geom.h"\n',
+                 'examples/viewer/main.cpp': '#include "pr/geom_select.h"\n'}
+        self.assertEqual(self.problems(cmake, files), [])
+
+    def test_a_backend_adds_its_sources_to_its_module(self):
+        cmake = ('pr_library(geom INCLUDE lib/geom/include lib/geom/src/geom.cpp)\n'
+                 'pr_backend(geom fast INCLUDE lib/geom/backends/fast/include SOURCES lib/geom/backends/fast/src/fast.cpp)\n')
+        files = {'lib/geom/backends/fast/src/fast.cpp': '#include "pr/geom.h"\n'}
+        self.assertEqual(self.problems(cmake, files), [])
+
     def test_an_alias_is_a_target(self):
         cmake = ('add_library(pr_zlib STATIC lib/zlib/zlib.c)\n'
                  'add_library(prax::zlib ALIAS pr_zlib)\n'

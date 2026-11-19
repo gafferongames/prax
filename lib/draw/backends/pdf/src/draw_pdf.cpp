@@ -300,15 +300,15 @@ void writeObject(PdfWriter& p, uint32_t object) {
 
 // Compresses `size` bytes of `data` with the codec into `encoded`, and returns the size of the compressed data, or zero
 // if compressing them does not make them smaller.
-size_t compressStream(PrCompressCodec* codec, const uint8_t* data, size_t size, RawArray<uint8_t>& encoded) {
+size_t compressStream(const PrCompressCodecSet* codec, const uint8_t* data, size_t size, RawArray<uint8_t>& encoded) {
     if (size <= 32)
         return 0;
-    size_t bound = prCompressCodecEncodeBound(codec, PrCompressFormat_Zlib, size);
+    size_t bound = prCompressCodecSetEncodeBound(codec, PrCompressFormat_Zlib, size);
     if (bound == 0)
         return 0;
     encoded.resize(uint32_t(bound));
     size_t written = 0;
-    if (prCompressCodecEncode(codec, PrCompressFormat_Zlib, PrCompressLevel_Default, PrByteView{data, size},
+    if (prCompressCodecSetEncode(codec, PrCompressFormat_Zlib, PrCompressLevel_Default, PrByteView{data, size},
             encoded.data, &written) != PrStatus_Ok || written >= size)
         return 0;
     return written;
@@ -335,7 +335,7 @@ void emitStream(PdfWriter& p, uint32_t object, PrStringView dictionary, const ui
 // Writes object `object` as a stream of `data`, compressed if the writer has a codec, with the entries of `dictionary`
 // beside its length and filter.
 void writeStreamNow(PdfWriter& p, uint32_t object, PrStringView dictionary, const uint8_t* data, size_t size) {
-    PrCompressCodec* codec = p.options.compress;
+    const PrCompressCodecSet* codec = p.options.compress;
     size_t encoded = codec != nullptr ? compressStream(codec, data, size, p.bytes) : 0;
     if (encoded != 0)
         emitStream(p, object, dictionary, p.bytes.data, encoded, true);

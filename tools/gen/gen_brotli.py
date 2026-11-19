@@ -12,7 +12,7 @@ from tools.gen.gen_common import ROOT, banner, namespaced, table, write
 
 RFC = os.path.join(ROOT, "third_party", "rfc", "rfc7932.txt")
 RFC_URL = "https://www.rfc-editor.org/rfc/rfc7932.txt"
-OUT = os.path.join(ROOT, "lib", "compress", "backends", "builtin", "src")
+OUT = os.path.join(ROOT, "lib", "brotli", "src")
 
 DICTIONARY_SIZE = 122784
 DICTIONARY_CRC = 0x5136CB04
@@ -147,7 +147,7 @@ def main():
     rows = ['    {%s, %s, %d, %d, %s},\n' % (c_bytes(prefix), c_bytes(suffix), len(prefix), len(suffix),
                                             elementary_name(kind))
             for prefix, kind, suffix in words]
-    source = [generated, '\n#include "compress/backends/builtin/src/brotli_tables.h"\n',
+    source = [generated, '\n#include "brotli/src/brotli_tables.h"\n',
               "\nnamespace pr_impl {\n",
               "\nconst uint8_t kBrotliDictionary[kBrotliDictionarySize] = {\n",
               "".join(dictionary_word_bytes(data)), "};\n",

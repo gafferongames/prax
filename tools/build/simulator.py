@@ -12,7 +12,7 @@ application's output until it exits.
 
 The device is the one that PR_SIMULATOR_DEVICE names, by its name or its UDID, or else the platform's booted device, or
 else its first available device. The program's environment reaches it through simctl's SIMCTL_CHILD_ prefix, so a
-variable that the tests read, such as PR_GPU_BACKEND, is passed as it is set here.
+variable that the tests read, such as PR_BACKEND_GPU, is passed as it is set here.
 
 It is a script of its own, without the tools package, since the tests run it from any directory."""
 

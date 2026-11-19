@@ -2,7 +2,9 @@
 // through the examples.
 
 #include "pr/draw_canvas.h"
+#include "pr/draw_select.h"
 #include "pr/gpu.h"
+#include "pr/gpu_select.h"
 
 #include "tools/harness/harness_gpu.h"
 

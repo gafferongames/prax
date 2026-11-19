@@ -17,8 +17,8 @@ extern "C" {
 // (prDrawGlyphImage) through `imageCodec`, and inflates gzip-compressed documents through `compressCodec`. Without a
 // codec, the data that the codec would read draws nothing. Both codecs outlive the decoder. The decoder keeps the
 // documents that it parsed most recently.
-PrDrawGlyphDecoder* prSvgGlyphDecoderCreate(PrImageCodec* PR_NULLABLE imageCodec,
-    PrCompressCodec* PR_NULLABLE compressCodec);
+PrDrawGlyphDecoder* prSvgGlyphDecoderCreate(const PrImageCodecSet* PR_NULLABLE imageCodec,
+    const PrCompressCodecSet* PR_NULLABLE compressCodec);
 
 #if defined(__cplusplus)
 }

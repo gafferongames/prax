@@ -2,6 +2,7 @@
 #include "pr/ascii.h"
 #include "pr/blob_ref.h"
 #include "pr/compress.h"
+#include "pr/compress_select.h"
 #include "pr/draw_pdf.h"
 #include "pr/float.h"
 #include "pr/font.h"
@@ -47,11 +48,11 @@ struct Pdf {
     String bytes;
     Array<String> bodies;    // each object's body, by its number, or empty for a free object
     String trailer;          // the trailer's entries, in its dictionary or the cross-reference stream's
-    PrCompressCodec* codec = nullptr;
+    PrCompressCodecSet* codec = nullptr;
 
     Pdf(const PrDrawPage* pages, uint32_t count, const PrDrawStructure* PR_NULLABLE structure = nullptr,
             bool compress = false, PrStringView title = {}, PrStringView language = {}, PrTaskPool* PR_NULLABLE tasks = nullptr) {
-        codec = prCompressCodecCreate(PrCompressCodecBackend_Default);
+        codec = prCompressCodecSetCreateDefault();
         PrDrawWriterOptions options = prDrawWriterOptionsDefault();
         options.compress = compress ? codec : nullptr;
         options.tasks = tasks;
@@ -68,7 +69,7 @@ struct Pdf {
         readXref();
     }
 
-    ~Pdf() { prCompressCodecDestroy(codec); }
+    ~Pdf() { prCompressCodecSetDestroy(codec); }
 
     Pdf(const Pdf&) = delete;
     Pdf& operator=(const Pdf&) = delete;
@@ -208,7 +209,7 @@ struct Pdf {
         Array<uint8_t> out(1 << 22);
         PrCompressRead read{};
         PrByteView input = prStringBytes(data);
-        REQUIRE(prCompressCodecDecode(codec, PrCompressFormat_Zlib, input, out.data(), out.count(), &read) ==
+        REQUIRE(prCompressCodecSetDecode(codec, PrCompressFormat_Zlib, input, out.data(), out.count(), &read) ==
             PrStatus_Ok);
         return PrStringView{reinterpret_cast<const char*>(out.data()), read.written};
     }

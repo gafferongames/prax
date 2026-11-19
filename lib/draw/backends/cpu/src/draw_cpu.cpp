@@ -1785,6 +1785,7 @@ PrDrawRenderer* PR_NULLABLE prDrawCpuCreate(const PrDrawCpuOptions* PR_NULLABLE 
     cpu->glyphPhases = o.glyphPhases;
     cpu->destroyFn = destroyBackend;
     cpu->frameCreateFn = createFrame;
+    cpu->name = "cpu";
     cpu->deviceFn = rendererDevice;
     return cpu;
 }

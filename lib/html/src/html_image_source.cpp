@@ -121,7 +121,7 @@ bool decodes(PrStringView type, const HtmlImageEnvironment& environment) {
     PrStringView folded{lower, essence.size};
     if (folded == "image/svg+xml")
         return true;
-    return environment.images != nullptr && prImageCodecSupportsType(environment.images, folded);
+    return environment.images != nullptr && prImageCodecSetSupportsType(environment.images, folded);
 }
 
 // Selects the candidate of the source set whose density is the lowest at least the pixel ratio, or else the highest. A

@@ -1,7 +1,6 @@
 #include "pr/align.h"
 #include "pr/array.h"
-#include "pr/compress_backend.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/font.h"
 #include "pr/font_math.h"
 #include "pr/min_max.h"
@@ -34,9 +33,9 @@ uint16_t be16(const uint8_t* bytes) {
 // Creates the font of the WOFF or WOFF2 file `name`, at `index`, or returns the status.
 PrStatus loadWoff(PrStringView name, uint32_t index, const PrFont** font) {
     Array<uint8_t> bytes = fontFile(name);
-    PrCompressCodec* codec = prCompressBuiltinCreate();
+    PrCompressCodecSet* codec = prCompressCodecSetCreateDefault();
     const PrStatus status = prFontCreateWoff(bytes, index, nullptr, codec, font);
-    prCompressCodecDestroy(codec);
+    prCompressCodecSetDestroy(codec);
     return status;
 }
 
@@ -212,11 +211,6 @@ Array<uint8_t> woff2Of(PrByteView font, bool padded = true) {
     return file;
 }
 
-// A codec that decodes nothing.
-PrStatus refuseDecoder(PrCompressCodec*, PrCompressFormat, PrCompressDecoder* PR_NULLABLE* PR_NONNULL) {
-    return PrStatus_NotSupported;
-}
-
 } // namespace
 
 } // namespace pr_impl
@@ -233,23 +227,23 @@ TEST_CASE("a WOFF file's font has the tables it wraps, compressed or stored") {
     CHECK(!prRectIsEmpty(prFontGlyphBounds(font, prFontCodePointGlyph(font, 'A'))));
     prFontRelease(font);
     // Anything else is not a font.
-    PrCompressCodec* codec = prCompressBuiltinCreate();
+    PrCompressCodecSet* codec = prCompressCodecSetCreateDefault();
     const uint8_t junk[] = {'w', 'O', 'F', 'F', 0, 1, 0, 0};
     CHECK(prFontCreateWoff(junk, 0, nullptr, codec, &font) == PrStatus_InvalidData);
     const uint8_t woff2[] = {'w', 'O', 'F', '2'};
     CHECK(prFontCreateWoff(PrByteView{woff2, 4}, 0, nullptr, codec, &font) == PrStatus_InvalidData);
     CHECK(font == nullptr);
-    prCompressCodecDestroy(codec);
+    prCompressCodecSetDestroy(codec);
 }
 
 TEST_CASE("a WOFF2 file holds its font's tables, with their checksums and the font's") {
     // Tinos as WOFF2, each table stored as it is, so that the font decodes to the same tables.
     Array<uint8_t> ttf = fontFile("Tinos-Regular.ttf");
     const Array<uint8_t> woff2 = woff2Of(ttf);
-    PrCompressCodec* codec = prCompressBuiltinCreate();
+    PrCompressCodecSet* codec = prCompressCodecSetCreateDefault();
     const PrFont* font = nullptr;
     REQUIRE(prFontCreateWoff(woff2, 0, nullptr, codec, &font) == PrStatus_Ok);
-    prCompressCodecDestroy(codec);
+    prCompressCodecSetDestroy(codec);
 
     const PrByteView decoded = prFontData(font);
     CHECK(fileSum(decoded) == 0xb1b0afbau);
@@ -348,11 +342,12 @@ TEST_CASE("a WOFF2 file that breaks the format's rules is not a font") {
         CHECK(loadWoff(name, 0, &font) == PrStatus_InvalidData);
         CHECK(font == nullptr);
     }
-    // A codec that cannot decode Brotli cannot decode the file.
+    // A set without a Brotli codec cannot decode the file.
     Array<uint8_t> bytes = fontFile("valid-005.woff2");
-    PrCompressCodec refusing{.decoderCreateFn = refuseDecoder};
+    PrCompressCodecSet* refusing = prCompressCodecSetCreate(nullptr, 0);
     const PrFont* font = nullptr;
-    CHECK(prFontCreateWoff(bytes, 0, nullptr, &refusing, &font) == PrStatus_NotSupported);
+    CHECK(prFontCreateWoff(bytes, 0, nullptr, refusing, &font) == PrStatus_NotSupported);
+    prCompressCodecSetDestroy(refusing);
 }
 
 TEST_CASE("a WOFF2 file ends with its compressed data, or with the padding after it") {
@@ -360,7 +355,7 @@ TEST_CASE("a WOFF2 file ends with its compressed data, or with the padding after
     const Array<uint8_t> padded = woff2Of(ttf);
     const Array<uint8_t> unpadded = woff2Of(ttf, false);
     REQUIRE(unpadded.count() % 4 != 0);
-    PrCompressCodec* codec = prCompressBuiltinCreate();
+    PrCompressCodecSet* codec = prCompressCodecSetCreateDefault();
     const Array<uint8_t>* const files[] = {&padded, &unpadded};
     for (const Array<uint8_t>* file : files) {
         const PrFont* font = nullptr;
@@ -377,7 +372,7 @@ TEST_CASE("a WOFF2 file ends with its compressed data, or with the padding after
     extended[11] = uint8_t(length);
     const PrFont* font = nullptr;
     CHECK(prFontCreateWoff(extended, 0, nullptr, codec, &font) == PrStatus_InvalidData);
-    prCompressCodecDestroy(codec);
+    prCompressCodecSetDestroy(codec);
 }
 
 TEST_CASE("a WOFF2 file whose compressed data runs past its end is not a font, whatever its codec") {
@@ -393,24 +388,25 @@ TEST_CASE("a WOFF2 file whose compressed data runs past its end is not a font, w
     bytes[13] = 1;
     bytes[20] = bytes[21] = bytes[22] = bytes[23] = 255;
     bytes[49] = 1;
-    // The codec would say NotSupported if it were asked to decode anything.
-    PrCompressCodec refusing{.decoderCreateFn = refuseDecoder};
+    // A set of no codecs would say NotSupported if it were asked to decode anything.
+    PrCompressCodecSet* refusing = prCompressCodecSetCreate(nullptr, 0);
     const PrFont* font = nullptr;
-    CHECK(prFontCreateWoff(bytes, 0, nullptr, &refusing, &font) == PrStatus_InvalidData);
-    PrCompressCodec* codec = prCompressBuiltinCreate();
+    CHECK(prFontCreateWoff(bytes, 0, nullptr, refusing, &font) == PrStatus_InvalidData);
+    prCompressCodecSetDestroy(refusing);
+    PrCompressCodecSet* codec = prCompressCodecSetCreateDefault();
     CHECK(prFontCreateWoff(bytes, 0, nullptr, codec, &font) == PrStatus_InvalidData);
     CHECK(font == nullptr);
-    prCompressCodecDestroy(codec);
+    prCompressCodecSetDestroy(codec);
 }
 
 TEST_CASE("a WOFF2 file of a math font reads its MATH table as the font file does") {
     const PrFont* reference = loadFont("NotoSansMath-Regular.ttf");
     const Array<uint8_t> ttf = fontFile("NotoSansMath-Regular.ttf");
     const Array<uint8_t> woff2 = woff2Of(ttf);
-    PrCompressCodec* codec = prCompressBuiltinCreate();
+    PrCompressCodecSet* codec = prCompressCodecSetCreateDefault();
     const PrFont* font = nullptr;
     REQUIRE(prFontCreateWoff(woff2, 0, nullptr, codec, &font) == PrStatus_Ok);
-    prCompressCodecDestroy(codec);
+    prCompressCodecSetDestroy(codec);
     CHECK(prFontHasMath(font));
     CHECK(prFontMathConstants(font)->axisHeight == prFontMathConstants(reference)->axisHeight);
     uint16_t paren = prFontCodePointGlyph(font, '(');

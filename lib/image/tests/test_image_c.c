@@ -1,5 +1,4 @@
 #include "pr/image.h"
-#include "pr/image_png.h"
 #include "pr/image_process.h"
 
 int prTestImageCApi(void);
@@ -19,10 +18,8 @@ int prTestImageCApi(void) {
     PrPixels pixels = {(uint8_t*)&value, sizeof(float), {1, 1}};
     prImageBlur(pixels, PrPixelFormat_RF32, (PrVec2){0, 0}, PrImageEdgeMode_None);
     result |= value != 1;
-    size_t size = 1;
-    result |= prImagePngSetText((PrByteView){NULL, 0}, PR_SV("Key"), PR_SV("text"), NULL, 0, &size) !=
-        PrStatus_InvalidData;
     prImageDecoderDestroy(NULL);
     prImageCodecDestroy(NULL);
+    prImageCodecSetDestroy(NULL);
     return result;
 }

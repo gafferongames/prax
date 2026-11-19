@@ -10,18 +10,21 @@
 // Every few seconds, the gallery prints the device and the renderer that it draws with, and the time that a frame takes
 // on the CPU, from recording the list to submitting it, and on the GPU where the device measures it.
 //
-// Usage: draw [--gpu NAME] [--renderer NAME] [--scene NUMBER]. The NAMEs are those of one of lib/gpu's backends and one
-// of lib/draw's, and Default if they are not given, which the environment variables PR_GPU_BACKEND and PR_DRAW_RENDERER
-// also choose. NUMBER is the scene shown first, counted from 1. On the web, the page's query passes the arguments.
+// Usage: draw [--scene NUMBER]. NUMBER is the scene shown first, counted from 1. On the web, the page's query passes
+// the arguments. The environment chooses the backends: PR_BACKEND_GPU for the device and PR_BACKEND_RENDERER for the
+// renderer.
 
 #include "pr/app.h"
+#include "pr/app_select.h"
 #include "pr/assert.h"
 #include "pr/atomic.h"
 #include "pr/draw_display.h"
 #include "pr/draw_list.h"
 #include "pr/draw_renderer.h"
+#include "pr/draw_select.h"
 #include "pr/float.h"
 #include "pr/gpu.h"
+#include "pr/gpu_select.h"
 #include "pr/integer.h"
 #include "pr/print.h"
 #include "pr/status.h"
@@ -48,8 +51,6 @@ struct Window {
     float hold = 0;             // eases toward 1 while the button is held, and toward 0 after
     bool paused = false;
     PrDrawList* list = nullptr;
-    PrGpuBackend gpu = PrGpuBackend_Default;
-    PrDrawRendererBackend backend = PrDrawRendererBackend_Default;
 
     PrApp* app = nullptr;
     PrAppWindow* window = nullptr;
@@ -104,7 +105,7 @@ void requestDevice(Window& w) {
         return;
     PrGpuDeviceOptions options = prGpuDeviceOptionsDefault();
     options.pool = w.pool;
-    w.device = prGpuDeviceCreate(w.gpu, &options);
+    w.device = prGpuDeviceCreate(PrGpuBackend_Default, &options);
 }
 
 // Returns true while the device is being created.
@@ -129,14 +130,14 @@ bool openDevice(Window& w) {
     PrGpuSwapChainDesc desc{.intent = PrGpuSwapChainIntent_Hdr};
     if (prAppWindowSurface(w.window, &surface) != PrStatus_Ok ||
             prGpuSwapChainCreate(w.device, &surface, &desc, &w.swapChain) != PrStatus_Ok ||
-            prDrawRendererCreate(w.backend, w.device, nullptr, &w.renderer) != PrStatus_Ok) {
+            prDrawRendererCreate(PrDrawRendererBackend_Default, w.device, nullptr, &w.renderer) != PrStatus_Ok) {
         printError("draw: the device cannot render to the window\n");
         closeDevice(w);
         return false;
     }
     w.frame = prDrawFrameCreate(w.renderer);
     PrGpuDeviceInfo info = prGpuDeviceInfo(w.device);
-    print("draw: rendering with {} on {} ({})\n", prDrawRendererBackendName(w.backend), info.backend, info.adapter);
+    print("draw: rendering with {} on {} ({})\n", prDrawRendererName(w.renderer), info.backend, info.adapter);
     return true;
 }
 
@@ -168,7 +169,7 @@ void report(Window& w, double time) {
     uint64_t gpuNanoseconds = w.gpuNanoseconds.exchange(0);
     uint32_t gpuFrames = w.gpuFrames.exchange(0);
     PrGpuDeviceInfo info = prGpuDeviceInfo(w.device);
-    PrStringView renderer = prDrawRendererBackendName(w.backend);
+    PrStringView renderer = prDrawRendererName(w.renderer);
     double cpu = w.cpuMilliseconds / w.frames;
     if ((info.features & PrGpuFeatureFlag_Timestamps) != 0 && gpuFrames != 0) {
         double gpu = double(gpuNanoseconds) / 1e6 / gpuFrames;
@@ -319,24 +320,12 @@ int main(int argc, char** argv) {
     uint32_t first = 1;
     for (int i = 1; i < argc; ++i) {
         PrStringView argument = argv[i];
-        if (argument == "--gpu" && i + 1 < argc) {
-            w.gpu = prGpuBackendFromName(argv[++i]);
-            if (!prGpuBackendIsBuilt(w.gpu)) {
-                printError("draw: no GPU backend named {} in this build\n", PrStringView{argv[i]});
-                return 1;
-            }
-        } else if (argument == "--renderer" && i + 1 < argc) {
-            w.backend = prDrawRendererBackendFromName(argv[++i]);
-            if (!prDrawRendererBackendIsBuilt(w.backend)) {
-                printError("draw: no renderer named {} in this build\n", PrStringView{argv[i]});
-                return 1;
-            }
-        } else if (argument == "--scene" && i + 1 < argc) {
+        if (argument == "--scene" && i + 1 < argc) {
             PrStringView number = argv[++i];
             uint64_t parsed = 0;
             first = prU64Parse(number.data, number.size, &parsed, 10) && parsed <= UINT32_MAX ? uint32_t(parsed) : 0;
         } else {
-            printError("usage: draw [--gpu NAME] [--renderer NAME] [--scene NUMBER]\n");
+            printError("usage: draw [--scene NUMBER]\n");
             return 1;
         }
     }

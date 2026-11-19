@@ -4,6 +4,7 @@
 
 #include "pr/app_display.h"
 #include "pr/draw_list.h"
+#include "pr/draw_select.h"
 #include "pr/font_bundle.h"
 #include "pr/font_set.h"
 #include "pr/kit.h"

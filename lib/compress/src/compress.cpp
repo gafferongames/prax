@@ -1,29 +1,49 @@
-// Compression backends, which decode compressed byte streams and may encode them.
+// Compression codecs and their sets: argument checks, the choice of the codec that codes each format, and the frames
+// around Deflate.
 
 #include "pr/compress.h"
 
-#include "pr/ascii.h"
+#include "pr/alloc.h"
 #include "pr/assert.h"
 #include "pr/compress_backend.h"
 
-#if defined(PR_COMPRESS_HAS_BUILTIN)
-#include "pr/compress_builtin.h"
-#endif
+#include "compress/src/compress_frame.h"
 
 namespace pr_impl {
 
+// The codecs of a set, in priority order, which the set owns.
+struct CompressCodecSet {
+    PrCompressCodec** codecs;
+    uint32_t count;
+};
+
 namespace {
 
-constexpr PrStringView kBackendNames[PrCompressCodecBackend_Count] = {"default", "builtin"};
+// Returns the bare format that codes `format`: Deflate for the frames around it, and the format itself otherwise.
+PrCompressFormat bareOf(PrCompressFormat format) {
+    return compressIsFramed(format) ? PrCompressFormat_Deflate : format;
+}
 
-// The backends that the build has, which Default creates the first of, and then Default, so that a build without
-// backends creates none.
-constexpr PrCompressCodecBackend kBuilt[] = {
-#if defined(PR_COMPRESS_HAS_BUILTIN)
-    PrCompressCodecBackend_Builtin,
-#endif
-    PrCompressCodecBackend_Default,
-};
+// Returns the first codec of `set` that decodes `format`, or null.
+const PrCompressCodec* PR_NULLABLE decoderOf(const CompressCodecSet& set, PrCompressFormat format) {
+    format = bareOf(format);
+    for (uint32_t i = 0; i < set.count; ++i) {
+        if (set.codecs[i]->decodesFn(set.codecs[i], format))
+            return set.codecs[i];
+    }
+    return nullptr;
+}
+
+// Returns the first codec of `set` that encodes `format`, or null.
+const PrCompressCodec* PR_NULLABLE encoderOf(const CompressCodecSet& set, PrCompressFormat format) {
+    format = bareOf(format);
+    for (uint32_t i = 0; i < set.count; ++i) {
+        const PrCompressCodec* codec = set.codecs[i];
+        if (codec->encodesFn != nullptr && codec->encodesFn(codec, format))
+            return codec;
+    }
+    return nullptr;
+}
 
 } // namespace
 
@@ -31,50 +51,55 @@ constexpr PrCompressCodecBackend kBuilt[] = {
 
 using namespace pr_impl;
 
-PrCompressCodecBackend prCompressCodecBackendFromName(PrStringView name) {
-    for (PrCompressCodecBackend backend = 0; backend < PrCompressCodecBackend_Count; ++backend) {
-        if (prAsciiEqualsFold(kBackendNames[backend], name))
-            return backend;
-    }
-    return PrCompressCodecBackend_Count;
-}
-
-PrStringView prCompressCodecBackendName(PrCompressCodecBackend backend) {
-    return backend < PrCompressCodecBackend_Count ? kBackendNames[backend] : PrStringView{};
-}
-
-bool prCompressCodecBackendIsBuilt(PrCompressCodecBackend backend) {
-    for (PrCompressCodecBackend built : kBuilt) {
-        if (built != PrCompressCodecBackend_Default && (built == backend || backend == PrCompressCodecBackend_Default))
-            return true;
-    }
-    return false;
-}
-
-PrCompressCodec* PR_NULLABLE prCompressCodecCreate(PrCompressCodecBackend backend) {
-    switch (backend == PrCompressCodecBackend_Default ? kBuilt[0] : backend) {
-#if defined(PR_COMPRESS_HAS_BUILTIN)
-        case PrCompressCodecBackend_Builtin: return prCompressBuiltinCreate();
-#endif
-        default: return nullptr;
-    }
-}
+struct PrCompressCodecSet : CompressCodecSet {};
 
 void prCompressCodecDestroy(PrCompressCodec* PR_NULLABLE codec) {
     if (codec != nullptr && codec->destroyFn != nullptr)
         codec->destroyFn(codec);
 }
 
-bool prCompressCodecDecodes(PrCompressCodec* codec, PrCompressFormat format) {
-    PR_ASSERT(format <= PrCompressFormat_Lzfse);
-    return codec->decodesFn == nullptr || codec->decodesFn(codec, format);
+PrCompressCodecSet* prCompressCodecSetCreate(PrCompressCodec* PR_NONNULL const* PR_NULLABLE codecs, uint32_t count) {
+    PrCompressCodecSet* set = allocZeroed<PrCompressCodecSet>();
+    set->codecs = count != 0 ? static_cast<PrCompressCodec**>(prMemoryAlloc(sizeof(PrCompressCodec*) * count)) : nullptr;
+    for (uint32_t i = 0; i < count; ++i) {
+        PR_ASSERT(codecs[i] != nullptr);
+        set->codecs[i] = codecs[i];
+    }
+    set->count = count;
+    return set;
 }
 
-PrStatus prCompressDecoderCreate(PrCompressCodec* codec, PrCompressFormat format,
+void prCompressCodecSetDestroy(PrCompressCodecSet* PR_NULLABLE set) {
+    if (set == nullptr)
+        return;
+    for (uint32_t i = 0; i < set->count; ++i)
+        prCompressCodecDestroy(set->codecs[i]);
+    prMemoryFree(set->codecs);
+    prMemoryFree(set);
+}
+
+bool prCompressCodecSetDecodes(const PrCompressCodecSet* set, PrCompressFormat format) {
+    PR_ASSERT(format <= PrCompressFormat_Lzfse);
+    return decoderOf(*set, format) != nullptr;
+}
+
+bool prCompressCodecSetEncodes(const PrCompressCodecSet* set, PrCompressFormat format) {
+    PR_ASSERT(format <= PrCompressFormat_Lzfse);
+    return encoderOf(*set, format) != nullptr;
+}
+
+PrStatus prCompressDecoderCreate(const PrCompressCodecSet* set, PrCompressFormat format,
         PrCompressDecoder* PR_NULLABLE* PR_NONNULL out) {
     PR_ASSERT(format <= PrCompressFormat_Lzfse);
     *out = nullptr;
-    PrStatus status = codec->decoderCreateFn(codec, format, out);
+    const PrCompressCodec* codec = decoderOf(*set, format);
+    if (codec == nullptr)
+        return PrStatus_NotSupported;
+    PrStatus status = PrStatus_Ok;
+    if (compressIsFramed(format))
+        status = compressFrameDecoderCreate(format, codec, out);
+    else
+        status = codec->decoderCreateFn(codec, format, out);
     PR_ASSERT(status != PrStatus_Ok || *out != nullptr);
     return status;
 }
@@ -92,11 +117,11 @@ PrStatus prCompressDecoderRead(PrCompressDecoder* decoder, PrByteView input, boo
     return decoder->readFn(decoder, input, final, output, capacity, out);
 }
 
-PrStatus prCompressCodecDecode(PrCompressCodec* codec, PrCompressFormat format, PrByteView input,
+PrStatus prCompressCodecSetDecode(const PrCompressCodecSet* set, PrCompressFormat format, PrByteView input,
         uint8_t* PR_NULLABLE output, size_t capacity, PrCompressRead* out) {
     *out = PrCompressRead{0, 0, PrCompressProgress_Input};
     PrCompressDecoder* decoder = nullptr;
-    PrStatus status = prCompressDecoderCreate(codec, format, &decoder);
+    PrStatus status = prCompressDecoderCreate(set, format, &decoder);
     if (status != PrStatus_Ok)
         return status;
     status = prCompressDecoderRead(decoder, input, true, output, capacity, out);
@@ -104,17 +129,31 @@ PrStatus prCompressCodecDecode(PrCompressCodec* codec, PrCompressFormat format, 
     return status;
 }
 
-size_t prCompressCodecEncodeBound(PrCompressCodec* codec, PrCompressFormat format, size_t size) {
+size_t prCompressCodecSetEncodeBound(const PrCompressCodecSet* set, PrCompressFormat format, size_t size) {
     PR_ASSERT(format <= PrCompressFormat_Lzfse);
-    return codec->encodeBoundFn != nullptr ? codec->encodeBoundFn(codec, format, size) : 0;
+    const PrCompressCodec* codec = encoderOf(*set, format);
+    if (codec == nullptr)
+        return 0;
+    if (compressIsFramed(format))
+        return codec->encodeBoundFn(codec, PrCompressFormat_Deflate, size) + compressFrameSize(format);
+    return codec->encodeBoundFn(codec, format, size);
 }
 
-PrStatus prCompressCodecEncode(PrCompressCodec* codec, PrCompressFormat format, PrCompressLevel level,
+PrStatus prCompressCodecSetEncode(const PrCompressCodecSet* set, PrCompressFormat format, PrCompressLevel level,
         PrByteView input, uint8_t* output, size_t* written) {
     PR_ASSERT(format <= PrCompressFormat_Lzfse && level <= PrCompressLevel_Small);
     PR_ASSERT(input.data != nullptr || input.size == 0);
     *written = 0;
-    if (codec->encodeFn == nullptr)
+    const PrCompressCodec* codec = encoderOf(*set, format);
+    if (codec == nullptr)
         return PrStatus_NotSupported;
-    return codec->encodeFn(codec, format, level, input, output, written);
+    if (!compressIsFramed(format))
+        return codec->encodeFn(codec, format, level, input, output, written);
+    const size_t header = compressFrameWriteHeader(format, level, output);
+    size_t data = 0;
+    PrStatus status = codec->encodeFn(codec, PrCompressFormat_Deflate, level, input, output + header, &data);
+    if (status != PrStatus_Ok)
+        return status;
+    *written = header + data + compressFrameWriteTrailer(format, input, output + header + data);
+    return PrStatus_Ok;
 }

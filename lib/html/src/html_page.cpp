@@ -1450,8 +1450,8 @@ void attachFrame(PrHtmlPage* page, PrDomElement* element, PrStringView source, P
         childHost.fetcher = page->host.fetcher;
     if (childHost.localStorage == nullptr)
         childHost.localStorage = page->host.localStorage;
-    if (childHost.device == nullptr)
-        childHost.device = page->host.device;
+    if (childHost.renderer == nullptr)
+        childHost.renderer = page->host.renderer;
     if (childHost.sessionStorage == nullptr)
         childHost.sessionStorage = page->host.sessionStorage;
     PrHtmlPage* child = prHtmlPageCreate(&childHost);
@@ -1587,20 +1587,21 @@ void frameChanged(PrHtmlPage* page, PrDomElement* element) {
     prUrlDestroy(resolved);
 }
 
-const PrSvgImage* PR_NULLABLE svgImageOf(PrStringView bytes, PrStringView fragment, PrImageCodec* PR_NULLABLE codec);
+const PrSvgImage* PR_NULLABLE svgImageOf(PrStringView bytes, PrStringView fragment, HtmlSvgImageLoader* loader);
 
-// Loads an image that an SVG image names (PrSvgLoadImageFn), with the codec that `context` points to. An SVG image is
+// Loads an image that an SVG image names (PrSvgLoadImageFn), with the loader that `context` points to. An SVG image is
 // processed in secure static mode (svg-integration/#secure-static-mode), which loads no external resource, so only a
 // data: URL, which holds its own bytes, loads.
 bool loadSecureImage(void* PR_NULLABLE context, PrDomDocument* from, PrStringView url, PrSvgLoadedImage* out) {
     (void)from;
-    PrImageCodec* codec = static_cast<PrImageCodec*>(context);
+    HtmlSvgImageLoader* loader = static_cast<HtmlSvgImageLoader*>(context);
+    const PrImageCodecSet* codec = loader->images;
     PrRawString body{};
     PrRawString type{};
     if (prUrlProcessData(url, &body, &type) == PrStatus_Ok) {
         PrStringView bytes = prRawStringView(&body);
         if (htmlImageIsSvg(bytes)) {
-            out->svg = svgImageOf(bytes, domUrlFragment(url), codec);
+            out->svg = svgImageOf(bytes, domUrlFragment(url), loader);
         } else if (codec != nullptr) {
             PrByteView view = prStringBytes(bytes);
             prDrawImageCreateFromBytes(codec, view, &out->raster, nullptr);
@@ -1613,8 +1614,8 @@ bool loadSecureImage(void* PR_NULLABLE context, PrDomDocument* from, PrStringVie
 
 // Returns the SVG image `bytes`, named by a URL whose fragment is `fragment`, with a reference for the caller, or null
 // if the bytes do not parse as an SVG document. The image is its own document, which loads only the images of data:
-// URLs, with `codec`.
-const PrSvgImage* PR_NULLABLE svgImageOf(PrStringView bytes, PrStringView fragment, PrImageCodec* PR_NULLABLE codec) {
+// URLs, with `loader`.
+const PrSvgImage* PR_NULLABLE svgImageOf(PrStringView bytes, PrStringView fragment, HtmlSvgImageLoader* loader) {
     PrRawString decoded = {};
     PrCharset charset = PrCharset_None;
     PrDomDocument* document = prDomParseXml(domXmlDecode(bytes, PrCharset_None, &decoded, &charset), "image/svg+xml", nullptr);
@@ -1626,7 +1627,7 @@ const PrSvgImage* PR_NULLABLE svgImageOf(PrStringView bytes, PrStringView fragme
     PrSvgElement* svg = root != nullptr ? prSvgElementQuery(prDomElementAsEventTarget(root)) : nullptr;
     PrSvgDrawOptions options = prSvgDrawOptionsDefault();
     options.loadImage = loadSecureImage;
-    options.loadContext = codec;
+    options.loadContext = loader;
     const PrSvgImage* image = svg != nullptr ? prSvgImageCreate(svg, fragment, &options) : nullptr;
     prDomDocumentRelease(document);
     return image;
@@ -1636,7 +1637,7 @@ const PrSvgImage* PR_NULLABLE svgImageOf(PrStringView bytes, PrStringView fragme
 // caller, and writes its natural dimensions. `fragment` is the fragment of the URL that named the image. Returns a
 // painter with no paint function if the bytes do not parse as an SVG document.
 PrLayoutPainter svgPainter(PrHtmlPage* page, PrStringView bytes, PrStringView fragment, PrLayoutNaturalSize* natural) {
-    const PrSvgImage* image = svgImageOf(bytes, fragment, page->host.images);
+    const PrSvgImage* image = svgImageOf(bytes, fragment, &page->svgImages);
     if (image == nullptr)
         return PrLayoutPainter{};
     PrSvgNaturalSize size = prSvgImageNaturalSize(image);
@@ -2298,7 +2299,7 @@ void shareWithWindow(PrHtmlPage* page, PrHtmlWindow* window) {
     window->clockContext = page->host.context;
     window->storage[PrHtmlStorageKind_Local].provider = page->host.localStorage;
     window->storage[PrHtmlStorageKind_Session].provider = page->host.sessionStorage;
-    window->device = page->host.device;
+    window->renderer = page->host.renderer;
     window->images = page->host.images;
     window->mediaCodec = page->host.media;
     window->mixer = page->host.mixer;
@@ -3685,6 +3686,7 @@ PrHtmlPage* prHtmlPageCreate(const PrHtmlHost* PR_NULLABLE host) {
     PrHtmlPage* page = allocZeroed<PrHtmlPage>();
     page->window = htmlWindowCreate();
     page->host = host != nullptr ? *host : prHtmlHostDefault();
+    page->svgImages = HtmlSvgImageLoader{.images = page->host.images};
     shareWithWindow(page, page->window);
     // A browsing context with no history of its host's keeps its own, whose first entry is its initial about:blank's.
     page->ownsHistory = page->host.sessionHistory == nullptr;

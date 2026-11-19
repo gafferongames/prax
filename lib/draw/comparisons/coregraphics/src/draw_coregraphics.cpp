@@ -1385,6 +1385,7 @@ PrDrawRenderer* PR_NULLABLE prDrawCoreGraphicsCreate(const PrDrawCoreGraphicsOpt
     cg->glyphs = prDrawGlyphCacheCreate(cg->options.glyphDecoder);
     cg->destroyFn = destroyBackend;
     cg->frameCreateFn = createFrame;
+    cg->name = "coregraphics";
     cg->deviceFn = rendererDevice;
     cg->srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
     cg->extended = CGColorSpaceCreateWithName(kCGColorSpaceExtendedSRGB);

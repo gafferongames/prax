@@ -4,9 +4,11 @@
 // fonts. Where the build reads no system fonts, as on the web, the game's text is set in a font that it packages.
 
 #include "pr/blob.h"
+#include "pr/compress_select.h"
 #include "pr/construct.h"
 #include "pr/font.h"
 #include "pr/font_set.h"
+#include "pr/image_select.h"
 #include "pr/print.h"
 #include "pr/resource.h"
 #include "pr/studio_app.h"
@@ -109,8 +111,13 @@ int main(int argc, char** argv) {
         },
         .context = &wordGuess,
     };
-    PrStudioAppDesc app{.fonts = fonts, .window = &desc};
+    // The program decodes every format that Prax has.
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = compress != nullptr ? prImageCodecSetCreateDefault(compress) : nullptr;
+    PrStudioAppDesc app{.fonts = fonts, .compress = compress, .images = images, .window = &desc};
     PrStatus status = prStudioAppRun(&app);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
     destroy(wordGuess.resources);
     prFontSetDestroy(fonts);
     prFontSystemDestroy(system);

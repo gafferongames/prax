@@ -6,23 +6,9 @@
 #include "pr/assert.h"
 #include "pr/draw_commands.h"
 #include "pr/draw_renderer_backend.h"
-#include "pr/environment.h"
 #include "pr/mem.h"
 #include "pr/memory.h"
 #include "pr/vec.h"
-
-#if defined(PR_DRAW_HAS_CANVAS)
-#include "pr/draw_canvas.h"
-#endif
-#if defined(PR_DRAW_HAS_CPU)
-#include "pr/draw_cpu.h"
-#endif
-#if defined(PR_DRAW_HAS_TRIANGLES)
-#include "pr/draw_triangles.h"
-#endif
-#if defined(PR_DRAW_HAS_FRAGMENT)
-#include "pr/draw_fragment.h"
-#endif
 
 namespace pr_impl {
 
@@ -37,121 +23,23 @@ PrDrawPart wholeOf(const PrDrawList* list) {
     };
 }
 
-constexpr PrStringView kBackendNames[PrDrawRendererBackend_Count] = {"default", "cpu", "canvas", "triangles", "fragment"};
-
-// The backends in the build, in the order of preference, and then Default. Default creates the first of these that the
-// device runs. Listing Default last means that a build without backends creates none.
-constexpr PrDrawRendererBackend kBuilt[] = {
-#if defined(PR_DRAW_HAS_FRAGMENT)
-    PrDrawRendererBackend_Fragment,
-#endif
-#if defined(PR_DRAW_HAS_TRIANGLES)
-    PrDrawRendererBackend_Triangles,
-#endif
-#if defined(PR_DRAW_HAS_CANVAS)
-    PrDrawRendererBackend_Canvas,
-#endif
-#if defined(PR_DRAW_HAS_CPU)
-    PrDrawRendererBackend_Cpu,
-#endif
-    PrDrawRendererBackend_Default,
-};
-
-// Creates a renderer by `backend`, which is not Default. Only the CPU renderer makes a device of its own.
-PrStatus create(PrDrawRendererBackend backend, PrGpuDevice* PR_NULLABLE device, const PrDrawRendererOptions& o,
-        PrDrawRenderer* PR_NULLABLE* PR_NONNULL out) {
-    if (backend != PrDrawRendererBackend_Cpu && device == nullptr)
-        return PrStatus_NotSupported;
-    switch (backend) {
-#if defined(PR_DRAW_HAS_CPU)
-        case PrDrawRendererBackend_Cpu: {
-            PrDrawCpuOptions cpu = prDrawCpuOptionsDefault();
-            cpu.glyphDecoder = o.glyphDecoder;
-            cpu.device = device;
-            *out = prDrawCpuCreate(&cpu);
-            return *out != nullptr ? PrStatus_Ok : PrStatus_NotSupported;
-        }
-#endif
-#if defined(PR_DRAW_HAS_CANVAS)
-        case PrDrawRendererBackend_Canvas: {
-            PrDrawCanvasOptions canvas = prDrawCanvasOptionsDefault();
-            canvas.glyphDecoder = o.glyphDecoder;
-            return prDrawCanvasCreate(device, &canvas, out);
-        }
-#endif
-#if defined(PR_DRAW_HAS_TRIANGLES)
-        case PrDrawRendererBackend_Triangles: {
-            PrDrawTrianglesOptions triangles = prDrawTrianglesOptionsDefault();
-            triangles.glyphDecoder = o.glyphDecoder;
-            return prDrawTrianglesCreate(device, &triangles, out);
-        }
-#endif
-#if defined(PR_DRAW_HAS_FRAGMENT)
-        case PrDrawRendererBackend_Fragment: {
-            PrDrawFragmentOptions fragment = prDrawFragmentOptionsDefault();
-            fragment.glyphDecoder = o.glyphDecoder;
-            return prDrawFragmentCreate(device, &fragment, out);
-        }
-#endif
-        default: return PrStatus_NotSupported;
-    }
-}
-
 } // namespace
 
 } // namespace pr_impl
 
 using namespace pr_impl;
 
-PrDrawRendererBackend prDrawRendererBackendFromName(PrStringView name) {
-    for (PrDrawRendererBackend backend = 0; backend < PrDrawRendererBackend_Count; ++backend) {
-        if (prAsciiEqualsFold(kBackendNames[backend], name))
-            return backend;
-    }
-    return PrDrawRendererBackend_Count;
-}
-
-PrStringView prDrawRendererBackendName(PrDrawRendererBackend backend) {
-    return backend < PrDrawRendererBackend_Count ? kBackendNames[backend] : PrStringView{};
-}
-
-bool prDrawRendererBackendIsBuilt(PrDrawRendererBackend backend) {
-    for (PrDrawRendererBackend built : kBuilt) {
-        if (built != PrDrawRendererBackend_Default && (built == backend || backend == PrDrawRendererBackend_Default))
-            return true;
-    }
-    return false;
-}
-
 PrDrawRendererOptions prDrawRendererOptionsDefault(void) {
     return PrDrawRendererOptions{};
-}
-
-PrStatus prDrawRendererCreate(PrDrawRendererBackend backend, PrGpuDevice* PR_NULLABLE device,
-        const PrDrawRendererOptions* PR_NULLABLE options, PrDrawRenderer* PR_NULLABLE* PR_NONNULL out) {
-    *out = nullptr;
-    PrDrawRendererOptions o = options != nullptr ? *options : prDrawRendererOptionsDefault();
-    if (backend != PrDrawRendererBackend_Default)
-        return create(backend, device, o, out);
-    PrRawString named = prEnvironmentVariable("PR_DRAW_RENDERER");
-    PrDrawRendererBackend chosen = prDrawRendererBackendFromName(prRawStringView(&named));
-    prRawStringReset(&named);
-    if (chosen != PrDrawRendererBackend_Default && prDrawRendererBackendIsBuilt(chosen))
-        return create(chosen, device, o, out);
-    // Default takes the first backend that the device runs.
-    for (PrDrawRendererBackend built : kBuilt) {
-        if (built == PrDrawRendererBackend_Default)
-            break;
-        PrStatus status = create(built, device, o, out);
-        if (status != PrStatus_NotSupported)
-            return status;
-    }
-    return PrStatus_NotSupported;
 }
 
 void prDrawRendererDestroy(PrDrawRenderer* PR_NULLABLE renderer) {
     if (renderer != nullptr && renderer->destroyFn != nullptr)
         renderer->destroyFn(renderer);
+}
+
+PrStringView prDrawRendererName(const PrDrawRenderer* renderer) {
+    return renderer->name;
 }
 
 PrGpuDevice* prDrawRendererDevice(const PrDrawRenderer* renderer) {

@@ -20,7 +20,7 @@
 
 #include "pr/assert.h"
 #include "pr/compress.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/text_buffer.h"
 
 #include "tools/harness/harness.h"
@@ -79,7 +79,7 @@ struct Buffers {
 };
 
 // Returns the stream of `input` in `format`, or an empty stream if no encoder here writes the format.
-std::vector<uint8_t> encode(PrCompressCodec* codec, const Format& format, const Input& input) {
+std::vector<uint8_t> encode(PrCompressCodecSet* codec, const Format& format, const Input& input) {
     std::vector<uint8_t> stream;
 #if defined(__APPLE__)
     (void)codec;
@@ -89,12 +89,12 @@ std::vector<uint8_t> encode(PrCompressCodec* codec, const Format& format, const 
         nullptr, format.algorithm);
     stream.resize(size);
 #else
-    size_t bound = prCompressCodecEncodeBound(codec, format.format, input.bytes.size());
+    size_t bound = prCompressCodecSetEncodeBound(codec, format.format, input.bytes.size());
     if (bound == 0)
         return stream;
     stream.resize(bound);
     size_t written = 0;
-    PrStatus status = prCompressCodecEncode(codec, format.format, PrCompressLevel_Default,
+    PrStatus status = prCompressCodecSetEncode(codec, format.format, PrCompressLevel_Default,
         PrByteView(input.bytes), stream.data(), &written);
     stream.resize(status == PrStatus_Ok ? written : 0);
 #endif
@@ -103,9 +103,9 @@ std::vector<uint8_t> encode(PrCompressCodec* codec, const Format& format, const 
 
 // Each engine's decode of a case's stream into the buffers' output. Returns false if the engine fails or writes other
 // than the input's size.
-bool decodePrax(PrCompressCodec* codec, const Case& test, Buffers* buffers) {
+bool decodePrax(PrCompressCodecSet* codec, const Case& test, Buffers* buffers) {
     PrCompressRead read{};
-    PrStatus status = prCompressCodecDecode(codec, test.format->format, PrByteView(test.stream),
+    PrStatus status = prCompressCodecSetDecode(codec, test.format->format, PrByteView(test.stream),
         buffers->output.data(), buffers->output.size(), &read);
     return status == PrStatus_Ok && read.written == test.input->bytes.size();
 }
@@ -121,13 +121,13 @@ bool decodeApple(const Case& test, Buffers* buffers) {
 // The engines here, by name, which decode a case.
 struct Engine {
     const char* name;
-    bool (*decode)(PrCompressCodec* codec, const Case& test, Buffers* buffers);
+    bool (*decode)(PrCompressCodecSet* codec, const Case& test, Buffers* buffers);
 };
 
 #if defined(__APPLE__)
 constexpr Engine kEngines[] = {
     {"prax", decodePrax},
-    {"apple", [](PrCompressCodec*, const Case& test, Buffers* buffers) { return decodeApple(test, buffers); }},
+    {"apple", [](PrCompressCodecSet*, const Case& test, Buffers* buffers) { return decodeApple(test, buffers); }},
 };
 #else
 constexpr Engine kEngines[] = {{"prax", decodePrax}};
@@ -200,7 +200,7 @@ int main(int argc, char** argv) {
         });
     }
 
-    PrCompressCodec* codec = prCompressBuiltinCreate();
+    PrCompressCodecSet* codec = prCompressCodecSetCreateDefault();
     std::vector<Case> cases;
     Buffers buffers;
     for (const Input& input : inputs) {
@@ -254,6 +254,6 @@ int main(int argc, char** argv) {
         }
     }
     printf("\n]\n");
-    prCompressCodecDestroy(codec);
+    prCompressCodecSetDestroy(codec);
     return failed ? 1 : 0;
 }

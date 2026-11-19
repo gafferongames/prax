@@ -10,8 +10,10 @@
 // gap between frames, and how long input waited for the frame that took it, all in milliseconds.
 
 #include "pr/assert.h"
+#include "pr/compress_select.h"
 #include "pr/count_of.h"
 #include "pr/font_bundle.h"
+#include "pr/image_select.h"
 #include "pr/print.h"
 #include "pr/string_view.h"
 #include "pr/studio_app.h"
@@ -122,13 +124,20 @@ int main(int argc, char** argv) {
         .trace = tracing ? trace : nullptr,
         .context = &r,
     };
+    // The program decodes every format that Prax has.
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = compress != nullptr ? prImageCodecSetCreateDefault(compress) : nullptr;
     PrStudioAppDesc app{
         .fonts = fonts,
+        .compress = compress,
+        .images = images,
         .window = &desc,
         .event = [](void* context, PrStudioApp*, const PrAppEvent* event) { handleEvent(runOf(context).scribe, *event); },
         .context = &r,
     };
     PrStatus status = prStudioAppRun(&app);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
     prFontSetDestroy(fonts);
     prFontSystemDestroy(system);
     if (status == PrStatus_NotSupported)

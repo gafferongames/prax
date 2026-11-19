@@ -289,6 +289,8 @@ void openTab(TerminalWindow& w) {
         .arguments = arguments.isEmpty() ? nullptr : &arguments[0],
         .argumentCount = arguments.count(),
         .directory = prRawStringView(&directory),
+        .compress = app.studio != nullptr ? prStudioAppCompress(app.studio) : nullptr,
+        .images = app.studio != nullptr ? prStudioAppImages(app.studio) : nullptr,
         .scrollback = app.scrollback,
         .notificationTag = app.nextTag,
     };

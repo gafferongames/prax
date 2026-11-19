@@ -208,17 +208,24 @@ typedef struct PrCanvasTextSource {
 // `textSourceContext`.
 typedef bool (*PrCanvasTextSourceFn)(void* PR_NULLABLE context, PrCanvasTextSource* out);
 
-// What a context is made from. The bitmap is a texture on `device`, which the renderer that presents the context
-// renders on. A context without a device has no bitmap: it records, and draws and reads nothing. `element` is the
-// canvas element whose style CSS values resolve against, or null, and must outlive the context. `changed` is called
-// when the bitmap changes, or is null. `textSource` is null for a context that sets no text.
+// The parameters of a new context.
 typedef struct PrCanvasDesc {
     PrUVec2 extent;
     PrCanvasSettings settings;
-    PrGpuDevice* PR_NULLABLE device;
+
+    // The renderer that presents the context. The bitmap is a texture on the renderer's device, and the context draws
+    // into it with this renderer when its pixels are read or written. Without a renderer, the context has no bitmap. It
+    // records commands, but draws and reads nothing. The renderer must outlive the context.
+    PrDrawRenderer* PR_NULLABLE renderer;
+
+    // The canvas element that CSS values in the style resolve against, or null. It must outlive the context.
     const PrDomElement* PR_NULLABLE element;
+
+    // Called when the bitmap changes, or null.
     PrCanvasChangedFn PR_NULLABLE changed;
     void* PR_NULLABLE changedContext;
+
+    // Supplies the fonts and settings for drawing and measuring text, or null for a context that sets no text.
     PrCanvasTextSourceFn PR_NULLABLE textSource;
     void* PR_NULLABLE textSourceContext;
 } PrCanvasDesc;

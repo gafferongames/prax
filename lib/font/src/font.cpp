@@ -776,7 +776,7 @@ PrStatus prFontCreate(PrBlob* blob, uint32_t index, const PrFontDerivation* PR_N
 }
 
 PrStatus prFontCreateWoff(PrByteView bytes, uint32_t index, const PrFontDerivation* PR_NULLABLE derivation,
-        PrCompressCodec* codec, const PrFont* PR_NULLABLE* PR_NONNULL out) {
+        const PrCompressCodecSet* codec, const PrFont* PR_NULLABLE* PR_NONNULL out) {
     PR_ASSERT(validDerivation(derivation));
     *out = nullptr;
     RawArray<uint8_t> decoded;

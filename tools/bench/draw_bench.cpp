@@ -26,11 +26,12 @@
 
 #include "pr/app_display.h"
 #include "pr/assert.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/draw_commands.h"
 #include "pr/float16.h"
 #include "pr/gpu.h"
-#include "pr/image_builtin.h"
+#include "pr/gpu_select.h"
+#include "pr/image_select.h"
 #include "pr/vec.h"
 
 #include "examples/draw_features/drawing.h"
@@ -269,7 +270,7 @@ Times drawPasses(PrDrawFrame* frame, BenchTarget& target, PrColor color, const s
 
 // Writes what a render left in the target as a PNG at `path`: its texture if the render was `onDevice`, and else its
 // pixels in memory. The pixels are premultiplied, which a PNG reads as straight, so only an opaque render is exact.
-void writeImage(PrImageCodec* codec, const BenchTarget& target, bool onDevice, const std::string& path) {
+void writeImage(PrImageCodecSet* codec, const BenchTarget& target, bool onDevice, const std::string& path) {
     size_t count = size_t(target.width) * target.height;
     std::vector<uint8_t> rgba(count * 4);
     if (!onDevice) {
@@ -305,9 +306,9 @@ void writeImage(PrImageCodec* codec, const BenchTarget& target, bool onDevice, c
     }
     PrPixelView view{rgba.data(), size_t(target.width) * 4, {target.width, target.height}};
     size_t size = 0;
-    prImageCodecEncode(codec, "image/png", view, nullptr, 0, &size);
+    prImageCodecSetEncode(codec, "image/png", view, nullptr, 0, &size);
     std::vector<uint8_t> png(size);
-    if (prImageCodecEncode(codec, "image/png", view, png.data(), png.size(), &size) != PrStatus_Ok)
+    if (prImageCodecSetEncode(codec, "image/png", view, png.data(), png.size(), &size) != PrStatus_Ok)
         return;
     FILE* file = std::fopen(path.c_str(), "wb");
     if (file == nullptr)
@@ -348,8 +349,8 @@ int main(int argc, char** argv) {
     std::vector<RendererConfig> configs = createConfigs(device);
     if (configNames.empty() && !configs.empty())
         configNames.push_back(configs[defaultConfig(configs)].name);
-    PrCompressCodec* compressCodec = images != nullptr ? prCompressBuiltinCreate() : nullptr;
-    PrImageCodec* imageCodec = compressCodec != nullptr ? prImageBuiltinCreate(compressCodec) : nullptr;
+    PrCompressCodecSet* compressCodec = images != nullptr ? prCompressCodecSetCreateDefault() : nullptr;
+    PrImageCodecSet* imageCodec = compressCodec != nullptr ? prImageCodecSetCreateDefault(compressCodec) : nullptr;
     PrDrawList* list = prDrawListCreate();
     int status = 0;
     for (const Collection& collection : kCollections) {
@@ -461,8 +462,8 @@ int main(int argc, char** argv) {
         }
     }
     prDrawListRelease(list);
-    prImageCodecDestroy(imageCodec);
-    prCompressCodecDestroy(compressCodec);
+    prImageCodecSetDestroy(imageCodec);
+    prCompressCodecSetDestroy(compressCodec);
     destroyConfigs(configs);
     prGpuDeviceDestroy(device);
     releaseDrawings();

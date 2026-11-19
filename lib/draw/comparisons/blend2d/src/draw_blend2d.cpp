@@ -1358,6 +1358,7 @@ PrDrawRenderer* PR_NULLABLE prDrawBlend2dCreate(const PrDrawBlend2dOptions* PR_N
     b2->glyphs = prDrawGlyphCacheCreate(b2->options.glyphDecoder);
     b2->destroyFn = destroyBackend;
     b2->frameCreateFn = createFrame;
+    b2->name = "blend2d";
     b2->deviceFn = rendererDevice;
     return b2;
 }

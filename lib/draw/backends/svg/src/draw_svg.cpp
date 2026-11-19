@@ -322,11 +322,11 @@ void svgImage(void* PR_NULLABLE context, const PrDrawImage* image, PrRect source
     drawSharedImageRgba8(image, s.rgba);
     PrPixelView pixels{s.rgba.data, size_t(extent.x) * 4, extent};
     size_t size = 0;
-    if (prImageCodecEncode(s.options.images, "image/png", pixels, nullptr, 0, &size) != PrStatus_Ok || size == 0)
+    if (prImageCodecSetEncode(s.options.images, "image/png", pixels, nullptr, 0, &size) != PrStatus_Ok || size == 0)
         return;
     RawArray<uint8_t> png;
     png.resize(uint32_t(size));
-    prImageCodecEncode(s.options.images, "image/png", pixels, png.data, size, &size);
+    prImageCodecSetEncode(s.options.images, "image/png", pixels, png.data, size, &size);
     prTextBufferResize(&s.encoded, uint32_t(prBase64EncodedSize(size)));
     size_t written = prBase64Encode(PrStringView{reinterpret_cast<const char*>(png.data), size}, s.encoded.data,
         s.encoded.size);

@@ -18,10 +18,17 @@ add_library(harness STATIC cpu_counters.cpp harness.cpp)
 target_include_directories(harness PUBLIC ${PROJECT_SOURCE_DIR})
 target_link_libraries(harness PUBLIC prax::core prax::core_cpp PRIVATE pr_warnings)
 
+# The codec sets that the tests and the tools decode with: every codec, created once.
+add_library(harness_codecs STATIC harness_codecs.cpp)
+target_include_directories(harness_codecs PUBLIC ${PROJECT_SOURCE_DIR})
+target_link_libraries(harness_codecs PUBLIC prax::compress prax::image
+                                     PRIVATE prax::compress_select prax::image_select pr_warnings)
+
 # PNG files that the harnesses write.
 add_library(harness_png STATIC harness_png.cpp)
 target_include_directories(harness_png PUBLIC ${PROJECT_SOURCE_DIR})
-target_link_libraries(harness_png PUBLIC prax::core PRIVATE prax::image prax::compress pr_warnings)
+target_link_libraries(harness_png PUBLIC prax::compress_select prax::image_select prax::core PRIVATE harness_codecs
+                                         pr_warnings)
 
 # The standard streams of a harness, and the capture of what a served run writes to them.
 add_library(harness_streams STATIC harness_streams.cpp)
@@ -49,8 +56,8 @@ target_link_libraries(draw_compare PUBLIC prax::core PRIVATE prax::core_cpp pr_w
 if (PR_TOOLS)
     add_library(draw_renderers STATIC draw_renderers.cpp)
     target_include_directories(draw_renderers PUBLIC ${PROJECT_SOURCE_DIR})
-    target_link_libraries(draw_renderers PUBLIC prax::draw prax::gpu
-                                         PRIVATE draw_blend2d draw_imgui prax::compress prax::image prax::svg
+    target_link_libraries(draw_renderers PUBLIC prax::compress_select prax::image_select prax::draw prax::gpu
+                                         PRIVATE draw_blend2d draw_imgui prax::svg
                                                  prax::core_cpp pr_warnings)
     if (APPLE)
         target_link_libraries(draw_renderers PRIVATE draw_coregraphics)
@@ -64,5 +71,7 @@ endif()
 add_library(kit_fixture INTERFACE kit_fixture.h)
 target_include_directories(kit_fixture INTERFACE ${PROJECT_SOURCE_DIR})
 pr_font_bundle_resources(kit_fixture FROM ${PR_TEST_FONTS_DIR} Complete NotoMono NerdFontSymbols)
-target_link_libraries(kit_fixture INTERFACE prax::studio_kit prax::font_bundle prax::font prax::text prax::draw
+target_link_libraries(kit_fixture INTERFACE prax::compress_select prax::image_select prax::draw_select prax::studio_kit
+                                            prax::font_bundle prax::font prax::text
+                                            prax::draw
                                             prax::layout prax::ui prax::compress prax::image harness_png doctest::doctest)

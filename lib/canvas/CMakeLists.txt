@@ -23,5 +23,5 @@ if (PR_DEVELOP)
         tests/test_canvas_path.cpp
     )
     # What a test reads as pixels is rendered on the CPU, or on the platform's GPU for a bitmap on a device.
-    target_link_libraries(canvas_tests PRIVATE prax::draw prax::gpu)
+    target_link_libraries(canvas_tests PRIVATE prax::gpu_select prax::draw prax::draw_select prax::gpu)
 endif()

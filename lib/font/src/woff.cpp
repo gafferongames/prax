@@ -136,7 +136,7 @@ constexpr size_t kWoffEntrySize = 20;
 
 // Writes the font file that the WOFF file holds: its table directory, then each table, four-byte aligned, decompressed
 // if the WOFF file compressed it.
-PrStatus decodeWoff(PrByteView woff, PrCompressCodec* codec, RawArray<uint8_t>* out) {
+PrStatus decodeWoff(PrByteView woff, const PrCompressCodecSet* codec, RawArray<uint8_t>* out) {
     const uint8_t* in = woff.data;
     if (woff.size < kWoffHeaderSize)
         return PrStatus_InvalidData;
@@ -167,7 +167,7 @@ PrStatus decodeWoff(PrByteView woff, PrCompressCodec* codec, RawArray<uint8_t>* 
         } else {
             PrCompressRead read{};
             const PrByteView input{in + offset, compressed};
-            const PrStatus status = prCompressCodecDecode(codec, PrCompressFormat_Zlib, input, font + at, length, &read);
+            const PrStatus status = prCompressCodecSetDecode(codec, PrCompressFormat_Zlib, input, font + at, length, &read);
             if (status == PrStatus_NotSupported)
                 return status;
             if (status != PrStatus_Ok || read.progress != PrCompressProgress_Done || read.written != length)
@@ -386,13 +386,14 @@ bool readDirectories(PrByteView bytes, Woff2File& file, PrByteView* compressed) 
 }
 
 // Decompresses the table data block, whose length is exactly the sum of the lengths of the tables (woff2 5).
-PrStatus decompress(PrByteView compressed, PrCompressCodec* codec, Woff2File& file) {
+PrStatus decompress(PrByteView compressed, const PrCompressCodecSet* codec, Woff2File& file) {
     const Woff2Table& last = file.tables.data[file.tables.count - 1];
     const uint32_t size = last.source + last.length;
     // Room for one byte past the tables reveals a block that is too long.
     file.block.resize(size + 1);
     PrCompressRead read{};
-    const PrStatus status = prCompressCodecDecode(codec, PrCompressFormat_Brotli, compressed, file.block.data, size + 1, &read);
+    const PrStatus status =
+        prCompressCodecSetDecode(codec, PrCompressFormat_Brotli, compressed, file.block.data, size + 1, &read);
     if (status == PrStatus_NotSupported)
         return status;
     if (status != PrStatus_Ok || read.progress != PrCompressProgress_Done || read.written != size ||
@@ -981,7 +982,7 @@ bool writeFont(Woff2File& file, RawArray<uint8_t>* out) {
     return true;
 }
 
-PrStatus decodeWoff2(PrByteView bytes, PrCompressCodec* codec, RawArray<uint8_t>* out) {
+PrStatus decodeWoff2(PrByteView bytes, const PrCompressCodecSet* codec, RawArray<uint8_t>* out) {
     Woff2File file{};
     PrByteView compressed{};
     PrStatus status = PrStatus_InvalidData;
@@ -996,7 +997,7 @@ PrStatus decodeWoff2(PrByteView bytes, PrCompressCodec* codec, RawArray<uint8_t>
 
 } // namespace
 
-PrStatus woffDecode(PrByteView bytes, PrCompressCodec* codec, RawArray<uint8_t>* out) {
+PrStatus woffDecode(PrByteView bytes, const PrCompressCodecSet* codec, RawArray<uint8_t>* out) {
     PR_ASSERT(out->count == 0);
     if (bytes.size < 4)
         return PrStatus_InvalidData;

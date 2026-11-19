@@ -35,9 +35,8 @@ struct StudioAppState {
     // The paths of the kits' icons, which every window's kit draws (PrKitTheme::paths).
     PrPathCache* paths;
 
-    // The decoder for glyphs that are images, such as those of a bitmap emoji font, and the codecs that it uses.
-    PrCompressCodec* PR_NULLABLE compress;
-    PrImageCodec* PR_NULLABLE images;
+    // The decoder for glyphs that are images, such as those of a bitmap emoji font, over the description's image
+    // codecs.
     PrDrawGlyphDecoder* PR_NULLABLE glyphs;
 
     // The device that every window renders on, the renderer on it, and how many times the renderer has been made. A

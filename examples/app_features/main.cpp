@@ -5,9 +5,11 @@
 // events that reach the application and its windows. main() is the composition root, the model is Features, and the
 // pages are in the pages_*.cpp files.
 
+#include "pr/compress_select.h"
 #include "pr/count_of.h"
 #include "pr/font_bundle.h"
 #include "pr/font_set.h"
+#include "pr/image_select.h"
 #include "pr/integer.h"
 #include "pr/kit_box.h"
 #include "pr/kit_button.h"
@@ -270,9 +272,14 @@ int main(int argc, char** argv) {
         if (argument == "--single-window")
             options.windowModel = PrAppWindowModel_Single;
     }
+    // The program decodes every format that Prax has.
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = compress != nullptr ? prImageCodecSetCreateDefault(compress) : nullptr;
     PrStudioAppDesc app{
         .fonts = fonts,
         .options = &options,
+        .compress = compress,
+        .images = images,
         .window = &control,
         .event = appEvent,
         .shutdown = [](void* context, PrStudioApp* studio) {
@@ -285,6 +292,8 @@ int main(int argc, char** argv) {
         .context = &features,
     };
     PrStatus status = prStudioAppRun(&app);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
     prFontSetDestroy(fonts);
     prFontSystemDestroy(system);
     if (status == PrStatus_NotSupported)

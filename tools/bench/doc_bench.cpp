@@ -32,7 +32,7 @@
 // Usage: doc_bench <page.html> [--pixel-ratio <pixels per px>] [--job-budget MS] [--restyle-threads N]
 
 #include "pr/assert.h"
-#include "pr/compress_builtin.h"
+#include "pr/compress_select.h"
 #include "pr/css_presentation.h"
 #include "pr/draw_fragment.h"
 #include "pr/draw_list.h"
@@ -41,10 +41,11 @@
 #include "pr/font_bundle.h"
 #include "pr/font_set.h"
 #include "pr/gpu.h"
+#include "pr/gpu_select.h"
 #include "pr/html.h"
 #include "pr/html_page.h"
 #include "pr/html_view.h"
-#include "pr/image_builtin.h"
+#include "pr/image_select.h"
 #include "pr/layout_compositor.h"
 #include "pr/layout_query.h"
 #include "pr/layout_style.h"
@@ -159,8 +160,8 @@ struct Bench {
     PrFontSystem* system = nullptr;
     PrTextShaper* shaper = nullptr;
     PrTextFont* font = nullptr;     // the page's default text font
-    PrCompressCodec* compress = nullptr;
-    PrImageCodec* images = nullptr;  // decodes the page's images
+    PrCompressCodecSet* compress = nullptr;
+    PrImageCodecSet* images = nullptr;  // decodes the page's images
     PrDomAgent* agent = nullptr;
 
     // The loop of the page's fetches, which the page's thread runs before it looks for a task, and the built-in
@@ -243,8 +244,8 @@ bool setUp(Bench& b) {
     b.system = prFontSystemCreate(PrFontSystemBackend_Default);
     prFontSetSetSystem(b.fonts, b.system);
     b.shaper = prTextHarfBuzzCreate();
-    b.compress = prCompressBuiltinCreate();
-    b.images = prImageBuiltinCreate(b.compress);
+    b.compress = prCompressCodecSetCreateDefault();
+    b.images = prImageCodecSetCreateDefault(b.compress);
     PrTextFontDesc defaultFontDesc{.set = b.fonts, .style = prFontStyleDefault()};
     b.font = prTextFontCreate(&defaultFontDesc);
 
@@ -269,8 +270,8 @@ void tearDown(Bench& b) {
     prTaskPoolDestroy(b.workers);
     prNetDestroy(b.net);
     prTextFontRelease(b.font);
-    prImageCodecDestroy(b.images);
-    prCompressCodecDestroy(b.compress);
+    prImageCodecSetDestroy(b.images);
+    prCompressCodecSetDestroy(b.compress);
     prTextShaperDestroy(b.shaper);
     prFontSetDestroy(b.fonts);
     prFontSystemDestroy(b.system);

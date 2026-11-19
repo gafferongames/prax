@@ -197,12 +197,12 @@ prax fit` lists the pages that do not fit their 600 by 800 viewport.
 
 ## Examples and apps
 
-The examples under `examples/` and the apps under `apps/` are applications over the public headers, each a window on
-lib/app's default backend (`prAppCreate`) whose `main()` composes everything that runs it. The files that each reads,
-such as its font bundles, are its resources (`pr/resource.h`), which its build stages with it on every platform. An
-example shows what a library does. An app is for daily use, and keeps its model in a library of its own, which its unit
-tests link. Each is checked by running it. `./dev.sh example <name> [args...]` builds an example and runs it, and
-`./dev.sh app <name> [args...]` an app. With a simulator build before the name, `ios-sim`, `tvos-sim` or
+The examples under `examples/` and the apps under `apps/` are applications over the public headers. Each one's
+`main()` composes everything that runs it, directly or through `lib/studio/app`. The files that
+each reads, such as its font bundles, are its resources (`pr/resource.h`), which its build stages with it on every
+platform. An example shows what a library does. An app is for daily use, and keeps its model in a library of its own,
+which its unit tests link. Each is checked by running it. `./dev.sh example <name> [args...]` builds an example and
+runs it, and `./dev.sh app <name> [args...]` an app. With a simulator build before the name, `ios-sim`, `tvos-sim` or
 `visionos-sim`, each is built as an application bundle for that simulator, installed on a simulator device of the
 platform and launched there, with its output streamed back, and `--screenshot <png>` captures the device's screen after
 a few seconds instead. With `ios`, each runs the same way on a connected iPhone or iPad.
@@ -236,6 +236,10 @@ source tree as FetchContent adds it, and runs each.
 - `editor` is a level editor of Studio Kit's widgets and a HUD library of its own, composed in one tree.
 - `perspective` stands Kit panels in 3D over a background that it draws with its own pipeline, as a 3D engine would.
 - `incremental` renders Markdown and HTML as they arrive in pieces.
+
+The environment chooses the backends of an example or an app, never its arguments: `PR_BACKEND_RENDERER=triangles`
+chooses lib/draw's renderer, as each selector reads `PR_BACKEND_<NAME>` (`pr/backend.h`). On the web, the page's query
+sets the variables, and `./dev.sh example wasm` passes the ones that are set where it runs.
 
 The apps:
 

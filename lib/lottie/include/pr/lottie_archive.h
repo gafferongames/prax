@@ -26,7 +26,7 @@ typedef struct PrLottieArchive PrLottieArchive;
 
 // Creates an archive with nothing open. The archive decompresses with `codec`, and keeps its storage from one open to
 // the next.
-PrLottieArchive* prLottieArchiveCreate(PrCompressCodec* codec);
+PrLottieArchive* prLottieArchiveCreate(const PrCompressCodecSet* codec);
 
 // Closes the open bytes, if any, and destroys the archive.
 void prLottieArchiveDestroy(PrLottieArchive* PR_NULLABLE archive);

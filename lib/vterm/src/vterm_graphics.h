@@ -82,8 +82,8 @@ struct VtermGraphics {
     // zero, the terminal ignores the protocol.
     uint64_t budget;
     PrVtermImageFlags flags;
-    PrCompressCodec* PR_NULLABLE compressCodec;
-    PrImageCodec* PR_NULLABLE imageCodec;
+    const PrCompressCodecSet* PR_NULLABLE compressCodec;
+    const PrImageCodecSet* PR_NULLABLE imageCodec;
 
     VtermGraphicsStore stores[2];   // by VtermScreenKind
     VtermGraphicsLoad load;         // kitty's chunks

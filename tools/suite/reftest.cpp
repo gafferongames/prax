@@ -20,12 +20,14 @@
 
 #include "pr/assert.h"
 #include "pr/compress.h"
+#include "pr/compress_select.h"
 #include "pr/dom_xml.h"
 #include "pr/draw_cpu.h"
 #include "pr/draw_glyph.h"
 #include "pr/font_hinter.h"
 #include "pr/font_set.h"
 #include "pr/image.h"
+#include "pr/image_select.h"
 #include "pr/lottie.h"
 #include "pr/lottie_archive.h"
 #include "pr/string_ops.h"
@@ -61,7 +63,7 @@ struct Image {
 };
 
 // Reads the PNG at `path` as straight RGBA. Returns false if it cannot be read.
-bool readPng(PrImageCodec* imageCodec, const std::string& path, Image* out) {
+bool readPng(PrImageCodecSet* imageCodec, const std::string& path, Image* out) {
     PrTextBuffer bytes = {};
     if (!harnessReadFile(&bytes, path.c_str()))
         return false;
@@ -117,21 +119,21 @@ struct Documents {
 // against. An SVG image is in secure static mode, whose own images load only from data: URLs, so its loader has no
 // documents.
 struct Images {
-    PrCompressCodec* compressCodec;
-    PrImageCodec* imageCodec;
+    PrCompressCodecSet* compressCodec;
+    PrImageCodecSet* imageCodec;
     Documents* PR_NULLABLE documents;
 };
 
 // Replaces `bytes` with what they decompress to, if they are gzip, as an svgz file is. Returns false if they do not
 // decompress.
-bool gunzip(PrCompressCodec* codec, std::string* bytes) {
+bool gunzip(PrCompressCodecSet* codec, std::string* bytes) {
     if (bytes->size() < 2 || uint8_t((*bytes)[0]) != 0x1f || uint8_t((*bytes)[1]) != 0x8b)
         return true;
     PrByteView input{reinterpret_cast<const uint8_t*>(bytes->data()), bytes->size()};
     for (size_t capacity = bytes->size() * 4;; capacity *= 2) {
         std::string output(capacity, '\0');
         PrCompressRead read{};
-        PrStatus status = prCompressCodecDecode(codec, PrCompressFormat_Gzip, input,
+        PrStatus status = prCompressCodecSetDecode(codec, PrCompressFormat_Gzip, input,
             reinterpret_cast<uint8_t*>(output.data()), capacity, &read);
         if (status != PrStatus_Ok)
             return false;
@@ -257,7 +259,7 @@ PrFontSet* lottieFonts() {
 // Records the Lottie animation at `frame`, counted from its in point, fitted and centered in `width` by `height` over
 // the suite's background, with its text set in the suite's fonts and shaped by `shaper`. The animation is a JSON file,
 // or a dotLottie archive's first animation.
-PrStatus recordLottie(PrCompressCodec* compressCodec, PrImageCodec* imageCodec, const SuiteRender& suite,
+PrStatus recordLottie(PrCompressCodecSet* compressCodec, PrImageCodecSet* imageCodec, const SuiteRender& suite,
         PrTextShaper* shaper, const std::string& path, float width, float height, double frame, PrDrawList* list) {
     PrTextBuffer source = {};
     if (!harnessReadFile(&source, path.c_str()))
@@ -303,7 +305,7 @@ PrStatus recordLottie(PrCompressCodec* compressCodec, PrImageCodec* imageCodec, 
 
 // Renders the document onto transparent pixels of the given size, as straight RGBA. `time` is a time in seconds for an
 // SVG document, and a frame for a Lottie animation.
-PrStatus render(PrDrawRenderer* renderer, PrCompressCodec* compressCodec, PrImageCodec* imageCodec,
+PrStatus render(PrDrawRenderer* renderer, PrCompressCodecSet* compressCodec, PrImageCodecSet* imageCodec,
         const SuiteRender& suite, PrTextShaper* shaper, const std::string& path, uint32_t width,
         uint32_t height, double time, std::vector<uint8_t>* rgba) {
     rgba->assign(size_t(width) * height * 4, 0);
@@ -389,8 +391,8 @@ int main(int argc, char** argv) {
     if (suite.fonts != nullptr)
         prFontSetSetHinting(suite.fonts, hinting, hinter);
     prFontSetSetHinting(lottieFonts(), hinting, hinter);
-    PrCompressCodec* compressCodec = prCompressCodecCreate(PrCompressCodecBackend_Default);
-    PrImageCodec* imageCodec = prImageCodecCreate(PrImageCodecBackend_Default, compressCodec);
+    PrCompressCodecSet* compressCodec = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* imageCodec = prImageCodecSetCreateDefault(compressCodec);
     PrDrawCpuOptions options = prDrawCpuOptionsDefault();
     PrDrawGlyphDecoder* glyphDecoder = prDrawGlyphBitmapCreate(imageCodec);
     options.glyphDecoder = glyphDecoder;
@@ -467,8 +469,8 @@ int main(int argc, char** argv) {
     harnessCaseReset(&test);
     prDrawRendererDestroy(renderer);
     prDrawGlyphDecoderDestroy(glyphDecoder);
-    prImageCodecDestroy(imageCodec);
-    prCompressCodecDestroy(compressCodec);
+    prImageCodecSetDestroy(imageCodec);
+    prCompressCodecSetDestroy(compressCodec);
     prTextShaperDestroy(textShaper);
     suiteRenderReset(&suite);
     return 0;

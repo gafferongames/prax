@@ -6,16 +6,18 @@
 // (PrDrawSourceKind_Texture), fitted to the window, under rounded corners and over a shadow, with the video's progress
 // beneath it. Space pauses the clock, and Escape quits.
 //
-// Usage: video [--renderer NAME] [FILE]. NAME is the name of one of lib/draw's backends, and Default if it is not
-// given. FILE is the video to play, and the example's own video, its resource cat.mp4, if it is not given (./dev.sh
-// fetch videos). On the web, the page's query passes the arguments.
+// Usage: video [FILE]. FILE is the video to play. Without it, the example plays its own video, the resource cat.mp4
+// (./dev.sh fetch videos). On the web, the page's query passes the arguments. PR_BACKEND_RENDERER chooses the renderer.
 
 #include "pr/app.h"
+#include "pr/app_select.h"
 #include "pr/draw_list.h"
 #include "pr/draw_renderer.h"
+#include "pr/draw_select.h"
 #include "pr/file.h"
 #include "pr/float.h"
 #include "pr/gpu.h"
+#include "pr/gpu_select.h"
 #include "pr/media.h"
 #include "pr/print.h"
 #include "pr/resource.h"
@@ -36,7 +38,6 @@ struct Window {
     PrDrawRenderer* renderer = nullptr;
     PrDrawFrame* frame = nullptr;
     PrDrawList* list = nullptr;
-    PrDrawRendererBackend backend = PrDrawRendererBackend_Default;
 
     PrMediaCodec* codec = nullptr;
     PrMediaDecoder* decoder = nullptr;
@@ -97,13 +98,13 @@ bool openDevice(Window& w) {
     PrGpuSwapChainDesc desc{.intent = PrGpuSwapChainIntent_Hdr};
     if (prAppWindowSurface(w.window, &surface) != PrStatus_Ok ||
             prGpuSwapChainCreate(w.device, &surface, &desc, &w.swapChain) != PrStatus_Ok ||
-            prDrawRendererCreate(w.backend, w.device, nullptr, &w.renderer) != PrStatus_Ok) {
+            prDrawRendererCreate(PrDrawRendererBackend_Default, w.device, nullptr, &w.renderer) != PrStatus_Ok) {
         printError("video: the device cannot render to the window\n");
         closeDevice(w);
         return false;
     }
     w.frame = prDrawFrameCreate(w.renderer);
-    print("video: rendering with {} on {}\n", prDrawRendererBackendName(w.backend), prGpuDeviceInfo(w.device).backend);
+    print("video: rendering with {} on {}\n", prDrawRendererName(w.renderer), prGpuDeviceInfo(w.device).backend);
     return true;
 }
 
@@ -262,16 +263,10 @@ int main(int argc, char** argv) {
     PrStringView path{};
     for (int i = 1; i < argc; ++i) {
         PrStringView argument = argv[i];
-        if (argument == "--renderer" && i + 1 < argc) {
-            w.backend = prDrawRendererBackendFromName(argv[++i]);
-            if (!prDrawRendererBackendIsBuilt(w.backend)) {
-                printError("video: no renderer named {} in this build\n", PrStringView{argv[i]});
-                return 1;
-            }
-        } else if (argument.size != 0 && argument.data[0] != '-') {
+        if (argument.size != 0 && argument.data[0] != '-') {
             path = argument;
         } else {
-            printError("usage: video [--renderer NAME] [FILE]\n");
+            printError("usage: video [FILE]\n");
             return 1;
         }
     }

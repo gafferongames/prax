@@ -122,7 +122,7 @@ PrStatus prFontCreate(PrBlob* blob, uint32_t index, const PrFontDerivation* PR_N
 // picks its font. Returns NotSupported if `codec` does not decode the compression of the file. Returns InvalidData in
 // the same cases as prFontCreate, and for a file that the rules of the format reject.
 PrStatus prFontCreateWoff(PrByteView bytes, uint32_t index, const PrFontDerivation* PR_NULLABLE derivation,
-    PrCompressCodec* codec, const PrFont* PR_NULLABLE* PR_NONNULL out);
+    const PrCompressCodecSet* codec, const PrFont* PR_NULLABLE* PR_NONNULL out);
 
 // Creates a font of the same file and index as `font`, derived as `derivation` specifies. The two fonts share their
 // bytes. The size-adjust is finite and above zero, and the synthesis is finite. A variation whose tag names no axis of

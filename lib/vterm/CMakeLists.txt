@@ -30,7 +30,8 @@ if (PR_DEVELOP)
         tests/test_vterm_report.cpp
         tests/test_vterm_scrollback.cpp
     )
-    target_link_libraries(vterm_tests PRIVATE prax::compress prax::image prax::unicode)
+    target_link_libraries(vterm_tests PRIVATE prax::compress_select prax::image_select prax::compress prax::image
+                                              prax::unicode)
     target_compile_definitions(vterm_tests PRIVATE PR_VTERM_CAPTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/captures")
 
     # The esctest harness: a terminal with no window that runs esctest on its pseudoterminal. tools/suite/esctest.py

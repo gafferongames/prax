@@ -24,9 +24,10 @@ struct PrDrawFrame {
 
 // The functions of a renderer's backend, at the start of its state. Each implements the function of pr/draw_renderer.h
 // that it is named for. A null `destroyFn` means that there is nothing to free, and a null `dropResourcesFn` that the
-// renderer keeps nothing on its device.
+// renderer keeps nothing on its device. `name` is what prDrawRendererName returns.
 struct PrDrawRenderer {
     void (*PR_NULLABLE destroyFn)(PrDrawRenderer* renderer);
+    PrStringView name;
     PrGpuDevice* PR_NONNULL (*PR_NONNULL deviceFn)(const PrDrawRenderer* renderer);
     PrDrawFrame* PR_NONNULL (*PR_NONNULL frameCreateFn)(PrDrawRenderer* renderer);
     void (*PR_NULLABLE dropResourcesFn)(PrDrawRenderer* renderer);

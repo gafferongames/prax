@@ -123,6 +123,11 @@ typedef struct PrTerminalDesc {
     const PrStringView* PR_NULLABLE environment;
     uint32_t environmentCount;
 
+    // The codecs of the images that the program sends, and the compression codecs that they decompress through, or null
+    // for none. They must outlive the terminal.
+    const PrCompressCodecSet* PR_NULLABLE compress;
+    const PrImageCodecSet* PR_NULLABLE images;
+
     uint32_t scrollback;                         // the most scrollback lines to keep, up to kPrVtermMaxScrollback
     PrTerminalShellIntegration shellIntegration; // applies only if `program` is empty
     uint64_t notificationTag;                    // the tag of the desktop notifications that the terminal posts

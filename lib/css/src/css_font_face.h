@@ -89,7 +89,7 @@ struct CssFontFaceSet : DomDocumentTarget {
 // each PrCssFontFaceDescriptor after the family. A null view keeps the descriptor's default. The caller holds the
 // face's only reference.
 PrCssFontFace* cssFontFaceCreate(PrStringView family, PrStringView source, PrByteView data,
-    PrCompressCodec* PR_NULLABLE compress, const PrStringView* PR_NULLABLE descriptors);
+    const PrCompressCodecSet* PR_NULLABLE compress, const PrStringView* PR_NULLABLE descriptors);
 
 // Adds or releases a reference. The last release frees the face.
 void cssFontFaceRetain(PrCssFontFace* face);

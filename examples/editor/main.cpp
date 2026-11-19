@@ -4,8 +4,10 @@
 // main() is the composition root: the editor's model, and the HUD over the window's context and fonts.
 
 #include "pr/assert.h"
+#include "pr/compress_select.h"
 #include "pr/count_of.h"
 #include "pr/font_bundle.h"
+#include "pr/image_select.h"
 #include "pr/print.h"
 #include "pr/studio_app.h"
 
@@ -48,8 +50,13 @@ int main() {
         .close = [](void* context, PrStudioWindow*) { hudDestroy(stateOf(context).hud); },
         .context = &state,
     };
-    PrStudioAppDesc app{.fonts = fonts, .window = &desc};
+    // The program decodes every format that Prax has.
+    PrCompressCodecSet* compress = prCompressCodecSetCreateDefault();
+    PrImageCodecSet* images = compress != nullptr ? prImageCodecSetCreateDefault(compress) : nullptr;
+    PrStudioAppDesc app{.fonts = fonts, .compress = compress, .images = images, .window = &desc};
     PrStatus status = prStudioAppRun(&app);
+    prImageCodecSetDestroy(images);
+    prCompressCodecSetDestroy(compress);
     prFontSetDestroy(fonts);
     if (status == PrStatus_NotSupported)
         printError("editor: no GPU device to render with\n");

@@ -15,8 +15,10 @@
 #include "pr/assert.h"
 #include "pr/blob_ref.h"
 #include "pr/compress.h"
+#include "pr/compress_select.h"
 #include "pr/count_of.h"
 #include "pr/draw_list.h"
+#include "pr/draw_select.h"
 #include "pr/draw_structure.h"
 #include "pr/draw_writer.h"
 #include "pr/file.h"
@@ -198,7 +200,7 @@ void paint(Printed* printed) {
 
 // Writes the printed document with the writer `backend`, compressed by `codec` if it is not null, and returns the
 // number of bytes that it wrote.
-uint64_t write(const Printed* printed, PrDrawWriterBackend backend, PrCompressCodec* PR_NULLABLE codec) {
+uint64_t write(const Printed* printed, PrDrawWriterBackend backend, PrCompressCodecSet* PR_NULLABLE codec) {
     PrDrawWriterOptions options = prDrawWriterOptionsDefault();
     options.compress = codec;
     PrDrawWriter* writer = nullptr;
@@ -248,26 +250,26 @@ int main(int argc, char** argv) {
     PrLayoutPageBox initial = prLayoutPageBoxDefault();
     prHtmlViewSetPaged(printed.view, &initial, 0);
     paint(&printed);
-    PrCompressCodec* codec = prCompressCodecCreate(PrCompressCodecBackend_Default);
+    PrCompressCodecSet* codec = prCompressCodecSetCreateDefault();
 
     struct Case {
         const char* name;
-        void (*run)(Printed* printed, PrCompressCodec* codec);
+        void (*run)(Printed* printed, PrCompressCodecSet* codec);
     };
     static const Case kCases[] = {
         {
             "print paginate",
-            [](Printed* p, PrCompressCodec*) {
+            [](Printed* p, PrCompressCodecSet*) {
                 PrLayoutPageBox box = prLayoutPageBoxDefault();
                 prHtmlViewSetPaged(p->view, nullptr, 0);
                 prHtmlViewSetPaged(p->view, &box, 0);
                 prHtmlViewPageCount(p->view);
             },
         },
-        {"print paint", [](Printed* p, PrCompressCodec*) { paint(p); }},
-        {"pdf write", [](Printed* p, PrCompressCodec* c) { write(p, PrDrawWriterBackend_Pdf, c); }},
-        {"pdf write uncompressed", [](Printed* p, PrCompressCodec*) { write(p, PrDrawWriterBackend_Pdf, nullptr); }},
-        {"svg write", [](Printed* p, PrCompressCodec*) { write(p, PrDrawWriterBackend_Svg, nullptr); }},
+        {"print paint", [](Printed* p, PrCompressCodecSet*) { paint(p); }},
+        {"pdf write", [](Printed* p, PrCompressCodecSet* c) { write(p, PrDrawWriterBackend_Pdf, c); }},
+        {"pdf write uncompressed", [](Printed* p, PrCompressCodecSet*) { write(p, PrDrawWriterBackend_Pdf, nullptr); }},
+        {"svg write", [](Printed* p, PrCompressCodecSet*) { write(p, PrDrawWriterBackend_Svg, nullptr); }},
     };
 
     PrStringView only = argc == 2 ? argv[1] : PrStringView{};
@@ -291,7 +293,7 @@ int main(int argc, char** argv) {
 
     release(&printed);
     prDrawStructureDestroy(printed.structure);
-    prCompressCodecDestroy(codec);
+    prCompressCodecSetDestroy(codec);
     prHtmlViewDestroy(printed.view);
     prHtmlPageDestroy(printed.page);
     prTextFontRelease(font);

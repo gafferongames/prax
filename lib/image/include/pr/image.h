@@ -1,6 +1,11 @@
-// Image codecs: decoding images, encoding them, and how their pixels are represented.
+// Image codecs and the sets that a program builds of them: decoding images, encoding them, and how their pixels are
+// represented.
 //
-// A codec may be used from any number of threads at once. A decoder is used by one thread at a time.
+// A codec reads the formats of its backend, and each backend has its own constructor (pr/image_png.h, pr/image_jpeg.h,
+// pr/image_gif.h, pr/image_ico.h, pr/image_tiff.h, pr/image_emjc.h). A program puts the codecs that it wants in a set,
+// and a library that decodes or encodes images takes the set from its caller.
+//
+// A codec and a set may be used from any number of threads at once. A decoder is used by one thread at a time.
 
 #pragma once
 
@@ -19,8 +24,11 @@ PR_ASSUME_NONNULL_BEGIN
 extern "C" {
 #endif
 
-// A source of image readers and encodings. Each backend provides its own constructor.
+// A source of image readers and encodings, for the formats that its backend reads.
 typedef struct PrImageCodec PrImageCodec;
+
+// Codecs in priority order (prImageCodecSetCreate).
+typedef struct PrImageCodecSet PrImageCodecSet;
 
 // The state of a backend for one image that its codec opened. Only a decoder reads it.
 typedef struct PrImageReader PrImageReader;
@@ -142,42 +150,28 @@ enum {
 };
 typedef uint8_t PrImageConversionFlags;
 
-// The library's backends of codecs, which the build turns on (README.md), and Default, the first that the build has.
-enum {
-    PrImageCodecBackend_Default,
-    PrImageCodecBackend_Builtin,
-    PrImageCodecBackend_Count,
-};
-typedef uint8_t PrImageCodecBackend;
-
-// Returns the backend that `name` names, as prImageCodecBackendName spells it, ignoring case, or Count if it names
-// none.
-PrImageCodecBackend prImageCodecBackendFromName(PrStringView name);
-
-// Returns the name of a backend in lowercase, as a command line spells it.
-PrStringView prImageCodecBackendName(PrImageCodecBackend backend);
-
-// Returns true if the build has the backend. The build has Default if it has any backend.
-bool prImageCodecBackendIsBuilt(PrImageCodecBackend backend);
-
-// Creates a codec by the backend, which compresses and decompresses through `compressCodec`, where its formats
-// compress. A backend's own header documents what it decodes and encodes. Returns null if the build does not have the
-// backend. `compressCodec` outlives the codec.
-PrImageCodec* PR_NULLABLE prImageCodecCreate(PrImageCodecBackend backend, PrCompressCodec* compressCodec);
-
-// Frees the codec. Its readers must be closed first.
+// Frees a codec that no set owns. Its readers must be closed first.
 void prImageCodecDestroy(PrImageCodec* PR_NULLABLE codec);
 
-// Returns true if the codec decodes the MIME type `type`. `type` is the essence, in lowercase and without parameters,
-// such as image/png.
-bool prImageCodecSupportsType(PrImageCodec* codec, PrStringView type);
+// Creates a set of `count` codecs, in priority order, and takes ownership of them. The set does not change once it is
+// created, so any thread may use it. An image is opened by the first codec that recognizes its bytes, and encoded by
+// the first codec that encodes its type. A container opens the images that it embeds through the set too, so an icon's
+// PNG entries need a PNG codec. Only the codecs that a program creates are linked into it.
+PrImageCodecSet* prImageCodecSetCreate(PrImageCodec* PR_NONNULL const* PR_NULLABLE codecs, uint32_t count);
 
-// Encodes `pixels` as an image of the MIME type `type`, in the form that prImageCodecSupportsType takes. `pixels` are
-// straight-alpha sRGB Rgba8 of nonzero size. Writes up to `capacity` bytes to `out`, and sets `*size` to the size of
-// the whole encoding. `out` may be null if `capacity` is zero. Returns NotSupported for a type the codec does not
-// encode.
-PrStatus prImageCodecEncode(PrImageCodec* codec, PrStringView type, PrPixelView pixels, uint8_t* PR_NULLABLE out,
-    size_t capacity, size_t* size);
+// Frees the set and its codecs. Its decoders must be destroyed first.
+void prImageCodecSetDestroy(PrImageCodecSet* PR_NULLABLE set);
+
+// Returns true if a codec of the set decodes the MIME type `type`. `type` is the essence, in lowercase and without
+// parameters, such as image/png.
+bool prImageCodecSetSupportsType(const PrImageCodecSet* set, PrStringView type);
+
+// Encodes `pixels` as an image of the MIME type `type`, in the form that prImageCodecSetSupportsType takes, with the
+// first codec of the set that encodes it. `pixels` are straight-alpha sRGB Rgba8 of nonzero size. Writes up to
+// `capacity` bytes to `out`, and sets `*size` to the size of the whole encoding. `out` may be null if `capacity` is
+// zero. Returns NotSupported if no codec of the set encodes `type`.
+PrStatus prImageCodecSetEncode(const PrImageCodecSet* set, PrStringView type, PrPixelView pixels,
+    uint8_t* PR_NULLABLE out, size_t capacity, size_t* size);
 
 // Returns the default limits, which bound the resources that the images of a page can reasonably use.
 PrImageLimits prImageLimitsDefault(void);
@@ -189,8 +183,9 @@ uint64_t prImageSourceSize(const PrImageSource* source);
 // fails.
 PrStatus prImageSourceRead(const PrImageSource* source, uint64_t offset, void* PR_NULLABLE out, size_t size);
 
-// Creates a decoder that opens images with `codec`. The decoder keeps its storage from one image to the next.
-PrImageDecoder* prImageDecoderCreate(PrImageCodec* codec);
+// Creates a decoder that opens images with the codecs of `set`, which must outlive it. The decoder keeps its storage
+// from one image to the next.
+PrImageDecoder* prImageDecoderCreate(const PrImageCodecSet* set);
 
 // Closes the open image, if any, and frees the decoder.
 void prImageDecoderDestroy(PrImageDecoder* PR_NULLABLE decoder);
@@ -198,8 +193,8 @@ void prImageDecoderDestroy(PrImageDecoder* PR_NULLABLE decoder);
 // Closes the open image, if any, and opens the image in `source`. Null `limits` means the defaults. The storage of
 // `source` and its context must stay valid until the image is closed.
 //
-// Returns NotSupported if the codec does not recognize the image, Limit if the image exceeds `limits`, and Truncated if
-// the image opens from incomplete input. Any failure other than Truncated leaves no image open.
+// Returns NotSupported if no codec of the set recognizes the image, Limit if the image exceeds `limits`, and Truncated
+// if the image opens from incomplete input. Any failure other than Truncated leaves no image open.
 PrStatus prImageDecoderOpen(PrImageDecoder* decoder, PrImageSource source, const PrImageLimits* PR_NULLABLE limits);
 
 // Closes the open image, if any.
