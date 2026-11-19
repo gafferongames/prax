@@ -203,7 +203,7 @@ struct CellFlex {
 
 // Creates a cell under `parent`, filled while it is hovered if it is pressable.
 PrLayoutNode cell(PrKit* kit, PrLayoutNode parent, uint64_t key, bool pressable) {
-    PrLayoutNode node = prLayoutTreeFrameElement(kit->tree, parent, key, 0);
+    PrLayoutNode node = prLayoutTreeFrameElement(kit->tree, parent, kitKey(*kit, parent, key), 0);
     bool disabled = pressable ? kitSetFlags(*kit, node, PrUiFlag_Pressable) : prUiIsDisabled(kit->ui, node);
     bool hover = pressable && prUiIsHovered(kit->ui, node) && !disabled;
     KitColors fill{.background = hover ? kit->theme.palette.bg3 : PrColor{0, 0, 0, 0}};
@@ -308,7 +308,7 @@ PrLayoutNode columnElement(PrKit* kit, PrLayoutNode parent, uint64_t key, const 
     bool fills = c.flex == PrKitFlex_Fill;
     ColumnFlex flex{.weight = fills ? (c.weight > 0 ? c.weight : 1) : 0, .align = c.align};
     ColumnBox box{.width = c.width, .fills = fills};
-    return prLayoutTreeFrameElement(kit->tree, parent, key, kitStyle(*kit, box, flex));
+    return prLayoutTreeFrameElement(kit->tree, parent, kitKey(*kit, parent, key), kitStyle(*kit, box, flex));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -639,13 +639,14 @@ void applyClick(PrKit& kit, View& v, uint32_t index, PrLayoutNode node) {
         v.edit = clickEdit(*v.selection, index, pointerModifiers(kit.ui, node));
 }
 
-// Creates the element of a view's row, keyed by `item` under the view, and indented by `indent` px, and applies a click
-// on it to the view's selection. A row of a tree view that drags marks where a payload of its kind would land on it.
-PrLayoutNode rowElement(PrKit& kit, PrLayoutNode view, View& v, uint32_t index, uint64_t item, bool selected, float indent) {
+// Creates the element of a view's row, keyed by `item` under the view's content, and indented by `indent` px, and
+// applies a click on it to the view's selection. A row of a tree view that drags marks where a payload of its kind
+// would land on it.
+PrLayoutNode rowElement(PrKit& kit, View& v, uint32_t index, uint64_t item, bool selected, float indent) {
     RowKind kind = v.minWidth > 0 ? RowKind_Table : RowKind_List;
     PrUi* ui = kit.ui;
     PrLayoutTree* tree = kit.tree;
-    PrLayoutNode node = prLayoutTreeFrameElement(tree, v.content, prUiKeyIndex(kit.ui, view, item), 0);
+    PrLayoutNode node = prLayoutTreeFrameElement(tree, v.content, kitKey(kit, v.content, kitItemKey(item)), 0);
     bool disabled = kitSetFlags(kit, node, PrUiFlag_Pressable);
     bool hover = prUiIsHovered(ui, node) && !disabled;
     // A row is a target for payloads of the view's kind, and shows its zone under the pointer at the last layout.
@@ -663,10 +664,10 @@ PrLayoutNode rowElement(PrKit& kit, PrLayoutNode view, View& v, uint32_t index, 
 
 // Creates a row of a list or tree view, which its caller fills. A tree's row is indented by its depth and led by its
 // disclosure, which this writes to `disclosure`.
-PrLayoutNode rowOf(PrKit* kit, PrLayoutNode view, View& v, const PrKitRow& row, PrLayoutNode* PR_NULLABLE disclosure) {
+PrLayoutNode rowOf(PrKit* kit, View& v, const PrKitRow& row, PrLayoutNode* PR_NULLABLE disclosure) {
     const PrKitTreeItem* place = v.items != nullptr ? &v.items[row.index] : nullptr;
     float depth = place != nullptr ? float(place->depth) : 0;
-    PrLayoutNode node = rowElement(*kit, view, v, row.index, row.item, row.selected, kRowInset + depth * kIndent);
+    PrLayoutNode node = rowElement(*kit, v, row.index, row.item, row.selected, kRowInset + depth * kIndent);
 
     if (place != nullptr) {
         // The disclosure's cell is reserved on leaves too, so that the cells after it line up down the tree.
@@ -723,7 +724,7 @@ bool prKitSelectionEdited(const PrKit* kit, PrLayoutNode view, PrKitSelectionEdi
 PrLayoutNode prKitListRow(PrKit* kit, PrLayoutNode view, PrKitRow row) {
     View& v = viewOf(*kit, view);
     PR_ASSERT(v.items == nullptr && v.columns == nullptr);
-    return rowOf(kit, view, v, row, nullptr);
+    return rowOf(kit, v, row, nullptr);
 }
 
 PrLayoutNode prKitRowIcon(PrKit* kit, PrLayoutNode row, PrKitIcon icon) {
@@ -748,7 +749,7 @@ PrLayoutNode prKitListTile(PrKit* kit, PrLayoutNode view, PrKitTile tile) {
     PR_ASSERT(tile.index >= v.first && tile.index < v.first + v.count);
     PrUi* ui = k.ui;
     PrLayoutTree* tree = k.tree;
-    PrLayoutNode node = prLayoutTreeFrameElement(tree, v.content, prUiKeyIndex(k.ui, view, tile.item), 0);
+    PrLayoutNode node = prLayoutTreeFrameElement(tree, v.content, kitKey(k, v.content, kitItemKey(tile.item)), 0);
     bool disabled = kitSetFlags(k, node, PrUiFlag_Pressable);
     bool hover = prUiIsHovered(ui, node) && !disabled;
     const PrKitPalette& p = k.theme.palette;
@@ -839,7 +840,7 @@ PrLayoutNode prKitTreeRow(PrKit* kit, PrLayoutNode view, PrKitRow row) {
     PrUi* ui = k.ui;
     const PrKitTreeItem& place = v.items[row.index];
     PrLayoutNode disclosure = kPrLayoutNodeNone;
-    PrLayoutNode node = rowOf(kit, view, v, row, &disclosure);
+    PrLayoutNode node = rowOf(kit, v, row, &disclosure);
     if (place.hasChildren && prUiActivated(ui, disclosure)) {
         v.fold = PrKitTreeFold{.row = row.index, .open = !place.open};
         v.folded = true;
@@ -947,7 +948,7 @@ bool prKitSorted(const PrKit* kit, PrLayoutNode table) {
 PrLayoutNode prKitTableRow(PrKit* kit, PrLayoutNode table, PrKitTableRow row) {
     View& v = viewOf(*kit, table);
     PR_ASSERT(v.columns != nullptr && row.index < v.first + v.count);
-    return rowElement(*kit, table, v, row.index, row.item, row.selected, kRowInset);
+    return rowElement(*kit, v, row.index, row.item, row.selected, kRowInset);
 }
 
 PrLayoutNode prKitTableCell(PrKit* kit, PrLayoutNode row, PrKitTableCell cell) {
